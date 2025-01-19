@@ -80,10 +80,10 @@ public class TemplateManageService implements TemplateManageApi {
             request.setId(UUID.randomUUID().toString());
             request.setCreateTime(System.currentTimeMillis());
             request.setCreateBy(AuthUtils.getUser().getUserId().toString());
-            if ("template".equals(request.getNodeType())) {
+            if ("template".equals(request.getNodeType()) || "app".equals(request.getNodeType())) {
                 //Store static resource into the server
                 staticResourceServer.saveFilesToServe(request.getStaticResource());
-                String snapshotName = "template-" + request.getId() + ".jpeg";
+                String snapshotName = request.getNodeType() + "-" + request.getId() + ".jpeg";
                 staticResourceServer.saveSingleFileToServe(snapshotName, request.getSnapshot().replace("data:image/jpeg;base64,", ""));
                 request.setSnapshot("/" + UPLOAD_URL_PREFIX + '/' + snapshotName);
             }
@@ -107,6 +107,9 @@ public class TemplateManageService implements TemplateManageApi {
 
                 VisualizationTemplate template = new VisualizationTemplate();
                 BeanUtils.copyBean(template, request);
+                if (template.getVersion() == null) {
+                    template.setVersion(2);
+                }
                 templateMapper.insert(template);
                 // 插入分类关系
                 request.getCategories().forEach(categoryId -> {
@@ -134,6 +137,9 @@ public class TemplateManageService implements TemplateManageApi {
                 }
                 VisualizationTemplate template = new VisualizationTemplate();
                 BeanUtils.copyBean(template, request);
+                if (template.getVersion() == null) {
+                    template.setVersion(2);
+                }
                 templateMapper.updateById(template);
                 //更新分类
                 // 分类映射删除
@@ -176,6 +182,16 @@ public class TemplateManageService implements TemplateManageApi {
     @Override
     public String categoryTemplateNameCheck(TemplateManageRequest request) {
         Long result = extTemplateMapper.checkCategoryTemplateName(request.getName(), request.getCategories());
+        if (result == 0) {
+            return CommonConstants.CHECK_RESULT.NONE;
+        } else {
+            return CommonConstants.CHECK_RESULT.EXIST_ALL;
+        }
+    }
+
+    @Override
+    public String checkCategoryTemplateBatchNames(TemplateManageRequest request) {
+        Long result = extTemplateMapper.checkCategoryTemplateBatchNames(request.getTemplateNames(), request.getCategories(), request.getTemplateArray());
         if (result == 0) {
             return CommonConstants.CHECK_RESULT.NONE;
         } else {
@@ -256,7 +272,7 @@ public class TemplateManageService implements TemplateManageApi {
     public List<String> findCategoriesByTemplateIds(TemplateManageRequest request) throws Exception {
         if (!CollectionUtils.isEmpty(request.getTemplateArray())) {
             List<String> result = extTemplateMapper.findTemplateArrayCategories(request.getTemplateArray());
-            if(!CollectionUtils.isEmpty(result) &&result.size() == 1 ){
+            if (!CollectionUtils.isEmpty(result) && result.size() == 1) {
                 return Arrays.stream(result.get(0).split(",")).toList();
             }
         }

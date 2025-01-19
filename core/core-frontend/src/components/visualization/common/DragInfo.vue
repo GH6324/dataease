@@ -2,7 +2,9 @@
   <div class="drag-info-main">
     <template v-if="!mobileInPc">
       <el-row style="justify-content: center">
-        <Icon style="width: 125px; height: 125px" name="dv-drag-tips"></Icon>
+        <Icon name="dv-drag-tips"
+          ><dvDragTips class="svg-icon" style="width: 125px; height: 125px"
+        /></Icon>
       </el-row>
       <el-row class="tips-info"> {{ tips }} </el-row>
     </template>
@@ -11,15 +13,20 @@
 </template>
 
 <script lang="ts" setup>
+import dvDragTips from '@/assets/svg/dv-drag-tips.svg'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { storeToRefs } from 'pinia'
+import { useI18n } from '@/hooks/web/useI18n'
+const { t } = useI18n()
 
 const dvMainStore = dvMainStoreWithOut()
 const { dvInfo, mobileInPc } = storeToRefs(dvMainStore)
 
 const tips =
-  '从顶部工具栏中选择组件，添加到这里创建' +
-  (dvInfo.value.type === 'dashboard' ? '仪表板' : '数据大屏')
+  t('visualization.resource_create_tips') +
+  (dvInfo.value.type === 'dashboard'
+    ? t('work_branch.dashboard')
+    : t('work_branch.big_data_screen'))
 </script>
 
 <style lang="less" scoped>

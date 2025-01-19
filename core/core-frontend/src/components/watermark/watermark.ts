@@ -1,5 +1,12 @@
 // 动态创建水印元素的封装函数
+import { storeToRefs } from 'pinia'
+import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
+import { ref } from 'vue'
+import { ipInfoApi } from '@/api/user'
+const dvMainStore = dvMainStoreWithOut()
 
+const { dvInfo } = storeToRefs(dvMainStore)
+const userInfo = ref(null)
 export function watermark(settings, domId) {
   const watermarkDom = document.getElementById(domId)
   // 默认设置
@@ -7,8 +14,8 @@ export function watermark(settings, domId) {
     watermark_txt: '',
     watermark_x: 20, // 水印起始位置x轴坐标
     watermark_y: 20, // 水印起始位置Y轴坐标
-    watermark_rows: 20, // 水印行数
-    watermark_cols: 20, // 水印列数
+    watermark_rows: 60, // 水印行数
+    watermark_cols: 60, // 水印列数
     watermark_x_space: 100, // 水印x轴间隔
     watermark_y_space: 50, // 水印y轴间隔
     watermark_color: '#aaa', // 水印字体颜色
@@ -36,7 +43,7 @@ export function watermark(settings, domId) {
   page_width = page_width - cutWidth
   // 获取页面最大高度
   let page_height = watermarkDom.scrollHeight - 56
-  page_height = page_height < 400 ? 400 : page_height
+  page_height = page_height < 220 ? 220 : page_height
   // page_height = Math.max(page_height, window.innerHeight - 30)
   // 如果将水印列数设置为0，或水印列数设置过大，超过页面最大宽度，则重新计算水印列数和水印x轴间隔
   if (
@@ -121,7 +128,7 @@ export function watermark(settings, domId) {
       oTemp.appendChild(mask_div)
     }
   }
-  oTemp.setAttribute('id', 'de-watermark-server')
+  oTemp.setAttribute('id', domId + '-de-watermark-server')
   watermarkDom.appendChild(oTemp)
 }
 
@@ -144,6 +151,41 @@ export function getNow() {
   const time = year + '-' + month + '-' + day + ' ' + hour + ':' + minute
   return time
 }
+export function activeWatermarkCheckUser(domId, canvasId, scale = 1) {
+  if (dvInfo.value.watermarkInfo) {
+    if (userInfo.value && userInfo.value.model !== 'lose') {
+      activeWatermark(
+        dvInfo.value.watermarkInfo.settingContent,
+        userInfo.value,
+        domId,
+        canvasId,
+        dvInfo.value.selfWatermarkStatus,
+        scale
+      )
+    } else {
+      ipInfoApi().then(res => {
+        userInfo.value = res.data
+        if (userInfo.value && userInfo.value.model !== 'lose') {
+          activeWatermark(
+            dvInfo.value.watermarkInfo.settingContent,
+            userInfo.value,
+            domId,
+            canvasId,
+            dvInfo.value.selfWatermarkStatus,
+            scale
+          )
+        }
+      })
+    }
+  }
+}
+
+export function removeActiveWatermark(domId) {
+  const historyWatermarkDom = document.getElementById(domId + '-de-watermark-server')
+  if (historyWatermarkDom) {
+    historyWatermarkDom.remove()
+  }
+}
 
 export function activeWatermark(
   watermarkForm,
@@ -154,10 +196,7 @@ export function activeWatermark(
   scale = 1
 ) {
   // 清理历史水印
-  const historyWatermarkDom = document.getElementById('de-watermark-server')
-  if (historyWatermarkDom) {
-    historyWatermarkDom.remove()
-  }
+  removeActiveWatermark(domId)
   if (
     !(
       canvasId === 'canvas-main' &&

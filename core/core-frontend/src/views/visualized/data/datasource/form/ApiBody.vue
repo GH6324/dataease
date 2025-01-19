@@ -38,6 +38,10 @@ const props = defineProps({
   headers: {
     type: Array as PropType<Item[]>,
     default: () => []
+  },
+  valueList: {
+    type: Array as PropType<Item[]>,
+    default: () => []
   }
 })
 const { t } = useI18n()
@@ -187,7 +191,7 @@ const emits = defineEmits(['headersChange'])
 </script>
 
 <template>
-  <div>
+  <div class="radio-group_api">
     <el-radio-group v-model="apiBody.type">
       <el-radio :disabled="isReadOnly" :label="BODY_TYPE.FORM_DATA" @change="modeChange">
         {{ t('datasource.body_form_data') }}
@@ -209,13 +213,14 @@ const emits = defineEmits(['headersChange'])
         {{ t('datasource.body_raw') }}
       </el-radio>
     </el-radio-group>
-    <div v-if="apiBody.type == 'Form_Data' || apiBody.type == 'WWW_FORM'">
+    <div style="padding-top: 16px" v-if="apiBody.type == 'Form_Data' || apiBody.type == 'WWW_FORM'">
       <api-variable
         :is-read-only="isReadOnly"
         :parameters="apiBody.kvs"
         :is-show-enable="isShowEnable"
         type="body"
         @change-parameters="changeParameters"
+        :value-list="valueList"
       />
     </div>
     <div v-if="apiBody.type == 'JSON'" class="ms-body">
@@ -259,6 +264,11 @@ const emits = defineEmits(['headersChange'])
 </template>
 
 <style lang="less" scoped>
+.radio-group_api {
+  :deep(.ed-radio) {
+    height: 22px !important;
+  }
+}
 .ms-body {
   padding: 15px 0;
 }

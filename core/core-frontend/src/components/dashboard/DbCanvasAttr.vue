@@ -16,6 +16,7 @@ import { deepCopy } from '@/utils/utils'
 import { useEmitt } from '@/hooks/web/useEmitt'
 import { merge } from 'lodash-es'
 import CanvasBackground from '@/components/visualization/component-background/CanvasBackground.vue'
+import SeniorStyleSetting from '@/components/dashboard/subject-setting/dashboard-style/SeniorStyleSetting.vue'
 const dvMainStore = dvMainStoreWithOut()
 const snapshotStore = snapshotStoreWithOut()
 const { canvasStyleData, componentData, canvasViewInfo } = storeToRefs(dvMainStore)
@@ -105,17 +106,21 @@ const saveSelfSubject = () => {
   <div class="attr-container">
     <el-row>
       <el-collapse v-model="canvasAttrActiveNames">
-        <el-collapse-item title="仪表板风格" name="style">
+        <el-collapse-item :title="t('components.dashboard_style')" name="style">
           <de-slider ref="slider" />
           <el-button class="button-panel__style" text size="small" @click="saveSelfSubject">
             {{ $t('commons.save') }}
           </el-button>
         </el-collapse-item>
-        <el-collapse-item title="整体配置" name="overallSetting">
+        <el-collapse-item :title="t('components.overall_configuration')" name="overallSetting">
           <overall-setting @onThemeColorChange="themeColorChange" />
         </el-collapse-item>
 
-        <el-collapse-item title="仪表板背景" name="background" class="content-no-padding-bottom">
+        <el-collapse-item
+          :title="t('components.dashboard_background')"
+          name="background"
+          class="content-no-padding-bottom"
+        >
           <canvas-background themes="light"></canvas-background>
         </el-collapse-item>
         <el-collapse-item
@@ -132,7 +137,11 @@ const saveSelfSubject = () => {
             :background-border-select-width="197"
           />
         </el-collapse-item>
-        <el-collapse-item :title="'图表配色'" name="graphical" class="no-padding no-border-bottom">
+        <el-collapse-item
+          :title="t('components.chart_color')"
+          name="graphical"
+          class="no-padding no-border-bottom"
+        >
           <component-color-selector v-if="state.collapseShow" @onColorChange="onColorChange" />
         </el-collapse-item>
         <el-collapse-item :title="t('visualization.chart_title')" name="viewTitle">
@@ -144,6 +153,13 @@ const saveSelfSubject = () => {
           class="no-padding no-border-bottom"
         >
           <filter-style-simple-selector />
+        </el-collapse-item>
+        <el-collapse-item
+          :title="t('components.advanced_style_settings')"
+          name="seniorStyleSetting"
+          class="no-padding no-border-bottom"
+        >
+          <senior-style-setting></senior-style-setting>
         </el-collapse-item>
       </el-collapse>
     </el-row>
@@ -202,7 +218,7 @@ const saveSelfSubject = () => {
 
 .no-padding {
   :deep(.ed-collapse-item__content) {
-    padding: 0;
+    padding: 0 !important;
   }
 }
 .no-border-bottom {

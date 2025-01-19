@@ -7,7 +7,7 @@ CREATE TABLE `visualization_outer_params` (
                                       `remark` varchar(255) DEFAULT NULL COMMENT '备注',
                                       `copy_from` varchar(50) DEFAULT NULL COMMENT '复制来源',
                                       `copy_id` varchar(50) DEFAULT NULL COMMENT '复制来源ID',
-                                      PRIMARY KEY (`params_id`) USING BTREE
+                                      PRIMARY KEY (`params_id`)
 ) COMMENT='外部参数关联关系表';
 
 
@@ -19,7 +19,7 @@ CREATE TABLE `visualization_outer_params_info` (
                                            `checked` tinyint(1) DEFAULT NULL COMMENT '是否启用',
                                            `copy_from` varchar(255) DEFAULT NULL COMMENT '复制来源',
                                            `copy_id` varchar(50) DEFAULT NULL COMMENT '复制来源ID',
-                                           PRIMARY KEY (`params_info_id`) USING BTREE
+                                           PRIMARY KEY (`params_info_id`)
 )  COMMENT='外部参数配置表';
 
 
@@ -36,3 +36,5 @@ CREATE TABLE `visualization_outer_params_target_view_info` (
 
 ALTER TABLE `data_visualization_info`
     MODIFY COLUMN `mobile_layout` tinyint NULL DEFAULT 0 COMMENT '移动端布局0-关闭 1-开启';
+update data_visualization_info set mobile_layout = 0;
+INSERT INTO `core_sys_setting` (`id`, `pkey`, `pval`, `type`, `sort`) VALUES (3, 'ai.baseUrl', 'https://maxkb.fit2cloud.com/ui/chat/2ddd8b594ce09dbb', 'text', 0);

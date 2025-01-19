@@ -32,39 +32,6 @@ declare interface ChartStyle {
   }
 }
 
-declare interface ChartIndicatorStyle {
-  show: boolean
-  fontSize: string
-  color: string
-  hPosition: 'left' | 'center' | 'right'
-  vPosition: 'top' | 'center' | 'bottom'
-  isItalic: boolean
-  isBolder: boolean
-  fontFamily: string
-  letterSpace: string
-  fontShadow: boolean
-
-  suffixEnable: boolean
-  suffix: string
-  suffixFontSize: string
-  suffixColor: string
-  suffixIsItalic: boolean
-  suffixIsBolder: boolean
-  suffixFontFamily: string
-  suffixLetterSpace: string
-  suffixFontShadow: boolean
-}
-declare interface ChartIndicatorNameStyle {
-  show: boolean
-  fontSize: string
-  color: string
-  isItalic: boolean
-  isBolder: boolean
-  fontFamily: string
-  letterSpace: string
-  fontShadow: boolean
-}
-
 /**
  * 标题样式设置
  */
@@ -155,6 +122,7 @@ declare interface ChartLegendStyle {
    * 字体大小
    */
   fontSize: number
+  size: number
 }
 
 /**
@@ -226,6 +194,10 @@ declare interface AxisLabel {
    * 格式化设置
    */
   formatter: string
+  /**
+   * 长度限制
+   */
+  lengthLimit: number
 }
 /**
  * 轴线条设置
@@ -305,6 +277,10 @@ declare interface ChartMiscStyle {
   axisLabel: SplitAxisLabel
   splitLine: SplitAxisLine
   splitArea: SplitSplitArea
+  /**
+   *  轴值设置
+   */
+  axisValue: AxisValue
 }
 declare interface SplitLineStyle {
   color: string

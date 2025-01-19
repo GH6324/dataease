@@ -1,4 +1,7 @@
 <script lang="ts" setup>
+import icon_letterSpacing_outlined from '@/assets/svg/icon_letter-spacing_outlined.svg'
+import icon_bold_outlined from '@/assets/svg/icon_bold_outlined.svg'
+import icon_italic_outlined from '@/assets/svg/icon_italic_outlined.svg'
 import { PropType, computed, onMounted, reactive, watch, nextTick } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import {
@@ -6,14 +9,20 @@ import {
   CHART_FONT_FAMILY,
   CHART_FONT_LETTER_SPACE,
   DEFAULT_INDICATOR_NAME_STYLE,
-  DEFAULT_BASIC_STYLE
+  DEFAULT_BASIC_STYLE,
+  CHART_FONT_FAMILY_ORIGIN
 } from '@/views/chart/components/editor/util/chart'
 import { cloneDeep, defaultsDeep } from 'lodash-es'
-import { ElIcon } from 'element-plus-secondary'
 import Icon from '@/components/icon-custom/src/Icon.vue'
 import { hexColorToRGBA } from '@/views/chart/components/js/util'
+import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
+import { storeToRefs } from 'pinia'
+import { useAppearanceStoreWithOut } from '@/store/modules/appearance'
 
 const { t } = useI18n()
+const dvMainStore = dvMainStoreWithOut()
+const { batchOptStatus } = storeToRefs(dvMainStore)
+const appearanceStore = useAppearanceStoreWithOut()
 
 const props = defineProps({
   chart: {
@@ -34,7 +43,12 @@ const toolTip = computed(() => {
   return props.themes === 'dark' ? 'ndark' : 'dark'
 })
 const predefineColors = COLOR_PANEL
-const fontFamily = CHART_FONT_FAMILY
+const fontFamily = CHART_FONT_FAMILY_ORIGIN.concat(
+  appearanceStore.fontList.map(ele => ({
+    name: ele.name,
+    value: ele.name
+  }))
+)
 const fontLetterSpace = CHART_FONT_LETTER_SPACE
 
 const state = reactive({
@@ -70,12 +84,6 @@ const init = () => {
     cloneDeep(props.chart?.customAttr?.indicatorName),
     cloneDeep(DEFAULT_INDICATOR_NAME_STYLE)
   )
-
-  if (state.basicStyleForm.alpha !== undefined) {
-    const color = hexColorToRGBA(state.basicStyleForm.colors[2], state.basicStyleForm.alpha)
-
-    customText.color = color
-  }
 
   state.indicatorNameForm = cloneDeep(customText)
 
@@ -146,7 +154,7 @@ defineExpose({ getFormData })
           />
         </el-form-item>
         <el-form-item class="form-item" :class="'form-item-' + themes" style="padding: 0 4px">
-          <el-tooltip content="字号" :effect="toolTip" placement="top">
+          <el-tooltip :content="t('chart.font_size')" :effect="toolTip" placement="top">
             <el-select
               style="width: 56px"
               :effect="themes"
@@ -175,7 +183,9 @@ defineExpose({ getFormData })
           >
             <template #prefix>
               <el-icon>
-                <Icon name="icon_letter-spacing_outlined" />
+                <Icon name="icon_letter-spacing_outlined"
+                  ><icon_letterSpacing_outlined class="svg-icon"
+                /></Icon>
               </el-icon>
             </template>
             <el-option
@@ -205,7 +215,7 @@ defineExpose({ getFormData })
                 :class="{ dark: themes === 'dark', active: state.indicatorNameForm.isBolder }"
               >
                 <el-icon>
-                  <Icon name="icon_bold_outlined" />
+                  <Icon name="icon_bold_outlined"><icon_bold_outlined class="svg-icon" /></Icon>
                 </el-icon>
               </div>
             </el-tooltip>
@@ -228,7 +238,7 @@ defineExpose({ getFormData })
                 :class="{ dark: themes === 'dark', active: state.indicatorNameForm.isItalic }"
               >
                 <el-icon>
-                  <Icon name="icon_italic_outlined" />
+                  <Icon name="icon_italic_outlined"><icon_italic_outlined class="svg-icon" /></Icon>
                 </el-icon>
               </div>
             </el-tooltip>
@@ -245,6 +255,24 @@ defineExpose({ getFormData })
         >
           {{ t('chart.font_shadow') }}
         </el-checkbox>
+      </el-form-item>
+      <el-form-item
+        class="form-item name-value-spacing-input"
+        :class="'form-item-' + themes"
+        :label="t('chart.name_value_spacing')"
+      >
+        <el-input-number
+          step-strictly
+          v-model="state.indicatorNameForm.nameValueSpacing"
+          size="small"
+          :min="0"
+          :max="100"
+          :value-on-clear="0"
+          :precision="0"
+          :step="1"
+          :effect="themes"
+          @change="changeTitleStyle('nameValueSpacing')"
+        />
       </el-form-item>
     </el-form>
   </div>
@@ -351,7 +379,7 @@ defineExpose({ getFormData })
 }
 .remark-label {
   color: var(--N600, #646a73);
-  font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+  font-family: var(--de-custom_font, 'PingFang');
   font-size: 12px;
   font-style: normal;
   font-weight: 400;
@@ -359,6 +387,16 @@ defineExpose({ getFormData })
 
   &.remark-label--dark {
     color: var(--N600-Dark, #a6a6a6);
+  }
+}
+.name-value-spacing-input {
+  display: flex !important;
+  :deep(label) {
+    line-height: 28px !important;
+    margin-bottom: 0 !important;
+  }
+  :deep(.ed-input__inner) {
+    text-align: center !important;
   }
 }
 </style>

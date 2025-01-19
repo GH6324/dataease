@@ -2,7 +2,7 @@ import {
   G2PlotChartView,
   G2PlotDrawOptions
 } from '@/views/chart/components/js/panel/types/impl/g2plot'
-import { Liquid as G2Liquid, LiquidOptions } from '@antv/g2plot/esm/plots/liquid'
+import type { Liquid as G2Liquid, LiquidOptions } from '@antv/g2plot/esm/plots/liquid'
 import { flow, hexColorToRGBA, parseJson } from '@/views/chart/components/js/util'
 import { DEFAULT_MISC } from '@/views/chart/components/editor/util/chart'
 import { valueFormatter } from '@/views/chart/components/js/formatter'
@@ -16,16 +16,19 @@ const DEFAULT_LIQUID_DATA = []
 export class Liquid extends G2PlotChartView<LiquidOptions, G2Liquid> {
   properties: EditorProperty[] = [
     'background-overall-component',
+    'border-style',
     'basic-style-selector',
     'label-selector',
     'misc-selector',
-    'title-selector'
+    'title-selector',
+    'threshold'
   ]
   propertyInner: EditorPropertyInner = {
     'background-overall-component': ['all'],
+    'border-style': ['all'],
     'basic-style-selector': ['colors', 'alpha'],
     'label-selector': ['fontSize', 'color', 'labelFormatter'],
-    'misc-selector': ['liquidShape', 'liquidMaxType', 'liquidMaxField'],
+    'misc-selector': ['liquidShape', 'liquidSize', 'liquidMaxType', 'liquidMaxField'],
     'title-selector': [
       'title',
       'fontSize',
@@ -37,7 +40,8 @@ export class Liquid extends G2PlotChartView<LiquidOptions, G2Liquid> {
       'fontFamily',
       'letterSpace',
       'fontShadow'
-    ]
+    ],
+    threshold: ['liquidThreshold']
   }
   axis: AxisType[] = ['yAxis', 'filter']
   axisConfig: AxisConfig = {
@@ -48,16 +52,27 @@ export class Liquid extends G2PlotChartView<LiquidOptions, G2Liquid> {
     }
   }
 
-  drawChart(drawOptions: G2PlotDrawOptions<G2Liquid>): G2Liquid {
-    const { chart, container } = drawOptions
-    if (chart?.data) {
-      const initOptions: LiquidOptions = {
-        percent: 0
-      }
-      const options = this.setupOptions(chart, initOptions)
-      // 开始渲染
-      return new G2Liquid(container, options)
+  async drawChart(drawOptions: G2PlotDrawOptions<G2Liquid>): Promise<G2Liquid> {
+    const { chart, container, action } = drawOptions
+    if (!chart.data?.series || !chart.yAxis.length) {
+      return
     }
+    const initOptions: LiquidOptions = {
+      percent: 0
+    }
+    const options = this.setupOptions(chart, initOptions)
+    const { Liquid: G2Liquid } = await import('@antv/g2plot/esm/plots/liquid')
+    const newChart = new G2Liquid(container, options)
+    newChart.on('afterrender', () => {
+      action({
+        from: 'liquid',
+        data: {
+          type: 'liquid',
+          max: chart.data?.series[chart.data?.series.length - 1]?.data[0]
+        }
+      })
+    })
+    return newChart
   }
 
   protected configTheme(chart: Chart, options: LiquidOptions): LiquidOptions {
@@ -94,10 +109,11 @@ export class Liquid extends G2PlotChartView<LiquidOptions, G2Liquid> {
     let max, radius, shape
     if (customAttr.misc) {
       const misc = customAttr.misc
+      const defaultLiquidMax = chart.data?.series[chart.data?.series.length - 1]?.data[0]
       if (misc.liquidMaxType === 'dynamic') {
-        max = chart.data?.series[chart.data?.series.length - 1]?.data[0]
+        max = defaultLiquidMax
       } else {
-        max = misc.liquidMax ? misc.liquidMax : DEFAULT_MISC.liquidMax
+        max = misc.liquidMax ? misc.liquidMax : defaultLiquidMax
       }
       radius = (misc.liquidSize ? misc.liquidSize : DEFAULT_MISC.liquidSize) / 100
       shape = misc.liquidShape ?? DEFAULT_MISC.liquidShape
@@ -146,6 +162,31 @@ export class Liquid extends G2PlotChartView<LiquidOptions, G2Liquid> {
     }
   }
 
+  protected configThreshold(chart: Chart, options: LiquidOptions): LiquidOptions {
+    const senior = parseJson(chart.senior)
+    if (senior?.threshold?.enable) {
+      const { liquidThreshold } = senior?.threshold
+      if (liquidThreshold) {
+        const { paletteQualitative10: colors } = (options.theme as any).styleSheet
+        const liquidStyle = () => {
+          const thresholdArr = liquidThreshold.split(',')
+          let index = 0
+          thresholdArr.forEach((v, i) => {
+            if (options.percent > parseFloat(v) / 100) {
+              index = i + 1
+            }
+          })
+          return {
+            fill: colors[index % colors.length],
+            stroke: colors[index % colors.length]
+          }
+        }
+        return { ...options, liquidStyle }
+      }
+    }
+    return options
+  }
+
   setupDefaultOptions(chart: ChartObj): ChartObj {
     chart.customAttr.label = {
       ...chart.customAttr.label,
@@ -161,7 +202,12 @@ export class Liquid extends G2PlotChartView<LiquidOptions, G2Liquid> {
   }
 
   protected setupOptions(chart: Chart, options: LiquidOptions): LiquidOptions {
-    return flow(this.configTheme, this.configMisc, this.configLabel)(chart, options)
+    return flow(
+      this.configTheme,
+      this.configMisc,
+      this.configLabel,
+      this.configThreshold
+    )(chart, options)
   }
   constructor() {
     super('liquid', DEFAULT_LIQUID_DATA)

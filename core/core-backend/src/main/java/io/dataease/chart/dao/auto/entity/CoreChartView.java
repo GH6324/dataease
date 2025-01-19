@@ -5,11 +5,11 @@ import java.io.Serializable;
 
 /**
  * <p>
- * 
+ * 组件图表表
  * </p>
  *
  * @author fit2cloud
- * @since 2023-08-20
+ * @since 2024-12-12
  */
 @TableName("core_chart_view")
 public class CoreChartView implements Serializable {
@@ -191,9 +191,50 @@ public class CoreChartView implements Serializable {
      */
     private Boolean jumpActive;
 
+    /**
+     * 复制来源
+     */
     private Long copyFrom;
 
+    /**
+     * 复制ID
+     */
     private Long copyId;
+
+    /**
+     * 区间条形图开启时间纬度开启聚合
+     */
+    private Boolean aggregate;
+
+    /**
+     * 流向地图起点名称field
+     */
+    private String flowMapStartName;
+
+    /**
+     * 流向地图终点名称field
+     */
+    private String flowMapEndName;
+
+    /**
+     * 颜色维度field
+     */
+    private String extColor;
+
+    /**
+     * 图形属性_移动端
+     */
+    private String customAttrMobile;
+
+    /**
+     * 组件样式_移动端
+     */
+    private String customStyleMobile;
+
+    /**
+     * 字段排序优先级
+     */
+    private String sortPriority;
 
     public Long getId() {
         return id;
@@ -491,6 +532,62 @@ public class CoreChartView implements Serializable {
         this.copyId = copyId;
     }
 
+    public Boolean getAggregate() {
+        return aggregate;
+    }
+
+    public void setAggregate(Boolean aggregate) {
+        this.aggregate = aggregate;
+    }
+
+    public String getFlowMapStartName() {
+        return flowMapStartName;
+    }
+
+    public void setFlowMapStartName(String flowMapStartName) {
+        this.flowMapStartName = flowMapStartName;
+    }
+
+    public String getFlowMapEndName() {
+        return flowMapEndName;
+    }
+
+    public void setFlowMapEndName(String flowMapEndName) {
+        this.flowMapEndName = flowMapEndName;
+    }
+
+    public String getExtColor() {
+        return extColor;
+    }
+
+    public void setExtColor(String extColor) {
+        this.extColor = extColor;
+    }
+
+    public String getCustomAttrMobile() {
+        return customAttrMobile;
+    }
+
+    public void setCustomAttrMobile(String customAttrMobile) {
+        this.customAttrMobile = customAttrMobile;
+    }
+
+    public String getCustomStyleMobile() {
+        return customStyleMobile;
+    }
+
+    public void setCustomStyleMobile(String customStyleMobile) {
+        this.customStyleMobile = customStyleMobile;
+    }
+
+    public String getSortPriority() {
+        return sortPriority;
+    }
+
+    public void setSortPriority(String sortPriority) {
+        this.sortPriority = sortPriority;
+    }
+
     @Override
     public String toString() {
         return "CoreChartView{" +
@@ -531,6 +628,13 @@ public class CoreChartView implements Serializable {
         ", jumpActive = " + jumpActive +
         ", copyFrom = " + copyFrom +
         ", copyId = " + copyId +
+        ", aggregate = " + aggregate +
+        ", flowMapStartName = " + flowMapStartName +
+        ", flowMapEndName = " + flowMapEndName +
+        ", extColor = " + extColor +
+        ", customAttrMobile = " + customAttrMobile +
+        ", customStyleMobile = " + customStyleMobile +
+        ", sortPriority = " + sortPriority +
         "}";
     }
 }

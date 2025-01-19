@@ -22,8 +22,16 @@ public class UserGridVO {
     private List<UserGridRoleItem> roleItems;
     @Schema(description = "邮箱")
     private String email;
+    @Schema(description = "电话前缀")
+    private String phonePrefix;
     @Schema(description = "电话")
+    private String phone;
+    @Schema(description = "状态")
     private Boolean enable;
     @Schema(description = "创建时间")
     private Long createTime;
+    @Schema(description = "系统变量")
+    private String sysVariable;
+    @Schema(description = "用户来源")
+    private Integer origin;
 }

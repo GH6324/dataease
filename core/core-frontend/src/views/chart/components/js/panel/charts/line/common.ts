@@ -1,5 +1,6 @@
 export const LINE_EDITOR_PROPERTY: EditorProperty[] = [
   'background-overall-component',
+  'border-style',
   'basic-style-selector',
   'x-axis-selector',
   'y-axis-selector',
@@ -10,12 +11,14 @@ export const LINE_EDITOR_PROPERTY: EditorProperty[] = [
   'assist-line',
   'function-cfg',
   'jump-set',
-  'linkage'
+  'linkage',
+  'threshold'
 ]
 export const LINE_EDITOR_PROPERTY_INNER: EditorPropertyInner = {
   'background-overall-component': ['all'],
+  'border-style': ['all'],
   'label-selector': ['fontSize', 'color'],
-  'tooltip-selector': ['fontSize', 'color', 'backgroundColor'],
+  'tooltip-selector': ['fontSize', 'color', 'backgroundColor', 'show'],
   'basic-style-selector': [
     'colors',
     'alpha',
@@ -57,7 +60,8 @@ export const LINE_EDITOR_PROPERTY_INNER: EditorPropertyInner = {
     'fontShadow'
   ],
   'legend-selector': ['icon', 'orient', 'fontSize', 'color', 'hPosition', 'vPosition'],
-  'function-cfg': ['slider', 'emptyDataStrategy']
+  'function-cfg': ['slider', 'emptyDataStrategy'],
+  threshold: ['lineThreshold']
 }
 
 export const LINE_AXIS_TYPE: AxisType[] = [

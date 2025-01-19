@@ -1,12 +1,15 @@
 import { cos, sin } from '@/utils/translate'
 import {
+  CHART_FONT_FAMILY_MAP,
+  CHART_FONT_FAMILY_MAP_TRANS,
   DEFAULT_COLOR_CASE,
-  DEFAULT_COLOR_CASE_DARK
+  DEFAULT_COLOR_CASE_DARK,
+  DEFAULT_INDICATOR_STYLE
 } from '@/views/chart/components/editor/util/chart'
 
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { useEmitt } from '@/hooks/web/useEmitt'
-import { merge } from 'lodash-es'
+import { defaultTo, merge } from 'lodash-es'
 const dvMainStore = dvMainStoreWithOut()
 
 export const LIGHT_THEME_COLOR_MAIN = '#000000'
@@ -113,20 +116,41 @@ export function colorRgb(color, opacity) {
 }
 
 export const customAttrTrans = {
-  basicStyle: ['barWidth', 'lineWidth', 'lineSymbolSize'],
-  tableHeader: ['tableTitleFontSize', 'tableTitleHeight'],
+  basicStyle: [
+    'barWidth',
+    'lineWidth',
+    'lineSymbolSize',
+    'leftLineWidth',
+    'leftLineSymbolSize',
+    'tableColumnWidth'
+  ],
+  tableHeader: [
+    'tableTitleFontSize',
+    'tableTitleColFontSize',
+    'tableTitleCornerFontSize',
+    'tableTitleHeight'
+  ],
   tableCell: ['tableItemFontSize', 'tableItemHeight'],
   misc: [
     'nameFontSize',
     'valueFontSize',
     'spaceSplit', // 间隔
     'scatterSymbolSize', // 气泡大小，散点图
-    'radarSize' // 雷达占比
+    'radarSize', // 雷达占比
+    'wordSizeRange',
+    'wordSpacing'
   ],
-  label: ['fontSize'],
-  tooltip: ['fontSize'],
+  label: {
+    fontSize: '',
+    seriesLabelFormatter: ['fontSize'],
+    proportionSeriesFormatter: ['fontSize']
+  },
+  tooltip: {
+    fontSize: '',
+    seriesTooltipFormatter: ['fontSize']
+  },
   indicator: ['fontSize', 'suffixFontSize'],
-  indicatorName: ['fontSize']
+  indicatorName: ['fontSize', 'nameValueSpacing']
 }
 export const customStyleTrans = {
   text: ['fontSize'],
@@ -258,9 +282,11 @@ export const THEME_STYLE_TRANS_SLAVE1 = {
 }
 
 export const THEME_ATTR_TRANS_MAIN = {
-  label: ['color'],
-  tooltip: ['color'],
-  indicatorName: ['color']
+  label: {
+    color: 'color',
+    proportionSeriesFormatter: ['color']
+  },
+  tooltip: ['color']
 }
 
 export const THEME_ATTR_TRANS_MAIN_SYMBOL = {
@@ -278,27 +304,64 @@ export const mobileSpecialProps = {
 }
 
 export function getScaleValue(propValue, scale) {
+  if (propValue instanceof Array) {
+    propValue.forEach((v, i) => {
+      const val = Math.round(v * scale)
+      propValue[i] = val > 1 ? val : 1
+    })
+    return propValue
+  }
   const propValueTemp = Math.round(propValue * scale)
   return propValueTemp > 1 ? propValueTemp : 1
+}
+export const THEME_ATTR_TRANS_ARR_MAIN = {
+  label: {
+    seriesLabelFormatter: {
+      isArray: []
+    }
+  }
+}
+
+export function seriesAdaptor(template, color) {
+  template.label?.seriesLabelFormatter?.forEach(series => {
+    series['color'] = color
+  })
+
+  template.label?.seriesTooltipFormatter?.forEach(series => {
+    series['color'] = color
+  })
 }
 
 export function recursionTransObj(template, infoObj, scale, terminal) {
   for (const templateKey in template) {
     // 如果是数组 进行赋值计算
     if (template[templateKey] instanceof Array) {
-      template[templateKey].forEach(templateProp => {
-        if (infoObj[templateKey] && infoObj[templateKey][templateProp]) {
-          // 移动端特殊属性值设置
-          if (terminal === 'mobile' && mobileSpecialProps[templateProp] !== undefined) {
-            infoObj[templateKey][templateProp] = mobileSpecialProps[templateProp]
-          } else {
-            infoObj[templateKey][templateProp] = getScaleValue(
-              infoObj[templateKey][templateProp],
-              scale
-            )
+      // 词云图的大小区间，不需要缩放
+      template[templateKey]
+        .filter(field => field !== 'wordSizeRange')
+        .forEach(templateProp => {
+          if (
+            infoObj[templateKey] &&
+            (infoObj[templateKey][templateProp] || infoObj[templateKey].length)
+          ) {
+            // 移动端特殊属性值设置
+            if (terminal === 'mobile' && mobileSpecialProps[templateProp] !== undefined) {
+              infoObj[templateKey][templateProp] = mobileSpecialProps[templateProp]
+            } else {
+              // 数组依次设置
+              if (infoObj[templateKey] instanceof Array) {
+                infoObj[templateKey].forEach(v => {
+                  v[templateProp] = getScaleValue(v[templateProp], scale)
+                })
+              } else {
+                infoObj[templateKey][templateProp] = getScaleValue(
+                  infoObj[templateKey][templateProp],
+                  scale
+                )
+              }
+            }
           }
-        }
-      })
+        })
     } else if (typeof template[templateKey] === 'string') {
       // 一级字段为字符串直接赋值
       infoObj[templateKey] = getScaleValue(infoObj[templateKey], scale)
@@ -353,6 +416,7 @@ export function adaptCurTheme(customStyle, customAttr) {
       customAttr,
       LIGHT_THEME_COMPONENT_BACKGROUND
     )
+    seriesAdaptor(customAttr, LIGHT_THEME_COLOR_MAIN)
     merge(customAttr, DEFAULT_COLOR_CASE, canvasStyle.component.chartColor)
   } else {
     recursionThemTransObj(THEME_STYLE_TRANS_MAIN, customStyle, DARK_THEME_COLOR_MAIN)
@@ -363,6 +427,7 @@ export function adaptCurTheme(customStyle, customAttr) {
       customAttr,
       DARK_THEME_COMPONENT_BACKGROUND_BACK
     )
+    seriesAdaptor(customAttr, DARK_THEME_COLOR_MAIN)
     merge(customAttr, DEFAULT_COLOR_CASE_DARK, canvasStyle.component.chartColor)
   }
   customStyle['text'] = {
@@ -372,6 +437,48 @@ export function adaptCurTheme(customStyle, customAttr) {
     remarkShow: customStyle['text']['remarkShow'],
     remark: customStyle['text']['remark']
   }
+}
+
+export function adaptTitleFontFamily(fontFamily, viewInfo) {
+  if (viewInfo) {
+    const _fontFamily = defaultTo(CHART_FONT_FAMILY_MAP_TRANS[fontFamily], fontFamily)
+    viewInfo.customStyle['text']['fontFamily'] = _fontFamily
+    //针对指标卡设置字体
+    if (viewInfo.type === 'indicator') {
+      viewInfo.customAttr['indicator']['fontFamily'] = fontFamily
+      viewInfo.customAttr['indicator']['suffixFontFamily'] = fontFamily
+      viewInfo.customAttr['indicatorName']['fontFamily'] = fontFamily
+    }
+  }
+}
+
+export function adaptTitleFontFamilyAll(fontFamily) {
+  const componentData = dvMainStore.componentData
+  componentData.forEach(item => {
+    if (item.component === 'UserView') {
+      const viewDetails = dvMainStore.canvasViewInfo[item.id]
+      adaptTitleFontFamily(fontFamily, viewDetails)
+      useEmitt().emitter.emit('renderChart-' + item.id, viewDetails)
+    } else if (item.component === 'Group') {
+      item.propValue.forEach(groupItem => {
+        if (groupItem.component === 'UserView') {
+          const viewDetails = dvMainStore.canvasViewInfo[groupItem.id]
+          adaptTitleFontFamily(fontFamily, viewDetails)
+          useEmitt().emitter.emit('renderChart-' + groupItem.id, viewDetails)
+        }
+      })
+    } else if (item.component === 'DeTabs') {
+      item.propValue.forEach(tabItem => {
+        tabItem.componentData.forEach(tabComponent => {
+          if (tabComponent.component === 'UserView') {
+            const viewDetails = dvMainStore.canvasViewInfo[tabComponent.id]
+            adaptTitleFontFamily(fontFamily, viewDetails)
+            useEmitt().emitter.emit('renderChart-' + tabComponent.id, viewDetails)
+          }
+        })
+      })
+    }
+  })
 }
 
 export function adaptCurThemeCommonStyle(component) {
@@ -450,7 +557,7 @@ interface CanvasViewInfo {
 }
 
 const colors = ['labelColor', 'borderColor', 'text', 'bgColor']
-const colorsSwitch = ['labelColorShow', 'borderShow', 'textColorShow', 'bgColorShow']
+const colorsSwitch = ['borderShow', 'textColorShow', 'bgColorShow']
 
 export function adaptCurThemeFilterStyleAllKeyComponent(component) {
   if (isFilterComponent(component.type)) {

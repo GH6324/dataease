@@ -41,7 +41,7 @@ public class SwaggerConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("DataEaseAPI")
-                        .description("人人可用的开源数据可视化分析工具")
+                        .description("人人可用的开源 BI 工具")
                         .termsOfService("https://dataease.io")
                         .contact(contact)
                         .version(version));
@@ -50,7 +50,7 @@ public class SwaggerConfig {
 
     @Bean
     public GroupedOpenApi visualizationApi() {
-        return GroupedOpenApi.builder().group("1-visualization").displayName("可视化管理").packagesToScan("io.dataease.visualization").build();
+        return GroupedOpenApi.builder().group("1-visualization").displayName("可视化管理").packagesToScan("io.dataease.visualization", "io.dataease.share").build();
     }
 
     @Bean

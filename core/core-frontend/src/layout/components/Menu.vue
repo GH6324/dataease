@@ -1,8 +1,9 @@
 <script lang="ts" setup>
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { ElMenu } from 'element-plus-secondary'
 import { useRoute, useRouter } from 'vue-router'
 import { isExternal } from '@/utils/validate'
+import { useCache } from '@/hooks/web/useCache'
 import MenuItem from './MenuItem.vue'
 import { useAppearanceStoreWithOut } from '@/store/modules/appearance'
 const appearanceStore = useAppearanceStoreWithOut()
@@ -12,8 +13,12 @@ const tempColor = computed(() => {
       (appearanceStore.themeColor === 'custom' ? appearanceStore.customColor : '#3370FF') + '1A'
   }
 })
-const isCollapse = ref(false)
+defineProps({
+  collapse: Boolean
+})
+
 const route = useRoute()
+const { wsCache } = useCache('localStorage')
 const { push } = useRouter()
 const menuList = computed(() => route.matched[0]?.children || [])
 const path = computed(() => route.matched[0]?.path)
@@ -25,7 +30,8 @@ const activeIndex = computed(() => {
 const menuSelect = (index: string, indexPath: string[]) => {
   //   自定义事件
   if (isExternal(index)) {
-    window.open(index)
+    const openType = wsCache.get('open-backend') === '1' ? '_self' : '_blank'
+    window.open(index, openType)
   } else {
     push(`${path.value}/${indexPath.join('/')}`)
   }
@@ -38,7 +44,7 @@ const menuSelect = (index: string, indexPath: string[]) => {
     @select="menuSelect"
     :default-active="activeIndex"
     class="el-menu-vertical"
-    :collapse="isCollapse"
+    :collapse="collapse"
   >
     <MenuItem v-for="menu in menuList" :key="menu.path" :menu="menu"></MenuItem>
   </el-menu>
@@ -70,6 +76,13 @@ const menuSelect = (index: string, indexPath: string[]) => {
     .ed-menu-item:not(.is-active) {
       &:hover {
         background-color: #1f23291a !important;
+      }
+    }
+    ul.ed-menu {
+      li.ed-menu-item {
+        i {
+          width: 4px !important;
+        }
       }
     }
   }

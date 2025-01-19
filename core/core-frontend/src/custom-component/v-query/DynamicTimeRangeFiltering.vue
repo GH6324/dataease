@@ -3,11 +3,12 @@ import { toRefs, PropType, onBeforeMount, watch, computed } from 'vue'
 import { Calendar } from '@element-plus/icons-vue'
 import { type DatePickType } from 'element-plus-secondary'
 import type { ManipulateType } from 'dayjs'
-import { getAround } from './time-format-dayjs'
+import { getAround, getCustomRange } from './time-format-dayjs'
 interface SelectConfig {
   regularOrTrends: string
   regularOrTrendsValue: [Date, Date]
   intervalType: string
+  relativeToCurrentRange: string
   timeNum: number
   relativeToCurrentType: ManipulateType
   around: string
@@ -27,6 +28,7 @@ const props = defineProps({
         regularOrTrends: 'fixed',
         timeNum: 0,
         intervalType: 'none',
+        relativeToCurrentRange: 'custom',
         relativeToCurrentType: 'year',
         around: 'f',
         timeGranularity: 'date',
@@ -37,7 +39,7 @@ const props = defineProps({
     }
   },
   timeGranularityMultiple: {
-    type: Object as PropType<DatePickType>,
+    type: String as PropType<DatePickType>,
     default: () => {
       return 'yearrange'
     }
@@ -50,6 +52,7 @@ const timeConfig = computed(() => {
     timeNum,
     relativeToCurrentType,
     around,
+    relativeToCurrentRange,
     intervalType,
     regularOrTrends,
     timeGranularity,
@@ -62,6 +65,7 @@ const timeConfig = computed(() => {
     relativeToCurrentType,
     around,
     intervalType,
+    relativeToCurrentRange,
     regularOrTrends,
     timeGranularity,
     timeNumRange,
@@ -91,6 +95,7 @@ const init = () => {
     timeNum,
     relativeToCurrentType,
     around,
+    relativeToCurrentRange,
     regularOrTrends,
     timeNumRange,
     relativeToCurrentTypeRange,
@@ -117,6 +122,11 @@ const init = () => {
     timeNumRange
   )
 
+  if (!!relativeToCurrentRange && relativeToCurrentRange !== 'custom') {
+    config.value.regularOrTrendsValue = getCustomRange(relativeToCurrentRange)
+    return
+  }
+
   config.value.regularOrTrendsValue = [startTime, endTime]
 }
 
@@ -137,8 +147,15 @@ const formatDate = computed(() => {
     :type="timeInterval"
     :prefix-icon="Calendar"
     :format="formatDate"
+    :popper-class="'custom-dynamic-time-range-filter-popper_class'"
     :range-separator="$t('cron.to')"
     :start-placeholder="$t('datasource.start_time')"
     :end-placeholder="$t('datasource.end_time')"
   />
 </template>
+
+<style lang="less">
+.custom-dynamic-time-range-filter-popper_class {
+  font-family: var(--de-canvas_custom_font);
+}
+</style>

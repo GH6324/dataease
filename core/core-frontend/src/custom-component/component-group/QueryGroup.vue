@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import dvFilterShow from '@/assets/svg/dv-filter-show.svg'
 import { toRefs } from 'vue'
 import eventBus from '@/utils/eventBus'
 import DragComponent from '@/custom-component/component-group/DragComponent.vue'
 import { commonHandleDragEnd, commonHandleDragStart } from '@/utils/canvasUtils'
-
+import { useI18n } from '@/hooks/web/useI18n'
+const { t } = useI18n()
 const props = defineProps({
   propValue: {
     type: Array,
@@ -51,8 +53,8 @@ const newComponent = componentName => {
   >
     <drag-component
       :themes="themes"
-      icon="dv-filter-show"
-      label="查询组件"
+      :icon="dvFilterShow"
+      :label="t('visualization.query_component')"
       drag-info="VQuery&VQuery"
     ></drag-component>
   </div>

@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import icon_right_outlined from '@/assets/svg/icon_right_outlined.svg'
 import { useUserStoreWithOut } from '@/store/modules/user'
 import userImg from '@/assets/img/user.png'
 import { mountedOrg, switchOrg } from '@/api/user'
@@ -20,7 +21,7 @@ interface OrgTreeNode {
 }
 const userStore = useUserStoreWithOut()
 const { push } = useRouter()
-const navBarTitle = ref('请选择')
+const navBarTitle = ref('组织')
 const name = ref('')
 const showNavBar = ref(true)
 const logout = async () => {
@@ -48,11 +49,47 @@ const findName = () => {
     }
   }
 }
+
+let directIdCopy = []
+let directNameCopy = []
+
+const dfsOrgTree = (arr, depth) => {
+  arr.forEach(item => {
+    const { name, id } = item
+    if (depth <= directIdCopy.length) {
+      if (depth < directIdCopy.length) {
+        directIdCopy = directIdCopy.slice(0, depth)
+        directNameCopy = directNameCopy.slice(0, depth)
+      }
+      directIdCopy.splice(directIdCopy.length - 1, 1, id)
+      directNameCopy.splice(directNameCopy.length - 1, 1, name)
+    } else {
+      directIdCopy.push(id)
+      directNameCopy.push(name)
+    }
+
+    let nextDepth = depth + 1
+
+    if (id === userStore.getOid) {
+      directName.value = [...directNameCopy]
+      directId.value = [...directIdCopy]
+      nextDepth = 999
+    }
+    if (item?.children?.length && nextDepth !== 999) {
+      dfsOrgTree(item?.children, nextDepth)
+    }
+  })
+}
+
 onMounted(() => {
   mountedOrg().then(res => {
     orgOption = res.data as OrgTreeNode[]
     tableData.value = res.data as OrgTreeNode[]
     findName()
+    dfsOrgTree(orgOption, 1)
+    directName.value.pop()
+    directId.value.pop()
+    activeDirectName.value = directName.value[directName.value.length - 1]
   })
 })
 
@@ -61,6 +98,7 @@ const switchHandler = (id: number | string) => {
     const token = res.data.token
     userStore.setToken(token)
     userStore.setExp(res.data.exp)
+    userStore.setTime(Date.now())
     window.location.reload()
   })
 }
@@ -74,6 +112,13 @@ const onClickLeft = () => {
   }
 }
 
+const clearOrg = () => {
+  if (!directName.value.length) return
+  directName.value = []
+  activeDirectName.value = ''
+  directId.value = []
+}
+
 const orgCellClick = (type, val) => {
   if (type !== 'right') {
     switchHandler(val.id)
@@ -82,6 +127,13 @@ const orgCellClick = (type, val) => {
     activeDirectName.value = val.name
     directId.value.push(val.id)
   }
+}
+
+const handleDir = index => {
+  if (index === directId.value.length - 1) return
+  directId.value = directId.value.slice(0, index + 1)
+  directName.value = directName.value.slice(0, index + 1)
+  activeDirectName.value = directName.value[directName.value.length - 1]
 }
 
 const tableData = ref([])
@@ -134,13 +186,23 @@ const activeTableData = computed(() => {
         @click-left="onClickLeft"
       />
       <div class="grey">
-        <div class="flex-align-center" v-for="(ele, index) in directName" :key="ele">
-          <span :class="ele !== activeDirectName && 'active'">{{ ele }}</span>
-          <el-icon v-if="directName.length > 1 && index !== directName.length - 1">
-            <Icon name="icon_right_outlined"></Icon>
+        <div @click="clearOrg" class="flex-align-center">
+          <span class="ellipsis" :class="!!directName.length && 'active'">组织</span>
+          <el-icon v-if="!!directName.length">
+            <Icon name="icon_right_outlined"><icon_right_outlined class="svg-icon" /></Icon>
           </el-icon>
         </div>
-        <span v-if="!directName.length">请选择组织</span>
+        <div
+          @click="handleDir(index)"
+          class="flex-align-center"
+          v-for="(ele, index) in directName"
+          :key="ele"
+        >
+          <span class="ellipsis" :class="ele !== activeDirectName && 'active'">{{ ele }}</span>
+          <el-icon v-if="directName.length > 1 && index !== directName.length - 1">
+            <Icon name="icon_right_outlined"><icon_right_outlined class="svg-icon" /></Icon>
+          </el-icon>
+        </div>
       </div>
       <OrgCell
         @click="type => orgCellClick(type, ele)"
@@ -201,6 +263,14 @@ const activeTableData = computed(() => {
     line-height: 20px;
     display: flex;
     align-items: center;
+
+    & > div {
+      white-space: nowrap;
+    }
+
+    .ellipsis {
+      max-width: 250px;
+    }
 
     .active {
       color: var(--ed-color-primary);

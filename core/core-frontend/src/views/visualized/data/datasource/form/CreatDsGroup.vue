@@ -1,12 +1,16 @@
 <script lang="ts" setup>
-import { ref, reactive, computed, watch, nextTick } from 'vue'
+import dvFolder from '@/assets/svg/dv-folder.svg'
+import icon_searchOutline_outlined from '@/assets/svg/icon_search-outline_outlined.svg'
+import { ref, reactive, computed, watch, nextTick, shallowRef, unref } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { checkRepeat, listDatasources, save, update } from '@/api/datasource'
 import { ElMessage, ElMessageBox, ElMessageBoxOptions } from 'element-plus-secondary'
+import treeSort from '@/utils/treeSortUtils'
 import type { DatasetOrFolder } from '@/api/dataset'
+import { cloneDeep } from 'lodash-es'
 import nothingTree from '@/assets/img/nothing-tree.png'
 import { useCache } from '@/hooks/web/useCache'
-
+import { filterFreeFolder } from '@/utils/utils'
 export interface Tree {
   name: string
   value?: string | number
@@ -68,7 +72,9 @@ const showPid = computed(() => {
 })
 
 const labelName = computed(() => {
-  return nodeType.value === 'folder' ? t('deDataset.folder_name') : '数据源名称'
+  return nodeType.value === 'folder'
+    ? t('deDataset.folder_name')
+    : t('data_source.data_source_name')
 })
 
 const dialogTitle = computed(() => {
@@ -114,7 +120,11 @@ const filterMethod = (value, data) => {
 const resetForm = () => {
   createDataset.value = false
 }
+const originResourceTree = shallowRef([])
 
+const sortTypeChange = sortType => {
+  state.tData = treeSort(originResourceTree.value, sortType)
+}
 const dfs = (arr: Tree[]) => {
   arr.forEach(ele => {
     ele.value = ele.id
@@ -125,6 +135,7 @@ const dfs = (arr: Tree[]) => {
 }
 let request = null
 let dsType = ''
+const sortList = ['time_asc', 'time_desc', 'name_asc', 'name_desc']
 const createInit = (type, data: Tree, exec, name: string) => {
   pid.value = ''
   id.value = ''
@@ -133,7 +144,8 @@ const createInit = (type, data: Tree, exec, name: string) => {
   datasetForm.name = ''
   nodeType.value = type
   filterText.value = ''
-  placeholder.value = type === 'folder' ? '请输入文件夹名称' : '请输入数据源名称'
+  placeholder.value =
+    type === 'folder' ? t('data_source.a_folder_name') : t('data_source.data_source_name_de')
   dsType = data.type
   if (type === 'datasource') {
     request = data.request
@@ -141,11 +153,16 @@ const createInit = (type, data: Tree, exec, name: string) => {
   if (data.id) {
     if (exec !== 'rename') {
       listDatasources({ leaf: false, id: data.id, weight: 7 }).then(res => {
+        filterFreeFolder(res, 'datasource')
         dfs(res as unknown as Tree[])
         state.tData = (res as unknown as Tree[]) || []
         if (state.tData.length && state.tData[0].name === 'root' && state.tData[0].id === '0') {
-          state.tData[0].name = '数据源'
+          state.tData[0].name = t('data_source.data_source')
         }
+        originResourceTree.value = cloneDeep(unref(state.tData))
+        let curSortType = sortList[Number(wsCache.get('TreeSort-backend')) ?? 1]
+        curSortType = wsCache.get('TreeSort-datasource') ?? curSortType
+        sortTypeChange(curSortType)
       })
     }
     if (exec) {
@@ -175,9 +192,9 @@ const createInit = (type, data: Tree, exec, name: string) => {
         trigger: 'blur'
       },
       {
-        min: 2,
+        min: 1,
         max: 64,
-        message: t('datasource.input_limit_2_64', [2, 64]),
+        message: t('datasource.input_limit_1_64', [1, 64]),
         trigger: 'blur'
       }
     ],
@@ -224,7 +241,7 @@ const finallyCb = () => {
 }
 const checkPid = pid => {
   if (pid !== 0 && !pid) {
-    ElMessage.error('请选择目标文件夹')
+    ElMessage.error(t('data_source.the_destination_folder'))
     return false
   }
   return true
@@ -234,9 +251,8 @@ const saveDataset = () => {
     if (result) {
       const params: Omit<DatasetOrFolder, 'nodeType'> & { nodeType: 'folder' | 'datasource' } = {
         nodeType: nodeType.value as 'folder' | 'datasource',
-        name: datasetForm.name
+        name: datasetForm.name.trim()
       }
-
       switch (cmd.value) {
         case 'move':
           params.pid = activeAll.value ? '0' : (datasetForm.pid as string)
@@ -275,30 +291,36 @@ const saveDataset = () => {
         request.apiConfiguration = ''
         checkRepeat(request).then(res => {
           let method = request.id === '' ? save : update
+          if (request.type !== 'API') {
+            request.syncSetting = null
+          }
           if (res) {
-            ElMessageBox.confirm(t('datasource.has_same_ds'), options as ElMessageBoxOptions).then(
-              () => {
+            ElMessageBox.confirm(t('datasource.has_same_ds'), options as ElMessageBoxOptions)
+              .then(() => {
                 method({ ...request, name: datasetForm.name, pid: params.pid })
                   .then(res => {
                     if (res !== undefined) {
                       wsCache.set('ds-new-success', true)
                       emits('handleShowFinishPage', { ...res, pid: params.pid })
-                      ElMessage.success('保存数据源成功')
+                      ElMessage.success(t('data_source.source_saved_successfully'))
                       successCb()
                     }
                   })
                   .finally(() => {
                     loading.value = false
                   })
-              }
-            )
+              })
+              .catch(() => {
+                loading.value = false
+                createDataset.value = false
+              })
           } else {
             method({ ...request, name: datasetForm.name, pid: params.pid })
               .then(res => {
                 if (res !== undefined) {
                   wsCache.set('ds-new-success', true)
                   emits('handleShowFinishPage', { ...res, pid: params.pid })
-                  ElMessage.success('保存数据源成功')
+                  ElMessage.success(t('data_source.source_saved_successfully'))
                   successCb()
                 }
               })
@@ -356,7 +378,7 @@ const emits = defineEmits(['finish', 'handleShowFinishPage'])
         >
           <template #default="{ data: { name } }">
             <el-icon>
-              <Icon name="dv-folder"></Icon>
+              <Icon name="dv-folder"><dvFolder class="svg-icon" /></Icon>
             </el-icon>
             <span :title="name">{{ name }}</span>
           </template>
@@ -366,7 +388,9 @@ const emits = defineEmits(['finish', 'handleShowFinishPage'])
         <el-input style="margin-bottom: 12px" v-model="filterText" clearable>
           <template #prefix>
             <el-icon>
-              <Icon name="icon_search-outline_outlined"></Icon>
+              <Icon name="icon_search-outline_outlined"
+                ><icon_searchOutline_outlined class="svg-icon"
+              /></Icon>
             </el-icon>
           </template>
         </el-input>
@@ -385,7 +409,7 @@ const emits = defineEmits(['finish', 'handleShowFinishPage'])
             <template #default="{ data }">
               <span class="custom-tree-node">
                 <el-icon style="font-size: 18px">
-                  <Icon name="dv-folder"></Icon>
+                  <Icon name="dv-folder"><dvFolder class="svg-icon" /></Icon>
                 </el-icon>
                 <span class="node-text" :title="data.name">{{ data.name }}</span>
               </span>
@@ -393,7 +417,7 @@ const emits = defineEmits(['finish', 'handleShowFinishPage'])
           </el-tree>
           <div v-if="searchEmpty" class="empty-search">
             <img :src="nothingTree" />
-            <span>没有找到相关内容</span>
+            <span>{{ t('data_source.relevant_content_found') }}</span>
           </div>
         </div>
       </div>
@@ -440,7 +464,7 @@ const emits = defineEmits(['finish', 'handleShowFinishPage'])
       margin-bottom: 8px;
     }
     span {
-      font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+      font-family: var(--de-custom_font, 'PingFang');
       font-size: 14px;
       font-weight: 400;
       line-height: 22px;

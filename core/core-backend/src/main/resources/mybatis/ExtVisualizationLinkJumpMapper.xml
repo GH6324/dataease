@@ -16,6 +16,7 @@
         <result column="link_jump_id" jdbcType="BIGINT" property="linkJumpId"/>
         <result column="link_type" jdbcType="VARCHAR" property="linkType"/>
         <result column="jump_type" jdbcType="VARCHAR" property="jumpType"/>
+        <result column="window_size" jdbcType="VARCHAR" property="windowSize"/>
         <result column="target_dv_id" jdbcType="BIGINT" property="targetDvId"/>
         <result column="source_field_id" jdbcType="BIGINT" property="sourceFieldId"/>
         <result column="content" jdbcType="VARCHAR" property="content"/>
@@ -29,7 +30,7 @@
     <resultMap id="BaseResultMapDTO" type="io.dataease.api.visualization.dto.VisualizationLinkJumpDTO"
                extends="LinkJumpBaseResultMap">
         <collection property="linkJumpInfoArray" ofType="io.dataease.api.visualization.dto.VisualizationLinkJumpInfoDTO"
-                    column="{id=id,source_view_id=source_view_id,uid=queryUid}"
+                    column="{id=id,source_view_id=source_view_id,uid=queryUid, isDesktop=isDesktop}"
                     select="getLinkJumpInfo">
         </collection>
     </resultMap>
@@ -42,9 +43,12 @@
         <result column="publicJumpId" jdbcType="VARCHAR" property="publicJumpId"/>
         <collection property="targetViewInfoList"
                     ofType="io.dataease.api.visualization.vo.VisualizationLinkJumpTargetViewInfoVO">
+            <result column="target_id" jdbcType="BIGINT" property="targetId"/>
             <result column="target_view_id" jdbcType="BIGINT" property="targetViewId"/>
             <result column="target_field_id" jdbcType="BIGINT" property="targetFieldId"/>
             <result column="source_field_active_id" jdbcType="VARCHAR" property="sourceFieldActiveId"/>
+            <result column="target_type" jdbcType="VARCHAR" property="targetType"/>
+            <result column="outer_params_name" jdbcType="VARCHAR" property="outerParamsName"/>
         </collection>
     </resultMap>
     <resultMap id="ViewTableFieldDetailsMap" type="io.dataease.api.visualization.vo.VisualizationViewTableVO">
@@ -53,7 +57,7 @@
         <result column="type" jdbcType="VARCHAR" property="type"/>
         <result column="dv_id" jdbcType="BIGINT" property="dvId"/>
         <collection property="tableFields"
-                    ofType="io.dataease.dto.dataset.DatasetTableFieldDTO">
+                    ofType="io.dataease.extensions.datasource.dto.DatasetTableFieldDTO">
             <result column="field_id" jdbcType="BIGINT" property="id"/>
             <result column="origin_name" jdbcType="VARCHAR" property="originName"/>
             <result column="field_name" jdbcType="VARCHAR" property="name"/>
@@ -70,38 +74,59 @@
     </resultMap>
 
     <select id="getLinkJumpInfo" resultMap="LinkJumpInfoMap">
-        SELECT core_dataset_table_field.id AS source_field_id, core_dataset_table_field.de_type AS source_de_type, core_dataset_table_field.NAME AS source_field_name, visualization_link_jump_info.id,
-               visualization_link_jump_info.link_jump_id,
-               visualization_link_jump_info.link_type,
-               visualization_link_jump_info.jump_type,
-               visualization_link_jump_info.target_dv_id,
-               visualization_link_jump_info.content,
-               visualization_link_jump_info.target_dv_id             AS publicJumpId,
-               ifnull(visualization_link_jump_info.checked, 0)       AS checked,
-               ifnull(visualization_link_jump_info.attach_params, 0) AS attach_params,
-               visualization_link_jump_target_view_info.target_view_id,
-               visualization_link_jump_target_view_info.target_field_id,
-               visualization_link_jump_target_view_info.source_field_active_id
-        FROM core_chart_view
-                 LEFT JOIN core_dataset_table_field
-                           ON core_chart_view.table_id = core_dataset_table_field.dataset_group_id
-                 LEFT JOIN visualization_link_jump
-                           ON core_chart_view.id = visualization_link_jump.source_view_id and
-                              visualization_link_jump.id = #{id}
-                 LEFT JOIN visualization_link_jump_info
-                           ON visualization_link_jump.id = visualization_link_jump_info.link_jump_id
-                               AND core_dataset_table_field.id = visualization_link_jump_info.source_field_id
-                 LEFT JOIN visualization_link_jump_target_view_info
-                           ON visualization_link_jump_info.id =
-                              visualization_link_jump_target_view_info.link_jump_info_id
-        WHERE core_chart_view.id = #{source_view_id}
-          and core_chart_view.type != 'VQuery'
-        ORDER BY CONVERT (core_dataset_table_field.NAME using gbk)
+        SELECT
+            core_dataset_table_field.id AS source_field_id,
+            core_dataset_table_field.de_type AS source_de_type,
+            core_dataset_table_field.NAME AS source_field_name,
+            visualization_link_jump_info.id,
+            visualization_link_jump_info.link_jump_id,
+            visualization_link_jump_info.link_type,
+            visualization_link_jump_info.jump_type,
+            visualization_link_jump_info.window_size,
+            visualization_link_jump_info.target_dv_id,
+            visualization_link_jump_info.content,
+            <if test="!isDesktop">
+            xpack_share.uuid AS publicJumpId,
+            </if>
+            ifnull( visualization_link_jump_info.checked, 0 ) AS checked,
+            ifnull( visualization_link_jump_info.attach_params, 0 ) AS attach_params,
+            visualization_link_jump_target_view_info.target_id,
+            visualization_link_jump_target_view_info.target_view_id,
+            visualization_link_jump_target_view_info.target_field_id,
+            visualization_link_jump_target_view_info.target_type,
+            visualization_link_jump_target_view_info.source_field_active_id,
+            visualization_outer_params_info.param_name as outer_params_name
+        FROM
+            core_chart_view
+                LEFT JOIN core_dataset_table_field ON core_chart_view.table_id = core_dataset_table_field.dataset_group_id
+                LEFT JOIN visualization_link_jump ON core_chart_view.id = visualization_link_jump.source_view_id
+                AND visualization_link_jump.id = #{id}
+                LEFT JOIN visualization_link_jump_info ON visualization_link_jump.id = visualization_link_jump_info.link_jump_id
+                AND core_dataset_table_field.id = visualization_link_jump_info.source_field_id
+                LEFT JOIN visualization_link_jump_target_view_info ON visualization_link_jump_info.id = visualization_link_jump_target_view_info.link_jump_info_id
+                <if test="!isDesktop">
+                LEFT JOIN xpack_share ON xpack_share.creator = #{uid}
+                AND visualization_link_jump_info.target_dv_id = xpack_share.resource_id
+                </if>
+                left join visualization_outer_params_info on visualization_outer_params_info.params_info_id = visualization_link_jump_target_view_info.target_view_id
+        WHERE
+            core_chart_view.id = #{source_view_id}
+          AND core_chart_view.type != 'VQuery'
+          <if test="!isDesktop">
+           ORDER BY
+                      CONVERT (
+                      core_dataset_table_field.NAME USING gbk)
+          </if>
+          <if test="isDesktop">
+          ORDER BY core_dataset_table_field.name;
+         </if>
+
     </select>
 
     <select id="queryWithDvId" resultMap="BaseResultMapDTO">
         SELECT core_chart_view.id                     AS source_view_id,
                ${uid}                                 as queryUid,
+               ${isDesktop}                                 as isDesktop,
                visualization_link_jump.id,
                #{dvId} as source_dv_id, visualization_link_jump.link_jump_info,
                ifnull(core_chart_view.jump_active, 0) AS checked
@@ -112,21 +137,34 @@
     </select>
 
     <select id="getViewTableDetails" resultMap="ViewTableFieldDetailsMap">
-        SELECT core_chart_view.id,
-               core_chart_view.title,
-               core_chart_view.type,
-               core_chart_view.scene_id as dv_id, core_dataset_table_field.id AS field_id, core_dataset_table_field.origin_name,
-               core_dataset_table_field.`name` AS field_name, core_dataset_table_field.type AS field_type, core_dataset_table_field.de_type
-        FROM core_chart_view
-                 LEFT JOIN core_dataset_table_field
-                           ON core_chart_view.table_id = core_dataset_table_field.dataset_group_id
-        WHERE core_chart_view.scene_id = #{dvId}
-          and core_chart_view.type != 'VQuery'
+        SELECT
+        	core_chart_view.id,
+        	core_chart_view.title,
+        	core_chart_view.type,
+        	core_chart_view.scene_id AS dv_id,
+        	core_dataset_table_field.id AS field_id,
+        	core_dataset_table_field.origin_name,
+        	core_dataset_table_field.`name` AS field_name,
+        	core_dataset_table_field.type AS field_type,
+        	core_dataset_table_field.de_type
+        FROM
+        	core_chart_view
+        	LEFT JOIN core_dataset_table_field ON core_chart_view.table_id = core_dataset_table_field.dataset_group_id
+        	INNER JOIN data_visualization_info dvi ON core_chart_view.scene_id = dvi.id
+        WHERE
+        	core_chart_view.scene_id = #{dvId}
+        	AND core_chart_view.type != 'VQuery'
+        	AND core_chart_view.table_id IS NOT NULL
+        	AND dvi.id = #{dvId}
+        	AND LOCATE(
+        	core_chart_view.id,
+        	dvi.component_data)
     </select>
 
     <select id="queryWithViewId" resultMap="BaseResultMapDTO">
         SELECT core_chart_view.id                         AS source_view_id,
                ${uid}                                     as queryUid,
+               ${isDesktop}                                 as isDesktop,
                visualization_link_jump.id,
                #{dvId} as source_dv_id, visualization_link_jump.link_jump_info,
                ifnull(visualization_link_jump.checked, 0) AS checked
@@ -136,110 +174,72 @@
         WHERE core_chart_view.id = #{viewId}
     </select>
 
+        <select id="queryOutParamsTargetWithDvId" resultType="io.dataease.api.visualization.vo.VisualizationOutParamsJumpVO">
+            SELECT
+            	vopi.params_info_id as id,
+            	vopi.param_name as name,
+            	vopi.param_name as title,
+            	'outerParams' as type
+            FROM
+            	visualization_outer_params_info vopi
+            	LEFT JOIN visualization_outer_params vop ON vopi.params_id = vop.params_id
+            WHERE
+            	vop.visualization_id = #{dvId}
+        </select>
+
     <delete id="deleteJumpTargetViewInfo">
-        DELETE
-        ljtv
-        FROM
-            visualization_link_jump_target_view_info ljtv,
-            visualization_link_jump_info lji,
-            visualization_link_jump lj
-        WHERE
-            ljtv.link_jump_info_id = lji.id
-            AND lji.link_jump_id = lj.id
-            AND lj.source_dv_id =
-        #{dvId}
-        AND
-        lj
-        .
-        source_view_id
-        =
-        #{viewId}
+        DELETE FROM visualization_link_jump_target_view_info
+        WHERE link_jump_info_id IN (
+            SELECT lji.id
+            FROM visualization_link_jump_info lji
+            JOIN visualization_link_jump lj ON lji.link_jump_id = lj.id
+            WHERE lj.source_dv_id = #{dvId}
+              AND lj.source_view_id = #{viewId}
+        );
     </delete>
 
     <delete id="deleteJumpInfo">
-        DELETE
-        lji
-        FROM
-            visualization_link_jump_info lji,
-            visualization_link_jump lj
-        WHERE
-            lji.link_jump_id = lj.id
-            AND lj.source_dv_id =
-        #{dvId}
-        AND
-        lj
-        .
-        source_view_id
-        =
-        #{viewId}
+        DELETE FROM visualization_link_jump_info
+        WHERE link_jump_id IN (
+            SELECT lj.id
+            FROM visualization_link_jump lj
+            WHERE lj.source_dv_id = #{dvId}
+              AND lj.source_view_id = #{viewId}
+        );
     </delete>
 
     <delete id="deleteJump">
-        DELETE
-        lj
-        FROM
-            visualization_link_jump lj
-        WHERE
-            lj.source_dv_id =
-        #{dvId}
-        AND
-        lj
-        .
-        source_view_id
-        =
-        #{viewId}
+        DELETE FROM visualization_link_jump
+        WHERE source_dv_id = #{dvId}
+          AND source_view_id = #{viewId}
     </delete>
 
 
     <delete id="deleteJumpTargetViewInfoWithVisualization">
-        DELETE
-        ljtv
-        FROM
-            visualization_link_jump_target_view_info ljtv,
-            visualization_link_jump_info lji,
-            visualization_link_jump lj
-        WHERE
-            ljtv.link_jump_info_id = lji.id
-            AND lji.link_jump_id = lj.id
-            AND (lj.source_dv_id =
-        #{dvId}
-        or
-        lji
-        .
-        target_dv_id
-        =
-        #{dvId}
+        DELETE FROM visualization_link_jump_target_view_info
+        WHERE link_jump_info_id IN (
+            SELECT lji.id
+            FROM visualization_link_jump_info lji
+            JOIN visualization_link_jump lj ON lji.link_jump_id = lj.id
+            WHERE lj.source_dv_id = #{dvId}
+               OR lji.target_dv_id = #{dvId}
         )
     </delete>
 
     <delete id="deleteJumpInfoWithVisualization">
-        DELETE
-        lji
-        FROM
-            visualization_link_jump_info lji,
-            visualization_link_jump lj
-        WHERE
-            lji.link_jump_id = lj.id
-            AND (lj.source_dv_id =
-        #{dvId}
-        or
-        lji
-        .
-        target_dv_id
-        =
-        #{dvId}
+        DELETE FROM visualization_link_jump_info
+        WHERE link_jump_id IN (
+            SELECT lj.id
+            FROM visualization_link_jump lj
+            WHERE lj.source_dv_id = #{dvId}
+               OR lj.target_dv_id = #{dvId}
         )
     </delete>
 
-    <delete id="deleteJumpWithVisualization">
-        DELETE
-        lj
-        FROM
-            visualization_link_jump lj
-        WHERE
-            lj.source_dv_id =
-        #{dvId}
-    </delete>
+   <delete id="deleteJumpWithVisualization">
+       DELETE FROM visualization_link_jump
+       WHERE source_dv_id = #{dvId}
+   </delete>
 
     <select id="getTargetVisualizationJumpInfo" resultMap="AllJumpMap">
         SELECT DISTINCT
@@ -250,7 +250,8 @@
         LEFT JOIN visualization_link_jump_info lji ON jtvi.link_jump_info_id = lji.id
         LEFT JOIN visualization_link_jump lj ON lji.link_jump_id = lj.id
         WHERE
-        lj.source_dv_id = #{request.sourceDvId}
+        lji.checked = 1
+        and lj.source_dv_id = #{request.sourceDvId}
         AND lj.source_view_id = #{request.sourceViewId}
         AND lji.target_dv_id = #{request.targetDvId}
         <if test="request.sourceFieldId != null">
@@ -286,6 +287,7 @@
                                                   link_jump_id,
                                                   link_type,
                                                   jump_type,
+                                                  window_size,
                                                   target_dv_id,
                                                   source_field_id,
                                                   content,
@@ -297,6 +299,7 @@
                plj_copy.t_id,
                link_type,
                jump_type,
+               window_size,
                target_dv_id,
                source_field_id,
                content,

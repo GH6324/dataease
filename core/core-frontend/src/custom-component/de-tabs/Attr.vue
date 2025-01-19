@@ -25,7 +25,8 @@ const { curComponent } = storeToRefs(dvMainStore)
       :element="curComponent"
       :background-color-picker-width="197"
       :background-border-select-width="197"
-    />
+    >
+    </CommonAttr>
   </div>
 </template>
 

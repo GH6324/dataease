@@ -3,12 +3,14 @@ import { ref, watch, onBeforeMount, PropType, toRefs } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import ApiKeyValue from './ApiKeyValue.vue'
 import ApiBody from './ApiBody.vue'
+import Pagination from './Pagination.vue'
 import ApiVariable from './ApiVariable.vue'
 import ApiAuthConfig from './ApiAuthConfig.vue'
 import { Body } from './ApiTestModel.js'
 import type { Item } from './ApiKeyValue.vue'
 import type { AuthConfig } from './ApiAuthConfig.vue'
 import type { ApiBodyItem } from './ApiBody.vue'
+import { PageSetting } from '@/views/visualized/data/datasource/form/Pagination.vue'
 export interface ApiRequest {
   changeId: string
   headers: Item[]
@@ -16,11 +18,16 @@ export interface ApiRequest {
   arguments: Item[]
   authManager: AuthConfig
   body: ApiBodyItem
+  page: PageSetting
 }
 const props = defineProps({
   showScript: {
     type: Boolean,
     default: true
+  },
+  valueList: {
+    type: Array as PropType<Item[]>,
+    default: () => []
   },
   request: {
     type: Object as PropType<ApiRequest>,
@@ -33,6 +40,11 @@ const props = defineProps({
       body: {
         typeChange: '',
         kvs: []
+      },
+      page: {
+        pageType: 'empty',
+        requestData: [],
+        responseData: []
       }
     })
   },
@@ -143,6 +155,7 @@ const emits = defineEmits(['changeId'])
           :show-desc="true"
           :suggestions="headerSuggestions"
           :items="apiRequest.headers"
+          :value-list="valueList"
         />
       </el-tab-pane>
 
@@ -152,6 +165,7 @@ const emits = defineEmits(['changeId'])
           :is-read-only="isReadOnly"
           :isShowEnable="isShowEnable"
           :parameters="apiRequest.arguments"
+          :value-list="valueList"
         />
       </el-tab-pane>
 
@@ -167,6 +181,7 @@ const emits = defineEmits(['changeId'])
           :headers="apiRequest.headers"
           :body="apiRequest.body"
           :is-show-enable="isShowEnable"
+          :value-list="valueList"
         />
       </el-tab-pane>
 
@@ -183,6 +198,9 @@ const emits = defineEmits(['changeId'])
           </template>
         </el-tooltip>
         <api-auth-config :request="apiRequest" />
+      </el-tab-pane>
+      <el-tab-pane key="pagination" :label="t('api_pagination.paging_ettings')" name="pagination">
+        <Pagination :page="apiRequest.page" />
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -209,11 +227,10 @@ const emits = defineEmits(['changeId'])
   }
 
   .request-tabs {
-    margin: 0 24px;
-    min-height: 200px;
+    margin: 0 16px;
 
     :deep(.ed-tabs__item) {
-      font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+      font-family: var(--de-custom_font, 'PingFang');
       font-size: 14px;
       font-style: normal;
       font-weight: 400;

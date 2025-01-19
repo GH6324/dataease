@@ -7,12 +7,12 @@ import { deepCopy } from '@/utils/utils'
 import { cloneDeep, defaultsDeep, defaultTo } from 'lodash-es'
 import {
   BASE_VIEW_CONFIG,
-  CHART_CONT_FAMILY_MAP,
+  CHART_FONT_FAMILY_MAP,
   DEFAULT_INDICATOR_NAME_STYLE,
   DEFAULT_INDICATOR_STYLE
 } from '@/views/chart/components/editor/util/chart'
 import { valueFormatter } from '@/views/chart/components/js/formatter'
-import { hexColorToRGBA } from '@/views/chart/components/js/util'
+import { storeToRefs } from 'pinia'
 
 const props = defineProps({
   view: {
@@ -36,12 +36,25 @@ const props = defineProps({
   terminal: {
     type: String,
     default: 'pc'
+  },
+  //图表渲染id后缀
+  suffixId: {
+    type: String,
+    required: false,
+    default: 'common'
+  },
+  fontFamily: {
+    type: String,
+    required: false,
+    default: 'inherit'
   }
 })
 
 const { view, scale, terminal } = toRefs(props)
 
 const dvMainStore = dvMainStoreWithOut()
+
+const { batchOptStatus } = storeToRefs(dvMainStore)
 
 const errMsg = ref('')
 const isError = ref(false)
@@ -90,9 +103,10 @@ const result = computed(() => {
 const indicatorColor = ref(DEFAULT_INDICATOR_STYLE.color)
 
 const thresholdColor = computed(() => {
-  let color = indicatorColor.value
+  let color: string = indicatorColor.value
+  let backgroundColor: string = DEFAULT_INDICATOR_STYLE.backgroundColor
   if (result.value === '-') {
-    return color
+    return { color, backgroundColor }
   }
   const value = result.value
   if (
@@ -104,42 +118,47 @@ const thresholdColor = computed(() => {
     for (let i = 0; i < senior.threshold.labelThreshold.length; i++) {
       let flag = false
       const t = senior.threshold.labelThreshold[i]
-      const tv = parseFloat(t.value)
+      const tv = t.value
       if (t.term === 'eq') {
         if (value === tv) {
           color = t.color
+          backgroundColor = t.backgroundColor
           flag = true
         }
       } else if (t.term === 'not_eq') {
         if (value !== tv) {
           color = t.color
+          backgroundColor = t.backgroundColor
           flag = true
         }
       } else if (t.term === 'lt') {
         if (value < tv) {
           color = t.color
+          backgroundColor = t.backgroundColor
           flag = true
         }
       } else if (t.term === 'gt') {
         if (value > tv) {
           color = t.color
+          backgroundColor = t.backgroundColor
           flag = true
         }
       } else if (t.term === 'le') {
         if (value <= tv) {
           color = t.color
+          backgroundColor = t.backgroundColor
           flag = true
         }
       } else if (t.term === 'ge') {
         if (value >= tv) {
           color = t.color
+          backgroundColor = t.backgroundColor
           flag = true
         }
       } else if (t.term === 'between') {
-        const min = parseFloat(t.min)
-        const max = parseFloat(t.max)
-        if (min <= value && value <= max) {
+        if (t.min <= value && value <= t.max) {
           color = t.color
+          backgroundColor = t.backgroundColor
           flag = true
         }
       }
@@ -148,7 +167,7 @@ const thresholdColor = computed(() => {
       }
     }
   }
-  return color
+  return { color, backgroundColor }
 })
 
 const formattedResult = computed(() => {
@@ -167,20 +186,21 @@ const formattedResult = computed(() => {
 
 const emit = defineEmits(['onChartClick', 'onDrillFilters', 'onJumpClick'])
 
-const contentStyle = ref({
+const contentStyle = ref<CSSProperties>({
   display: 'flex',
   'flex-direction': 'column',
   'align-items': 'center',
   'justify-content': 'center',
-  height: '100%'
+  height: '100%',
+  'background-color': thresholdColor.value.backgroundColor
 })
 
 const indicatorClass = ref<CSSProperties>({
-  color: thresholdColor.value,
+  color: thresholdColor.value.color,
   'font-size': DEFAULT_INDICATOR_STYLE.fontSize + 'px',
   'font-family': defaultTo(
-    CHART_CONT_FAMILY_MAP[DEFAULT_INDICATOR_STYLE.fontFamily],
-    DEFAULT_INDICATOR_STYLE.fontFamily
+    props.fontFamily,
+    CHART_FONT_FAMILY_MAP[DEFAULT_INDICATOR_STYLE.fontFamily]
   ),
   'font-weight': DEFAULT_INDICATOR_STYLE.isBolder ? 'bold' : 'normal',
   'font-style': DEFAULT_INDICATOR_STYLE.isItalic ? 'italic' : 'normal',
@@ -193,8 +213,8 @@ const indicatorSuffixClass = ref<CSSProperties>({
   color: DEFAULT_INDICATOR_STYLE.suffixColor,
   'font-size': DEFAULT_INDICATOR_STYLE.suffixFontSize + 'px',
   'font-family': defaultTo(
-    CHART_CONT_FAMILY_MAP[DEFAULT_INDICATOR_STYLE.suffixFontFamily],
-    DEFAULT_INDICATOR_STYLE.suffixFontFamily
+    props.fontFamily,
+    CHART_FONT_FAMILY_MAP[DEFAULT_INDICATOR_STYLE.fontFamily]
   ),
   'font-weight': DEFAULT_INDICATOR_STYLE.suffixIsBolder ? 'bold' : 'normal',
   'font-style': DEFAULT_INDICATOR_STYLE.suffixIsItalic ? 'italic' : 'normal',
@@ -209,12 +229,16 @@ const suffixContent = ref('')
 
 const indicatorNameShow = ref(false)
 
+const indicatorNameWrapperStyle = reactive<CSSProperties>({
+  'margin-top': DEFAULT_INDICATOR_NAME_STYLE.nameValueSpacing + 'px'
+})
+
 const indicatorNameClass = ref<CSSProperties>({
   color: DEFAULT_INDICATOR_NAME_STYLE.color,
   'font-size': DEFAULT_INDICATOR_NAME_STYLE.fontSize + 'px',
   'font-family': defaultTo(
-    CHART_CONT_FAMILY_MAP[DEFAULT_INDICATOR_NAME_STYLE.fontFamily],
-    DEFAULT_INDICATOR_NAME_STYLE.fontFamily
+    props.fontFamily,
+    CHART_FONT_FAMILY_MAP[DEFAULT_INDICATOR_STYLE.fontFamily]
   ),
   'font-weight': DEFAULT_INDICATOR_NAME_STYLE.isBolder ? 'bold' : 'normal',
   'font-style': DEFAULT_INDICATOR_NAME_STYLE.isItalic ? 'italic' : 'normal',
@@ -234,16 +258,16 @@ const renderChart = async view => {
   const chart = deepCopy({
     ...defaultsDeep(view, TEMP_DEFAULT_CHART),
     data: chartData.value
-  })
+  }) as ChartObj
 
   recursionTransObj(customAttrTrans, chart.customAttr, scale.value, terminal.value)
   recursionTransObj(customStyleTrans, chart.customStyle, scale.value, terminal.value)
 
   if (chart.customAttr) {
-    const customAttr = chart.customAttr
+    const { indicator, indicatorName, basicStyle } = chart.customAttr
 
-    if (customAttr.indicator) {
-      switch (customAttr.indicator.hPosition) {
+    if (indicator) {
+      switch (indicator.hPosition) {
         case 'left':
           contentStyle.value['align-items'] = 'flex-start'
           break
@@ -253,7 +277,7 @@ const renderChart = async view => {
         default:
           contentStyle.value['align-items'] = 'center'
       }
-      switch (customAttr.indicator.vPosition) {
+      switch (indicator.vPosition) {
         case 'top':
           contentStyle.value['justify-content'] = 'flex-start'
           break
@@ -264,69 +288,60 @@ const renderChart = async view => {
           contentStyle.value['justify-content'] = 'center'
       }
 
-      indicatorColor.value = customAttr.indicator.color
-      let suffixColor = customAttr.indicator.suffixColor
-
-      if (customAttr.basicStyle && customAttr.basicStyle.alpha !== undefined) {
-        indicatorColor.value = hexColorToRGBA(
-          customAttr.basicStyle.colors[0],
-          customAttr.basicStyle.alpha
-        )
-        suffixColor = hexColorToRGBA(customAttr.basicStyle.colors[1], customAttr.basicStyle.alpha)
-      }
+      indicatorColor.value = indicator.color
+      let suffixColor = indicator.suffixColor
 
       indicatorClass.value = {
-        color: thresholdColor.value,
-        'font-size': customAttr.indicator.fontSize + 'px',
+        color: thresholdColor.value.color,
+        'font-size': indicator.fontSize + 'px',
         'font-family': defaultTo(
-          CHART_CONT_FAMILY_MAP[customAttr.indicator.fontFamily],
-          DEFAULT_INDICATOR_STYLE.fontFamily
+          indicator.fontFamily,
+          CHART_FONT_FAMILY_MAP[DEFAULT_INDICATOR_STYLE.fontFamily]
         ),
-        'font-weight': customAttr.indicator.isBolder ? 'bold' : 'normal',
-        'font-style': customAttr.indicator.isItalic ? 'italic' : 'normal',
-        'letter-spacing': customAttr.indicator.letterSpace + 'px',
-        'text-shadow': customAttr.indicator.fontShadow ? '2px 2px 4px' : 'none',
+        'font-weight': indicator.isBolder ? 'bold' : 'normal',
+        'font-style': indicator.isItalic ? 'italic' : 'normal',
+        'letter-spacing': indicator.letterSpace + 'px',
+        'text-shadow': indicator.fontShadow ? '2px 2px 4px' : 'none',
         'font-synthesis': 'weight style'
       }
+      contentStyle.value['background-color'] = thresholdColor.value.backgroundColor
 
       indicatorSuffixClass.value = {
         color: suffixColor,
-        'font-size': customAttr.indicator.suffixFontSize + 'px',
+        'font-size': indicator.suffixFontSize + 'px',
         'font-family': defaultTo(
-          CHART_CONT_FAMILY_MAP[customAttr.indicator.suffixFontFamily],
-          DEFAULT_INDICATOR_STYLE.suffixFontFamily
+          indicator.suffixFontFamily,
+          CHART_FONT_FAMILY_MAP[DEFAULT_INDICATOR_STYLE.suffixFontFamily]
         ),
-        'font-weight': customAttr.indicator.suffixIsBolder ? 'bold' : 'normal',
-        'font-style': customAttr.indicator.suffixIsItalic ? 'italic' : 'normal',
-        'letter-spacing': customAttr.indicator.suffixLetterSpace + 'px',
-        'text-shadow': customAttr.indicator.suffixFontShadow ? '2px 2px 4px' : 'none',
+        'font-weight': indicator.suffixIsBolder ? 'bold' : 'normal',
+        'font-style': indicator.suffixIsItalic ? 'italic' : 'normal',
+        'letter-spacing': indicator.suffixLetterSpace + 'px',
+        'text-shadow': indicator.suffixFontShadow ? '2px 2px 4px' : 'none',
         'font-synthesis': 'weight style'
       }
 
-      showSuffix.value = customAttr.indicator.suffixEnable
-      suffixContent.value = defaultTo(customAttr.indicator.suffix, '')
+      showSuffix.value = indicator.suffixEnable
+      suffixContent.value = defaultTo(indicator.suffix, '')
     }
-    if (customAttr.indicatorName && customAttr.indicatorName.show) {
-      let nameColor = customAttr.indicatorName.color
-
-      if (customAttr.basicStyle && customAttr.basicStyle.alpha !== undefined) {
-        nameColor = hexColorToRGBA(customAttr.basicStyle.colors[2], customAttr.basicStyle.alpha)
-      }
+    if (indicatorName?.show) {
+      let nameColor = indicatorName.color
 
       indicatorNameShow.value = true
       indicatorNameClass.value = {
         color: nameColor,
-        'font-size': customAttr.indicatorName.fontSize + 'px',
+        'font-size': indicatorName.fontSize + 'px',
         'font-family': defaultTo(
-          CHART_CONT_FAMILY_MAP[customAttr.indicatorName.fontFamily],
-          DEFAULT_INDICATOR_NAME_STYLE.fontFamily
+          indicatorName.fontFamily,
+          CHART_FONT_FAMILY_MAP[DEFAULT_INDICATOR_NAME_STYLE.fontFamily]
         ),
-        'font-weight': customAttr.indicatorName.isBolder ? 'bold' : 'normal',
-        'font-style': customAttr.indicatorName.isItalic ? 'italic' : 'normal',
-        'letter-spacing': customAttr.indicatorName.letterSpace + 'px',
-        'text-shadow': customAttr.indicatorName.fontShadow ? '2px 2px 4px' : 'none',
+        'font-weight': indicatorName.isBolder ? 'bold' : 'normal',
+        'font-style': indicatorName.isItalic ? 'italic' : 'normal',
+        'letter-spacing': indicatorName.letterSpace + 'px',
+        'text-shadow': indicatorName.fontShadow ? '2px 2px 4px' : 'none',
         'font-synthesis': 'weight style'
       }
+      indicatorNameWrapperStyle['margin-top'] =
+        (indicatorName.nameValueSpacing ?? DEFAULT_INDICATOR_NAME_STYLE.nameValueSpacing) + 'px'
     } else {
       indicatorNameShow.value = false
     }
@@ -347,7 +362,7 @@ const calcData = (view, callback) => {
           chartData.value = res?.data as Partial<Chart['data']>
           emit('onDrillFilters', res?.drillFilters)
 
-          dvMainStore.setViewDataDetails(view.id, chartData.value)
+          dvMainStore.setViewDataDetails(view.id, res)
           renderChart(res)
         }
         callback?.()
@@ -356,9 +371,6 @@ const calcData = (view, callback) => {
         callback?.()
       })
   } else {
-    if (view.type === 'map') {
-      renderChart(view)
-    }
     callback?.()
   }
 }
@@ -375,7 +387,7 @@ defineExpose({
       <span :style="indicatorClass">{{ formattedResult }}</span>
       <span :style="indicatorSuffixClass" v-if="showSuffix">{{ suffixContent }}</span>
     </div>
-    <div v-if="indicatorNameShow">
+    <div :style="indicatorNameWrapperStyle" v-if="indicatorNameShow">
       <span :style="indicatorNameClass">{{ resultName }}</span>
     </div>
   </div>

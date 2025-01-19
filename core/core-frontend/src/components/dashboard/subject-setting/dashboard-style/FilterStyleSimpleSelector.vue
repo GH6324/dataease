@@ -4,7 +4,7 @@
       <div style="width: 100%; padding: 16px 8px 0">
         <el-row :gutter="8">
           <el-col :span="12">
-            <el-form-item class="form-item" label="标题水平位置">
+            <el-form-item class="form-item" :label="t('components.title_horizontal_position')">
               <el-tooltip effect="dark" placement="top">
                 <template #content>
                   {{ t('chart.text_pos_left') }}
@@ -14,7 +14,9 @@
                   @click="handleHorizontalChange('left')"
                   class="hover-icon"
                 >
-                  <Icon name="icon_left-align_outlined" />
+                  <Icon name="icon_left-align_outlined"
+                    ><icon_leftAlign_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </el-tooltip>
               <el-tooltip effect="dark" placement="top">
@@ -26,7 +28,9 @@
                   @click="handleHorizontalChange('center')"
                   class="hover-icon"
                 >
-                  <Icon name="icon_horizontal-align_outlined" />
+                  <Icon name="icon_horizontal-align_outlined"
+                    ><icon_horizontalAlign_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </el-tooltip>
               <el-tooltip effect="dark" placement="top">
@@ -38,13 +42,15 @@
                   @click="handleHorizontalChange('right')"
                   class="hover-icon"
                 >
-                  <Icon name="icon_right-align_outlined" />
+                  <Icon name="icon_right-align_outlined"
+                    ><icon_rightAlign_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </el-tooltip>
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item class="form-item" label="标题显示位置">
+            <el-form-item class="form-item" :label="t('components.title_display_position')">
               <el-tooltip effect="dark" placement="top">
                 <template #content>
                   {{ t('chart.text_pos_top') }}
@@ -54,7 +60,9 @@
                   @click="handleHorizontalChange('vertical', 'layout')"
                   class="hover-icon"
                 >
-                  <Icon name="icon_title-top-align_outlined" />
+                  <Icon name="icon_title-top-align_outlined"
+                    ><icon_titleTopAlign_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </el-tooltip>
               <el-tooltip effect="dark" placement="top">
@@ -66,13 +74,15 @@
                   @click="handleHorizontalChange('horizontal', 'layout')"
                   class="hover-icon"
                 >
-                  <Icon name="icon_title-left-align_outlined" />
+                  <Icon name="icon_title-left-align_outlined"
+                    ><icon_titleLeftAlign_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </el-tooltip>
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item class="form-item" label="标题颜色">
+            <el-form-item class="form-item" :label="t('components.title_color')">
               <el-color-picker
                 v-model="filterStyle.titleColor"
                 :trigger-width="197"
@@ -83,7 +93,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item class="form-item" label="标签颜色">
+            <el-form-item class="form-item" :label="t('components.label_color')">
               <el-color-picker
                 v-model="filterStyle.labelColor"
                 :trigger-width="197"
@@ -98,7 +108,7 @@
       </div>
 
       <el-collapse-item
-        title="输入框样式"
+        :title="t('components.input_box_style')"
         name="input_style_filter_selector"
         class="inner-collapse"
       >
@@ -145,6 +155,11 @@
 </template>
 
 <script setup lang="ts">
+import icon_leftAlign_outlined from '@/assets/svg/icon_left-align_outlined.svg'
+import icon_horizontalAlign_outlined from '@/assets/svg/icon_horizontal-align_outlined.svg'
+import icon_rightAlign_outlined from '@/assets/svg/icon_right-align_outlined.svg'
+import icon_titleTopAlign_outlined from '@/assets/svg/icon_title-top-align_outlined.svg'
+import icon_titleLeftAlign_outlined from '@/assets/svg/icon_title-left-align_outlined.svg'
 import { onMounted, reactive, computed } from 'vue'
 import { COLOR_PANEL } from '@/views/chart/components/editor/util/chart'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'

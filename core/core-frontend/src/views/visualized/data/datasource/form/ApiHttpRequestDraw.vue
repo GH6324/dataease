@@ -1,5 +1,6 @@
 <script lang="tsx" setup>
-import { nextTick, reactive, ref, shallowRef } from 'vue'
+import icon_expandRight_filled from '@/assets/svg/icon_expand-right_filled.svg'
+import { nextTick, reactive, ref, shallowRef, provide } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import type { FormInstance, FormRules } from 'element-plus-secondary'
 import { ElIcon, ElMessage } from 'element-plus-secondary'
@@ -12,24 +13,31 @@ import { checkApiItem } from '@/api/datasource'
 import { cloneDeep } from 'lodash-es'
 import { fieldType } from '@/utils/attr'
 import type { ApiConfiguration } from '@/views/visualized/data/datasource/form/option'
+import { cancelMap } from '@/config/axios/service'
+import { iconFieldMap } from '@/components/icon-group/field-list'
 
 export interface Field {
   name: string
+  length: number
   value: Array<{}>
   checked: boolean
+  primaryKey: boolean
   children?: Array<{}>
 }
 
 export interface ApiItem {
   status: string
   name: string
+  type: string
   deTableName?: string
   url: string
+  copy: boolean
   method: string
   request: ApiRequest
   fields: Field[]
   jsonFields: JsonField[]
   useJsonPath: boolean
+  apiQueryTimeout: number
   showApiStructure: boolean
   jsonPath: string
   serialNumber: number
@@ -41,6 +49,8 @@ export interface JsonField {
   children: null
   name: string
   checked: false
+  primaryKey: false
+  length: string
   extField: number
   jsonPath: string
   type: string
@@ -55,10 +65,13 @@ const originFieldItem = reactive({
 })
 
 let apiItemList = reactive<ApiConfiguration[]>([])
+let paramsList = reactive<ApiConfiguration[]>([])
+let fields = reactive<Field[]>([])
 
 let apiItem = reactive<ApiItem>({
   status: '',
   name: '',
+  type: 'table',
   url: '',
   method: 'GET',
   request: {
@@ -80,20 +93,41 @@ let apiItem = reactive<ApiItem>({
   fields: [],
   jsonFields: [],
   useJsonPath: false,
+  apiQueryTimeout: 10,
   showApiStructure: false,
   jsonPath: '',
   serialNumber: -1
 })
 let errMsg = []
-const api_table_title = ref('datasource.data_table')
 const apiItemForm = ref()
 const showEmpty = ref(false)
 const edit_api_item = ref(false)
 const active = ref(1)
 const loading = ref(false)
+const formLoading = ref(false)
 const columns = shallowRef([])
+const valueList = shallowRef([])
 const tableData = shallowRef([])
 const apiItemBasicInfo = ref<FormInstance>()
+const isSupportSetKey = ref(false)
+const isNumber = (rule, value, callback) => {
+  if (!value) {
+    callback(new Error(t('datasource.please_input_query_timeout')))
+    return
+  }
+  let isNumber = false
+  var reg = /^\d+$/
+  isNumber = reg.test(value)
+  if (!isNumber) {
+    callback(new Error(t('datasource.please_input_query_timeout')))
+    return
+  }
+  if (value <= 0 || value > 300) {
+    callback(new Error(t('datasource.please_input_query_timeout')))
+    return
+  }
+  callback()
+}
 const rule = reactive<FormRules>({
   name: [
     {
@@ -108,10 +142,17 @@ const rule = reactive<FormRules>({
       trigger: 'blur'
     }
   ],
+  apiQueryTimeout: [
+    {
+      required: true,
+      validator: isNumber,
+      trigger: ['blur', 'change']
+    }
+  ],
   url: [
     {
       required: true,
-      message: '请输入请求地址',
+      message: t('data_source.the_request_address'),
       trigger: 'blur'
     }
   ],
@@ -122,9 +163,28 @@ const rule = reactive<FormRules>({
     }
   ]
 })
-
-const initApiItem = (val: ApiItem, apiList) => {
-  apiItemList = apiList
+const activeName = ref('table')
+const editItem = ref(false)
+const copyItem = ref(false)
+const copyDs = ref(false)
+provide('api-active-name', activeName)
+const initApiItem = (val: ApiItem, from, name, edit, supportSetKey) => {
+  copyItem.value = val.copy
+  copyDs.value = from.copy
+  isSupportSetKey.value = supportSetKey
+  activeName.value = name
+  editItem.value = edit
+  apiItemList = from.apiConfiguration
+  fields = val.fields
+  if (from.paramsConfiguration) {
+    paramsList = from.paramsConfiguration
+  }
+  valueList.value = []
+  if (val.type !== 'params' && paramsList) {
+    for (let i = 0; i < paramsList.length; i++) {
+      valueList.value = valueList.value.concat(paramsList[i].fields)
+    }
+  }
   Object.assign(apiItem, val)
   edit_api_item.value = true
   active.value = 0
@@ -137,10 +197,16 @@ const showApiData = () => {
   apiItemBasicInfo.value.validate(valid => {
     if (valid) {
       const data = Base64.encode(JSON.stringify(apiItem))
+      const params = Base64.encode(JSON.stringify(paramsList))
       loading.value = true
-      checkApiItem({ data: data, type: 'apiStructure' }).then(response => {
-        originFieldItem.jsonFields = response.data.jsonFields
-      })
+      cancelMap['/datasource/checkApiDatasource']?.()
+      checkApiItem({ data: data, type: 'apiStructure', paramsList: params })
+        .then(response => {
+          originFieldItem.jsonFields = response.data.jsonFields
+        })
+        .catch(error => {
+          console.warn(error?.message)
+        })
       loading.value = false
     } else {
       return false
@@ -168,14 +234,84 @@ const fieldOptions = [
 ]
 const disabledNext = ref(false)
 const saveItem = () => {
-  if (apiItem.fields.length === 0) {
+  if (apiItem.type !== 'params' && apiItem.fields.length === 0) {
     ElMessage.error(t('datasource.api_field_not_empty'))
     return
   }
+  if (apiItem.type === 'params') {
+    for (let i = 0; i < apiItem.fields.length; i++) {
+      for (let j = 0; j < paramsList.length; j++) {
+        for (let k = 0; k < paramsList[j].fields.length; k++) {
+          if (
+            apiItem.fields[i].name === paramsList[j].fields[k].name &&
+            apiItem.serialNumber !== paramsList[j].serialNumber
+          ) {
+            ElMessage.error(t('data_source.name_already_exists') + apiItem.fields[i].name)
+            return
+          }
+        }
+      }
+    }
+  }
+
   for (let i = 0; i < apiItem.fields.length - 1; i++) {
     for (let j = i + 1; j < apiItem.fields.length; j++) {
       if (apiItem.fields[i].name === apiItem.fields[j].name) {
         ElMessage.error(apiItem.fields[i].name + ', ' + t('datasource.has_repeat_field_name'))
+        return
+      }
+    }
+  }
+  if (editItem.value) {
+    let msg = ''
+    for (let i = 0; i < apiItem.fields.length; i++) {
+      if (apiItem.fields[i].primaryKey) {
+        let find = false
+        for (let j = 0; j < fields.length; j++) {
+          if (fields[j].name === apiItem.fields[i].name && fields[j].primaryKey) {
+            find = true
+          }
+        }
+        if (!find) {
+          msg = msg + ' ' + apiItem.fields[i].name
+        }
+      }
+    }
+    for (let i = 0; i < fields.length; i++) {
+      if (fields[i].primaryKey) {
+        let find = false
+        for (let j = 0; j < apiItem.fields.length; j++) {
+          if (fields[i].name === apiItem.fields[j].name && apiItem.fields[j].primaryKey) {
+            find = true
+          }
+        }
+        if (!find) {
+          msg = msg + ' ' + fields[i].name
+        }
+      }
+    }
+    if (msg !== '' && !(copyDs.value || copyItem.value)) {
+      ElMessage.error(t('datasource.primary_key_change') + msg)
+      return
+    }
+    for (let i = 0; i < apiItem.fields.length; i++) {
+      if (
+        apiItem.fields[i].primaryKey &&
+        !apiItem.fields[i].length &&
+        apiItem.fields[i].deExtractType === 0
+      ) {
+        ElMessage.error(t('datasource.primary_key_length') + apiItem.fields[i].name)
+        return
+      }
+    }
+  } else {
+    for (let i = 0; i < apiItem.fields.length; i++) {
+      if (
+        apiItem.fields[i].primaryKey &&
+        !apiItem.fields[i].length &&
+        apiItem.fields[i].deExtractType === 0
+      ) {
+        ElMessage.error(t('datasource.primary_key_length') + apiItem.fields[i].name)
         return
       }
     }
@@ -193,22 +329,48 @@ const next = () => {
         ElMessage.error(t('datasource.please_input_dataPath'))
         return
       }
-      for (let i = 0; i < apiItemList.length; i++) {
-        if (
-          apiItemList[i].name === apiItem.name &&
-          apiItem.serialNumber !== apiItemList[i].serialNumber
-        ) {
-          ElMessage.error(t('datasource.has_repeat_name'))
-          return
+      if (apiItem.type === 'params') {
+        for (let i = 0; i < paramsList.length; i++) {
+          if (
+            paramsList[i].name === apiItem.name &&
+            apiItem.serialNumber !== paramsList[i].serialNumber
+          ) {
+            ElMessage.error(t('data_source.name_already_exists_de'))
+            return
+          }
+        }
+      } else {
+        for (let i = 0; i < apiItemList.length; i++) {
+          if (
+            apiItemList[i].name === apiItem.name &&
+            apiItem.serialNumber !== apiItemList[i].serialNumber
+          ) {
+            ElMessage.error(t('datasource.has_repeat_name'))
+            return
+          }
         }
       }
-      checkApiItem({ data: Base64.encode(JSON.stringify(apiItem)) }).then(response => {
-        apiItem.jsonFields = response.data.jsonFields
-        apiItem.fields = []
-        handleFiledChange(apiItem)
-        previewData()
-        active.value += 1
-      })
+
+      cancelMap['/datasource/checkApiDatasource']?.()
+
+      const params = Base64.encode(JSON.stringify(paramsList))
+      disabledNext.value = true
+      formLoading.value = true
+      checkApiItem({ data: Base64.encode(JSON.stringify(apiItem)), paramsList: params })
+        .then(response => {
+          disabledNext.value = false
+          formLoading.value = false
+          apiItem.jsonFields = response.data.jsonFields
+          apiItem.fields = []
+          handleFiledChange(apiItem)
+          previewData()
+          active.value += 1
+        })
+        .catch(error => {
+          disabledNext.value = false
+          formLoading.value = false
+          console.warn(error?.message)
+        })
     }
   })
 }
@@ -220,7 +382,9 @@ const validate = () => {
         ElMessage.error(t('datasource.please_input_dataPath'))
         return
       }
-      checkApiItem({ data: Base64.encode(JSON.stringify(apiItem)) })
+      cancelMap['/datasource/checkApiDatasource']?.()
+      const params = Base64.encode(JSON.stringify(paramsList))
+      checkApiItem({ data: Base64.encode(JSON.stringify(apiItem)), paramsList: params })
         .then(response => {
           apiItem.jsonFields = response.data.jsonFields
           apiItem.fields = []
@@ -229,12 +393,13 @@ const validate = () => {
           ElMessage.success(t('datasource.validate_success'))
         })
         .catch(() => {
-          ElMessage.error('校验失败')
+          ElMessage.error(t('data_source.verification_failed'))
         })
     }
   })
 }
 const closeEditItem = () => {
+  cancelMap['/datasource/checkApiDatasource']?.()
   edit_api_item.value = false
 }
 
@@ -243,6 +408,47 @@ const disabledByChildren = item => {
     return true
   } else {
     return false
+  }
+}
+
+const disabledFieldLength = item => {
+  if (item.hasOwnProperty('children') && item.children.length > 0) {
+    return true
+  } else {
+    return item.deExtractType !== 0
+  }
+}
+
+const disabledSetKey = item => {
+  if (item.hasOwnProperty('children') && item.children.length > 0) {
+    return true
+  }
+  if (copyItem.value || copyDs.value) {
+    return false
+  }
+  if (editItem.value) {
+    return true
+  }
+  if (!item.checked) {
+    return true
+  }
+  return false
+}
+
+const disabledChangeFieldByChildren = item => {
+  if (apiItem.type == 'params') {
+    return true
+  }
+  if (item.hasOwnProperty('children') && item.children.length > 0) {
+    return true
+  } else {
+    return false
+  }
+}
+
+const deExtractTypeChange = item => {
+  if (item.deExtractType !== 0) {
+    item.length = ''
   }
 }
 const previewData = () => {
@@ -261,8 +467,8 @@ const previewData = () => {
   for (let i = 0; i < apiItem.fields.length; i++) {
     for (let j = 0; j < apiItem.fields[i].value.length; j++) {
       data[j][apiItem.fields[i].name] = apiItem.fields[i].value[j]
-      data[j]['id'] = apiItem.fields[i].name
     }
+
     columnTmp.push({
       key: apiItem.fields[i].name,
       dataKey: apiItem.fields[i].name,
@@ -340,10 +546,12 @@ defineExpose({
 
 <template>
   <el-drawer
-    :title="t(api_table_title)"
+    :title="
+      activeName === 'table' ? t('datasource.data_table') : t('data_source.interface_parameters')
+    "
     v-model="edit_api_item"
     custom-class="api-datasource-drawer"
-    size="840px"
+    size="1000px"
     :before-close="closeEditItem"
     direction="rtl"
   >
@@ -365,7 +573,11 @@ defineExpose({
               <span class="icon">
                 {{ active <= 1 ? '2' : '' }}
               </span>
-              <span class="title">{{ t('datasource.api_step_2') }}</span>
+              <span class="title">{{
+                activeName === 'table'
+                  ? t('datasource.api_step_2')
+                  : t('data_source.extract_parameters')
+              }}</span>
             </div>
           </template>
         </el-step>
@@ -380,6 +592,7 @@ defineExpose({
         label-width="100px"
         require-asterisk-position="right"
         :rules="rule"
+        v-loading="formLoading"
       >
         <div class="title-form_primary base-info">
           <span>{{ t('datasource.base_info') }}</span>
@@ -416,15 +629,20 @@ defineExpose({
             <span>{{ t('datasource.req_param') }}</span>
           </div>
           <!-- HTTP 请求参数 -->
-          <el-form-item>
+          <el-form-item class="line-height_18">
             <api-http-request-form
               v-if="edit_api_item"
               :request="apiItem.request"
+              :value-list="valueList"
               @changeId="changeId"
             />
           </el-form-item>
         </div>
-
+        <el-form-item :label="$t('datasource.query_timeout')" prop="apiQueryTimeout">
+          <el-input v-model="apiItem.apiQueryTimeout" autocomplete="off" type="number" :min="0">
+            <template v-slot:append>{{ $t('chart.second') }}</template>
+          </el-input>
+        </el-form-item>
         <div class="title-form_primary request-info">
           <span>{{ t('datasource.isUseJsonPath') }}</span>
         </div>
@@ -445,7 +663,9 @@ defineExpose({
               </el-select>
             </template>
             <template #append>
-              <el-button @click="showApiData">查看数据结构 </el-button>
+              <el-button @click="showApiData"
+                >{{ t('data_source.view_data_structure') }}
+              </el-button>
             </template>
           </el-input>
         </el-form-item>
@@ -483,7 +703,9 @@ defineExpose({
           @click="activeColumnInfo = !activeColumnInfo"
         >
           <el-icon style="font-size: 10px">
-            <Icon name="icon_expand-right_filled"></Icon>
+            <Icon name="icon_expand-right_filled"
+              ><icon_expandRight_filled class="svg-icon"
+            /></Icon>
           </el-icon>
           <span class="name">{{ t('datasource.column_info') }}</span>
         </p>
@@ -498,8 +720,7 @@ defineExpose({
               class-name="checkbox-table"
               prop="originName"
               :label="t('datasource.parse_filed')"
-              :show-overflow-tooltip="true"
-              width="255"
+              width="200"
             >
               <template #default="scope">
                 <el-checkbox
@@ -508,7 +729,12 @@ defineExpose({
                   :disabled="apiItem.useJsonPath"
                   @change="handleCheckAllChange(scope.row)"
                 >
-                  {{ scope.row.originName }}
+                  <span
+                    :title="scope.row.originName"
+                    class="ellipsis"
+                    style="display: inline-block; max-width: 80px"
+                    >{{ scope.row.originName }}</span
+                  >
                 </el-checkbox>
               </template>
             </el-table-column>
@@ -523,19 +749,27 @@ defineExpose({
               </template>
             </el-table-column>
 
-            <el-table-column prop="deExtractType" :label="t('datasource.field_type')">
+            <el-table-column
+              prop="deExtractType"
+              :label="t('datasource.field_type')"
+              :disabled="apiItem.type === 'params'"
+            >
               <template #default="scope">
                 <el-select
                   v-model="scope.row.deExtractType"
-                  :disabled="disabledByChildren(scope.row)"
+                  :disabled="disabledChangeFieldByChildren(scope.row)"
                   class="select-type"
                   style="display: inline-block; width: 120px"
+                  @change="deExtractTypeChange(scope.row)"
                 >
                   <template #prefix>
                     <el-icon>
-                      <Icon
-                        :name="`field_${fieldType[scope.row.deType]}`"
-                        :className="`field-icon-${fieldType[scope.row.deType]}`"
+                      <Icon :className="`field-icon-${fieldType[scope.row.deExtractType]}`"
+                        ><component
+                          class="svg-icon"
+                          :class="`field-icon-${fieldType[scope.row.deExtractType]}`"
+                          :is="iconFieldMap[fieldType[scope.row.deExtractType]]"
+                        ></component
                       ></Icon>
                     </el-icon>
                   </template>
@@ -547,9 +781,12 @@ defineExpose({
                   >
                     <span style="float: left">
                       <el-icon>
-                        <Icon
-                          :name="`field_${fieldType[scope.row.deType]}`"
-                          :className="`field-icon-${fieldType[scope.row.deType]}`"
+                        <Icon :className="`field-icon-${fieldType[item.value]}`"
+                          ><component
+                            class="svg-icon"
+                            :class="`field-icon-${fieldType[item.value]}`"
+                            :is="iconFieldMap[fieldType[item.value]]"
+                          ></component
                         ></Icon>
                       </el-icon>
                     </span>
@@ -560,6 +797,44 @@ defineExpose({
                 </el-select>
               </template>
             </el-table-column>
+
+            <el-table-column
+              prop="length"
+              :label="t('datasource.length')"
+              v-if="apiItem.type !== 'params'"
+            >
+              <template #default="scope">
+                <el-input-number
+                  :disabled="disabledFieldLength(scope.row)"
+                  v-model="scope.row.length"
+                  autocomplete="off"
+                  step-strictly
+                  class="text-left edit-all-line"
+                  :min="1"
+                  :max="512"
+                  :placeholder="t('common.inputText')"
+                  controls-position="right"
+                  type="number"
+                />
+              </template>
+            </el-table-column>
+
+            <el-table-column
+              prop="primaryKey"
+              class-name="checkbox-table"
+              :label="t('datasource.set_key')"
+              v-if="apiItem.type !== 'params' && isSupportSetKey"
+              width="100"
+            >
+              <template #default="scope">
+                <el-checkbox
+                  :key="scope.row.jsonPath"
+                  v-model="scope.row.primaryKey"
+                  :disabled="disabledSetKey(scope.row)"
+                >
+                </el-checkbox>
+              </template>
+            </el-table-column>
           </el-table>
         </div>
         <p
@@ -567,14 +842,20 @@ defineExpose({
           @click="activeDataPreview = !activeDataPreview"
         >
           <el-icon style="font-size: 10px">
-            <Icon name="icon_expand-right_filled"></Icon>
+            <Icon name="icon_expand-right_filled"
+              ><icon_expandRight_filled class="svg-icon"
+            /></Icon>
           </el-icon>
           <span class="name">{{ t('datasource.data_preview') }}</span>
         </p>
-        <div v-show="activeDataPreview" class="info-table">
+        <div
+          v-show="activeDataPreview"
+          class="info-table"
+          :style="{ height: Math.min(tableData.length, 20) * 40 + 'px' }"
+        >
           <empty-background
             v-if="showEmpty"
-            description="暂无数据，请在数据结构勾选字段"
+            :description="t('data_source.the_data_structure')"
             img-type="select"
           />
           <el-auto-resizer v-else>
@@ -693,13 +974,19 @@ defineExpose({
   .ed-form {
     width: 100%;
 
-    .ed-form-item {
+    .ed-form-item:not(.is-error) {
       margin-bottom: 16px;
     }
   }
 
   .base-info {
     margin: 24px 0 16px 0;
+  }
+
+  .line-height_18 {
+    .ed-form-item__content {
+      line-height: 18px;
+    }
   }
 
   .request-info {
@@ -725,8 +1012,7 @@ defineExpose({
   }
 
   .info-table {
-    max-height: 300px;
-    height: 200px;
+    min-height: 300px;
     .ed-table-v2__header-cell {
       background-color: #f5f6f7;
     }
@@ -739,7 +1025,7 @@ defineExpose({
     cursor: pointer;
     .name {
       color: #1f2329;
-      font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+      font-family: var(--de-custom_font, 'PingFang');
       font-size: 16px;
       font-style: normal;
       font-weight: 500;

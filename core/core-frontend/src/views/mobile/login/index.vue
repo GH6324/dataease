@@ -1,7 +1,11 @@
 <script lang="ts" setup>
+import icon_invisible_outlined from '@/assets/svg/icon_invisible_outlined.svg'
+import icon_visible_outlined from '@/assets/svg/icon_visible_outlined.svg'
 import { ref } from 'vue'
 import VanCellGroup from 'vant/es/cell-group'
+import mobileWholeBg from '@/assets/img/bg-mobile.png'
 import mobileDeTop from '@/assets/img/mobile-de-top.png'
+import { useAppearanceStoreWithOut } from '@/store/modules/appearance'
 import { showToast } from 'vant'
 import { loginApi, queryDekey } from '@/api/login'
 import { useAppStoreWithOut } from '@/store/modules/app'
@@ -12,6 +16,7 @@ import { rsaEncryp } from '@/utils/encryption'
 import VanForm from 'vant/es/form'
 import VanField from 'vant/es/field'
 import VanButton from 'vant/es/button'
+import { XpackComponent } from '@/components/plugin'
 import 'vant/es/button/style'
 import 'vant/es/toast/style'
 import 'vant/es/field/style'
@@ -22,10 +27,17 @@ const { wsCache } = useCache()
 const appStore = useAppStoreWithOut()
 const userStore = useUserStoreWithOut()
 const router = useRouter()
+const appearanceStore = useAppearanceStoreWithOut()
 
 const username = ref('')
 const password = ref('')
 const duringLogin = ref(false)
+
+const xpackLoadFail = ref(false)
+const xpackInvalidPwd = ref()
+const mfaRef = ref()
+const showMfa = ref(false)
+const mfaData = ref({ enabled: false, ready: false, uid: '', origin: 0 })
 
 const checkUsername = value => {
   if (!value) {
@@ -55,9 +67,44 @@ const inputFocus = ref('')
 const handleFocus = val => {
   inputFocus.value = val
 }
+const mobileLogin = ref('')
+const mobileLoginBg = ref('')
+const loadAppearance = () => {
+  if (appearanceStore.getMobileLogin) {
+    mobileLogin.value = appearanceStore.getMobileLogin
+  }
 
+  if (appearanceStore.getMobileLoginBg) {
+    mobileLoginBg.value = appearanceStore.getMobileLoginBg
+  }
+}
+loadAppearance()
 const handleBlur = () => {
   inputFocus.value = ''
+}
+
+const invalidPwdCb = cbParam => {
+  const val = cbParam['status']
+  duringLogin.value = !!val
+  if (val) {
+    const mfa = cbParam['mfa']
+    if (mfa?.enabled) {
+      for (const key in mfa) {
+        mfaData.value[key] = mfa[key]
+      }
+      showMfa.value = true
+      duringLogin.value = false
+      return
+    }
+    router.push({ path: '/index' })
+  }
+}
+
+const closeMfa = () => {
+  showMfa.value = false
+}
+const mfaSuccess = () => {
+  router.push({ path: '/index' })
 }
 const onSubmit = async () => {
   if (!checkUsername(username.value) || !validatePwd(password.value)) {
@@ -77,9 +124,27 @@ const onSubmit = async () => {
   duringLogin.value = true
   loginApi(param)
     .then(res => {
-      const { token, exp } = res.data
+      const { token, exp, mfa } = res.data
+      if (!xpackLoadFail.value && xpackInvalidPwd.value?.invokeMethod) {
+        const param = {
+          methodName: 'init',
+          args: res.data
+        }
+        xpackInvalidPwd?.value.invokeMethod(param)
+        return
+      }
+      showMfa.value = false
+      if (mfa?.enabled) {
+        for (const key in mfa) {
+          mfaData.value[key] = mfa[key]
+        }
+        showMfa.value = true
+        duringLogin.value = false
+        return
+      }
       userStore.setToken(token)
       userStore.setExp(exp)
+      userStore.setTime(Date.now())
       router.push({ path: '/index' })
     })
     .catch(() => {
@@ -101,8 +166,9 @@ const usernameEndValidate = ({ status, message }) => {
 
 <template>
   <div class="de-mobile-login" v-loading="duringLogin">
+    <img class="mobile-login_bg" :src="mobileLoginBg ? mobileLoginBg : mobileWholeBg" alt="" />
     <div class="mobile-login-content">
-      <img width="120" height="31" :src="mobileDeTop" alt="" />
+      <img width="120" height="31" :src="mobileLogin ? mobileLogin : mobileDeTop" alt="" />
       <div class="mobile-login-welcome">用户登录</div>
       <van-form @submit="onSubmit">
         <van-cell-group inset>
@@ -135,8 +201,12 @@ const usernameEndValidate = ({ status, message }) => {
           >
             <template #right-icon>
               <el-icon>
-                <Icon v-if="visible" name="icon_invisible_outlined"></Icon>
-                <Icon v-else name="icon_visible_outlined"></Icon>
+                <Icon v-if="visible" name="icon_invisible_outlined"
+                  ><icon_invisible_outlined class="svg-icon"
+                /></Icon>
+                <Icon v-else name="icon_visible_outlined"
+                  ><icon_visible_outlined class="svg-icon"
+                /></Icon>
               </el-icon>
             </template>
           </van-field>
@@ -148,6 +218,20 @@ const usernameEndValidate = ({ status, message }) => {
       </van-form>
     </div>
   </div>
+  <XpackComponent
+    ref="xpackInvalidPwd"
+    jsname="L2NvbXBvbmVudC9sb2dpbi9JbnZhbGlkUHdk"
+    @load-fail="() => (xpackLoadFail = true)"
+    @call-back="invalidPwdCb"
+  />
+  <XpackComponent
+    ref="mfaRef"
+    v-if="showMfa"
+    :mfa-data="mfaData"
+    jsname="L2NvbXBvbmVudC9sb2dpbi9NZmFTdGVw"
+    @close="closeMfa"
+    @success="mfaSuccess"
+  />
 </template>
 
 <style lang="less">
@@ -157,7 +241,13 @@ const usernameEndValidate = ({ status, message }) => {
   position: relative;
   background-size: contain;
   background-repeat: no-repeat;
-  background-image: url(../../../assets/img/bg-mobile.png);
+
+  .mobile-login_bg {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    z-index: 1;
+  }
 
   .mobile-login-content {
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, #ffffff 58.86%);
@@ -170,6 +260,7 @@ const usernameEndValidate = ({ status, message }) => {
     width: 100%;
     height: 70%;
     padding: 24px 16px;
+    z-index: 10;
     --van-cell-group-inset-padding: 0;
     --van-cell-group-inset-radius: 0;
     --van-cell-group-background: transparent;

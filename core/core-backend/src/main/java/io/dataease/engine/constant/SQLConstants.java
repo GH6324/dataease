@@ -47,7 +47,9 @@ public class SQLConstants {
 
     public static final String FIELD_NAME = "%s.`%s`";
 
-    public static final String FIELD_DOT = "`%s`";
+    public static final String FIELD_DOT = "%s";
+
+    public static final String FIELD_DOT_FIX = "`%s`";
 
     public static final String UNIX_TIMESTAMP = "DE_UNIX_TIMESTAMP(%s)";
 
@@ -63,13 +65,15 @@ public class SQLConstants {
 
     public static final String DEFAULT_DATE_FORMAT = "yyyy-MM-dd HH:mm:ss";
 
-    public static final String DEFAULT_INT_FORMAT = "DECIMAL(18,0)";
+    public static final String DEFAULT_INT_FORMAT = "DECIMAL(19,0)";
 
     public static final String DEFAULT_FLOAT_FORMAT = "DECIMAL(26,8)";
 
     public static final String WHERE_VALUE_NULL = "(NULL,'')";
 
     public static final String WHERE_VALUE_VALUE = "'%s'";
+
+    public static final String WHERE_VALUE_VALUE_CH = "'-DENS-%s'";
 
     public static final String WHERE_NUMBER_VALUE = "%s";
 
@@ -94,4 +98,8 @@ public class SQLConstants {
     public static final String QUARTER = "QUARTER(%s)";
 
     public static final String EMPTY_SIGN = "_empty_$";
+
+    public static final String CONCAT = "CONCAT(%s, %s)";
+
+    public static final String MSSQL_N_PREFIX = "-DENS-";
 }

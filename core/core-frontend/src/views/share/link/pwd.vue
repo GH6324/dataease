@@ -15,7 +15,8 @@
                 <el-form-item label="" prop="password">
                   <CustomPassword
                     v-model="form.password"
-                    maxlength="4"
+                    maxlength="10"
+                    minlength="4"
                     show-password
                     class="real-input"
                     :placeholder="t('pblink.input_placeholder')"
@@ -49,6 +50,8 @@ import { rsaEncryp } from '@/utils/encryption'
 import { useCache } from '@/hooks/web/useCache'
 import { queryDekey } from '@/api/login'
 import { CustomPassword } from '@/components/custom-password'
+import { useRoute } from 'vue-router'
+const route = useRoute()
 const { wsCache } = useCache()
 const appStore = useAppStoreWithOut()
 
@@ -64,7 +67,7 @@ const rule = reactive<FormRules>({
     { required: true, message: t('pblink.key_pwd'), trigger: 'blur' },
     {
       required: true,
-      pattern: /^[a-zA-Z0-9]{4}$/,
+      pattern: /^[A-Za-z\d!@#$%^&*()_+]{4,10}$/,
       message: t('pblink.pwd_format_error'),
       trigger: 'blur'
     }
@@ -75,15 +78,9 @@ const refresh = async (formEl: FormInstance | undefined) => {
   if (!formEl) return
   await formEl.validate((valid, fields) => {
     if (valid) {
-      const curLocation = window.location.href
-      const paramIndex = curLocation.indexOf('?')
-      const uuidIndex = curLocation.indexOf('de-link/') + 8
-      const uuid = curLocation.substring(
-        uuidIndex,
-        paramIndex !== -1 ? paramIndex : curLocation.length
-      )
+      const uuid = route.params.uuid
       const pwd = form.value.password
-      const text = uuid + pwd
+      const text = `${uuid},${pwd}`
       const ciphertext = rsaEncryp(text)
       request.post({ url: '/share/validate', data: { ciphertext } }).then(res => {
         if (res.data) {
@@ -127,7 +124,6 @@ onMounted(() => {
   -o-user-select: none;
   user-select: none;
   color: #3d4d66;
-  // font: normal 12px Helvetica Neue,Arial,PingFang SC,Hiragino Sans GB,Microsoft YaHei,微软雅黑,Heiti,黑体,sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-decoration: none;

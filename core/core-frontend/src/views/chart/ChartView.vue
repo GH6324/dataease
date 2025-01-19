@@ -1,10 +1,18 @@
 <script lang="ts" setup>
-import { shallowRef, defineAsyncComponent, ref, onBeforeUnmount, onBeforeMount } from 'vue'
+import {
+  shallowRef,
+  defineAsyncComponent,
+  ref,
+  onBeforeUnmount,
+  onBeforeMount,
+  nextTick
+} from 'vue'
 import { debounce } from 'lodash-es'
 import { XpackComponent } from '@/components/plugin'
+import { useEmitt } from '@/hooks/web/useEmitt'
 
 const currentComponent = shallowRef()
-
+const Preview = defineAsyncComponent(() => import('@/views/data-visualization/PreviewCanvas.vue'))
 const VisualizationEditor = defineAsyncComponent(
   () => import('@/views/data-visualization/index.vue')
 )
@@ -20,16 +28,21 @@ const ScreenPanel = defineAsyncComponent(() => import('@/views/data-visualizatio
 const DashboardPanel = defineAsyncComponent(
   () => import('@/views/dashboard/DashboardPreviewShow.vue')
 )
+const Copilot = defineAsyncComponent(() => import('@/views/copilot/index.vue'))
+
+const AsyncXpackComponent = defineAsyncComponent(() => import('@/components/plugin/src/index.vue'))
 
 const componentMap = {
   DashboardEditor,
   VisualizationEditor,
   ViewWrapper,
+  Preview,
   Dashboard,
   Dataset,
   Datasource,
   ScreenPanel,
-  DashboardPanel
+  DashboardPanel,
+  Copilot
 }
 const iframeStyle = ref(null)
 const setStyle = debounce(() => {
@@ -46,9 +59,36 @@ onBeforeMount(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', setStyle)
 })
+
+const showComponent = ref(false)
+const dataFillingPath = ref('')
+
 const initIframe = (name: string) => {
-  currentComponent.value = componentMap[name || 'ViewWrapper']
+  showComponent.value = false
+  if (name && name.includes('DataFilling')) {
+    if (name === 'DataFilling') {
+      dataFillingPath.value = 'L21lbnUvZGF0YS9kYXRhLWZpbGxpbmcvbWFuYWdlL2luZGV4'
+    } else if (name === 'DataFillingEditor') {
+      dataFillingPath.value = 'L21lbnUvZGF0YS9kYXRhLWZpbGxpbmcvbWFuYWdlL2Zvcm0vaW5kZXg='
+    } else if (name === 'DataFillingHandler') {
+      dataFillingPath.value = 'L21lbnUvZGF0YS9kYXRhLWZpbGxpbmcvZmlsbC9UYWJQYW5lVGFibGU='
+    }
+    nextTick(() => {
+      currentComponent.value = AsyncXpackComponent
+      showComponent.value = true
+    })
+  } else {
+    nextTick(() => {
+      currentComponent.value = componentMap[name || 'ViewWrapper']
+      showComponent.value = true
+    })
+  }
 }
+
+useEmitt({
+  name: 'changeCurrentComponent',
+  callback: initIframe
+})
 </script>
 
 <template>
@@ -57,6 +97,6 @@ const initIframe = (name: string) => {
     @init-iframe="initIframe"
   />
   <div :style="iframeStyle">
-    <component :is="currentComponent"></component>
+    <component :is="currentComponent" :jsname="dataFillingPath" v-if="showComponent"></component>
   </div>
 </template>

@@ -8,8 +8,12 @@
     />
     <div v-else class="pic-upload">
       <span
-        ><el-button @click="uploadImg" text style="color: #646a73" icon="Plus"
-          >请上传图片...</el-button
+        ><el-button
+          @click="uploadImg"
+          text
+          style="font-family: inherit; color: #646a73"
+          icon="Plus"
+          >{{ t('visualization.pic_upload_tips') }}</el-button
         ></span
       >
     </div>
@@ -20,6 +24,9 @@
 import { CSSProperties, computed, nextTick, toRefs } from 'vue'
 import { imgUrlTrans } from '@/utils/imgUtils'
 import eventBus from '@/utils/eventBus'
+import { useI18n } from '@/hooks/web/useI18n'
+const { t } = useI18n()
+
 const props = defineProps({
   propValue: {
     type: String,
@@ -36,7 +43,7 @@ const props = defineProps({
   }
 })
 
-const { propValue } = toRefs(props)
+const { propValue, element } = toRefs(props)
 
 const imageAdapter = computed(() => {
   const style = {
@@ -44,9 +51,14 @@ const imageAdapter = computed(() => {
     width: '100%',
     height: '100%'
   }
+  if (element.value.style.adaptation === 'original') {
+    style.width = 'auto'
+    style.height = 'auto'
+  } else if (element.value.style.adaptation === 'equiratio') {
+    style.height = 'auto'
+  }
   return style as CSSProperties
 })
-
 const uploadImg = () => {
   nextTick(() => {
     eventBus.emit('uploadImg')

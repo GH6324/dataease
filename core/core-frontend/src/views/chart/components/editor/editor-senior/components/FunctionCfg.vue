@@ -54,7 +54,14 @@ const init = () => {
   }
 }
 const showIgnoreOption = computed(() => {
-  return !equalsAny(props.chart.type, 'table-pivot', 'table-info', 'indicator')
+  return !(
+    equalsAny(props.chart.type, 'table-pivot', 'table-info', 'indicator') ||
+    props.chart.type.includes('chart-mix')
+  )
+})
+
+const isRichText = computed(() => {
+  return equalsAny(props.chart.type, 'rich-text')
 })
 
 const showEmptyDataFieldCtrl = computed(() => {
@@ -86,6 +93,9 @@ const initFieldCtrl = () => {
     })
   }
 }
+const isCirclePacking = computed(() => {
+  return equalsAny(props.chart.type, 'circle-packing')
+})
 onMounted(() => {
   init()
 })
@@ -93,7 +103,7 @@ onMounted(() => {
 
 <template>
   <div @keydown.stop @keyup.stop style="width: 100%">
-    <el-form ref="functionForm" :model="state.functionForm" label-position="top">
+    <el-form ref="functionForm" :model="state.functionForm" label-position="top" @submit.prevent>
       <div v-if="showProperty('slider')">
         <el-form-item class="form-item form-item-checkbox" :class="'form-item-' + themes">
           <el-checkbox
@@ -185,13 +195,31 @@ onMounted(() => {
           @change="changeFunctionCfg"
         >
           <el-radio :effect="themes" :label="'breakLine'">
-            {{ t('chart.break_line') }}
+            {{ isRichText ? t('visualization.set_as_tips') + '"-"' : t('chart.break_line') }}
           </el-radio>
-          <el-radio :effect="themes" :label="'setZero'">{{ t('chart.set_zero') }}</el-radio>
-          <el-radio v-if="showIgnoreOption" :effect="themes" :label="'ignoreData'">
-            {{ t('chart.ignore_data') }}
+          <el-radio v-if="isRichText" :effect="themes" :label="'custom'">
+            {{ t('visualization.custom') }}
           </el-radio>
+          <template v-if="!isRichText">
+            <el-radio v-if="!isCirclePacking" :effect="themes" :label="'setZero'">{{
+              t('chart.set_zero')
+            }}</el-radio>
+            <el-radio v-if="showIgnoreOption" :effect="themes" :label="'ignoreData'">
+              {{ t('chart.ignore_data') }}
+            </el-radio>
+          </template>
         </el-radio-group>
+      </el-form-item>
+      <el-form-item>
+        <el-input
+          :effect="themes"
+          v-if="state.functionForm.emptyDataStrategy === 'custom'"
+          v-model="state.functionForm['emptyDataCustomValue']"
+          class="value-item"
+          @change="changeFunctionCfg"
+          placeholder="请输入自定义值"
+          clearable
+        />
       </el-form-item>
       <el-form-item
         v-if="showEmptyDataFieldCtrl"

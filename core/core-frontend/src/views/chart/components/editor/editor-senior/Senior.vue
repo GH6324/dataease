@@ -1,26 +1,43 @@
 <script lang="ts" setup>
+import icon_deleteTrash_outlined from '@/assets/svg/icon_delete-trash_outlined.svg'
+import icon_edit_outlined from '@/assets/svg/icon_edit_outlined.svg'
 import { useI18n } from '@/hooks/web/useI18n'
 import FunctionCfg from '@/views/chart/components/editor/editor-senior/components/FunctionCfg.vue'
 import ScrollCfg from '@/views/chart/components/editor/editor-senior/components/ScrollCfg.vue'
 import AssistLine from '@/views/chart/components/editor/editor-senior/components/AssistLine.vue'
 import Threshold from '@/views/chart/components/editor/editor-senior/components/Threshold.vue'
+import MapMapping from '@/views/chart/components/editor/editor-senior/components/MapMapping.vue'
 import CollapseSwitchItem from '@/components/collapse-switch-item/src/CollapseSwitchItem.vue'
 import { useAppStoreWithOut } from '@/store/modules/app'
 import { computed, PropType, ref, toRefs, watch } from 'vue'
 import LinkJumpSet from '@/components/visualization/LinkJumpSet.vue'
 import LinkageSet from '@/components/visualization/LinkageSet.vue'
 import { canvasSave } from '@/utils/canvasUtils'
-import { updateJumpSetActive } from '@/api/visualization/linkJump'
+import {
+  queryVisualizationJumpInfo,
+  removeJumpSet,
+  updateJumpSetActive
+} from '@/api/visualization/linkJump'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
-import { updateLinkageActive } from '@/api/visualization/linkage'
+import {
+  getPanelAllLinkageInfo,
+  removeLinkage,
+  updateLinkageActive
+} from '@/api/visualization/linkage'
 import { includesAny } from '../util/StringUtils'
-import { ElIcon, ElMessage } from 'element-plus-secondary'
+import { ElCollapseItem, ElIcon, ElMessage } from 'element-plus-secondary'
 import { storeToRefs } from 'pinia'
 import { BASE_VIEW_CONFIG } from '../util/chart'
 import { cloneDeep, defaultsDeep } from 'lodash-es'
+import BubbleAnimateCfg from '@/views/chart/components/editor/editor-senior/components/BubbleAnimateCfg.vue'
+import { XpackComponent } from '@/components/plugin'
+import CarouselSetting from '@/custom-component/common/CarouselSetting.vue'
+import { Icon } from 'vant'
+import CommonEvent from '@/custom-component/common/CommonEvent.vue'
 const dvMainStore = dvMainStoreWithOut()
 
-const { nowPanelTrackInfo, nowPanelJumpInfo, dvInfo } = storeToRefs(dvMainStore)
+const { nowPanelTrackInfo, nowPanelJumpInfo, dvInfo, componentData, curComponent, batchOptStatus } =
+  storeToRefs(dvMainStore)
 
 const { t } = useI18n()
 const linkJumpRef = ref(null)
@@ -35,7 +52,9 @@ const emit = defineEmits([
   'onFunctionCfgChange',
   'onAssistLineChange',
   'onScrollCfgChange',
-  'onThresholdChange'
+  'onThresholdChange',
+  'onMapMappingChange',
+  'onBubbleAnimateChange'
 ])
 
 const props = defineProps({
@@ -44,6 +63,10 @@ const props = defineProps({
     required: true
   },
   quotaData: {
+    type: Array,
+    required: true
+  },
+  quotaExtData: {
     type: Array,
     required: true
   },
@@ -68,6 +91,10 @@ const props = defineProps({
     default: () => {
       return {}
     }
+  },
+  eventInfo: {
+    type: Object,
+    required: false
   }
 })
 
@@ -97,6 +124,14 @@ const seniorCounts = computed(() => {
   }
 })
 
+const eventsShow = computed(() => {
+  return (
+    !batchOptStatus.value &&
+    ['indicator', 'rich-text'].includes(chart.value.type) &&
+    props.eventInfo
+  )
+})
+
 const onFunctionCfgChange = val => {
   emit('onFunctionCfgChange', val)
 }
@@ -113,13 +148,21 @@ const onThresholdChange = val => {
   emit('onThresholdChange', val)
 }
 
+const onMapMappingChange = val => {
+  emit('onMapMappingChange', val)
+}
+
+const onBubbleAnimateChange = val => {
+  emit('onBubbleAnimateChange', val)
+}
+
 const showProperties = (prop: EditorProperty) => {
   return properties?.value?.includes(prop)
 }
 
 const linkJumpSetOpen = () => {
   if (!dvInfo.value.id) {
-    ElMessage.warning('请先保存当前页面')
+    ElMessage.warning(t('visualization.save_page_tips'))
     return
   }
   //跳转设置需要先触发保存
@@ -129,7 +172,7 @@ const linkJumpSetOpen = () => {
 }
 const linkageSetOpen = () => {
   if (!dvInfo.value.id) {
-    ElMessage.warning('请先保存当前页面')
+    ElMessage.warning(t('visualization.save_page_tips'))
     return
   }
   //跳转设置需要先触发保存
@@ -145,10 +188,14 @@ const SENIOR_PROP: EditorProperty[] = [
   'scroll-cfg',
   'threshold',
   'jump-set',
-  'linkage'
+  'linkage',
+  'bubble-animate'
 ]
+const excludeTypeList = ['chart-mix', 'chart-mix-stack', 'chart-mix-group']
 const noSenior = computed(() => {
-  return !includesAny(properties.value, ...SENIOR_PROP)
+  return (
+    !includesAny(properties.value, ...SENIOR_PROP) && excludeTypeList.includes(chart.value.type)
+  )
 })
 
 const linkJumpActiveChange = () => {
@@ -174,6 +221,24 @@ const linkageActiveChange = () => {
 }
 const appStore = useAppStoreWithOut()
 const isDataEaseBi = computed(() => appStore.getIsDataEaseBi)
+
+const removeLinkageSenior = () => {
+  removeLinkage({ dvId: dvInfo.value.id, sourceViewId: chart.value.id }).then(rsp => {
+    // 刷新联动信息
+    getPanelAllLinkageInfo(dvInfo.value.id).then(rsp => {
+      dvMainStore.setNowPanelTrackInfo(rsp.data)
+    })
+  })
+}
+
+const removeJumpSenior = () => {
+  removeJumpSet({ sourceDvId: dvInfo.value.id, sourceViewId: chart.value.id }).then(rspCur => {
+    // 刷新跳转信息
+    queryVisualizationJumpInfo(dvInfo.value.id).then(rsp => {
+      dvMainStore.setNowPanelJumpInfo(rsp.data)
+    })
+  })
+}
 </script>
 
 <template>
@@ -196,6 +261,21 @@ const isDataEaseBi = computed(() => appStore.getIsDataEaseBi)
             />
           </el-collapse-item>
 
+          <el-collapse-item
+            :effect="themes"
+            v-if="showProperties('map-mapping')"
+            name="mapMapping"
+            :title="t('chart.place_name_mapping')"
+            @modelChange="onFunctionCfgChange"
+          >
+            <map-mapping
+              :themes="themes"
+              :chart="props.chart"
+              :property-inner="propertyInnerAll['function-cfg']"
+              @onMapMappingChange="onMapMappingChange"
+            />
+          </el-collapse-item>
+
           <collapse-switch-item
             :effect="themes"
             :title="t('chart.assist_line')"
@@ -209,6 +289,7 @@ const isDataEaseBi = computed(() => appStore.getIsDataEaseBi)
               :chart="props.chart"
               :themes="themes"
               :quota-data="props.quotaData"
+              :quota-ext-data="props.quotaExtData"
               :property-inner="propertyInnerAll['assist-line']"
               @onAssistLineChange="onAssistLineChange"
             />
@@ -248,38 +329,62 @@ const isDataEaseBi = computed(() => appStore.getIsDataEaseBi)
             />
           </collapse-switch-item>
 
+          <xpack-component
+            v-if="chart.id"
+            :chart="chart"
+            :themes="themes"
+            :is-screen="dvInfo.type === 'dataV'"
+            jsname="L2NvbXBvbmVudC90aHJlc2hvbGQtd2FybmluZy9TZW5pb3JIYW5kbGVy"
+          />
+
           <collapse-switch-item
             v-if="showProperties('linkage')"
             :themes="themes"
             name="linkage"
-            :title="'联动设置'"
+            :title="t('visualization.linkage_setting')"
             v-model="chart.linkageActive"
             @modelChange="linkageActiveChange"
           >
             <div class="inner-container">
-              <span class="label" :class="'label-' + props.themes">联动设置</span>
+              <span class="label" :class="'label-' + props.themes">{{
+                t('visualization.linkage_setting')
+              }}</span>
               <span class="right-btns">
                 <template v-if="seniorCounts.linkageCount > 0">
                   <span class="set-text-info" :class="{ 'set-text-info-dark': themes === 'dark' }">
-                    已设置
+                    {{ t('visualization.already_setting') }}
                   </span>
+                  <button
+                    :class="'label-' + props.themes"
+                    class="circle-button_icon"
+                    :title="t('chart.delete')"
+                    :style="{ margin: '0 8px' }"
+                    @click="removeLinkageSenior"
+                  >
+                    <el-icon>
+                      <Icon
+                        ><icon_deleteTrash_outlined
+                          :class="chart.linkageActive && 'primary-color'"
+                          class="svg-icon"
+                      /></Icon>
+                    </el-icon>
+                  </button>
                 </template>
-                <el-button
-                  class="circle-button font14"
-                  :title="t('chart.edit')"
+                <button
                   :class="'label-' + props.themes"
-                  text
-                  size="small"
-                  :style="{ width: '24px', marginLeft: '6px' }"
+                  class="circle-button_icon"
+                  :title="t('chart.edit')"
                   @click="linkageSetOpen"
                   :disabled="!chart.linkageActive"
                 >
-                  <template #icon>
-                    <el-icon size="14px">
-                      <Icon name="icon_edit_outlined" />
-                    </el-icon>
-                  </template>
-                </el-button>
+                  <el-icon>
+                    <Icon
+                      ><icon_edit_outlined
+                        :class="chart.linkageActive && 'primary-color'"
+                        class="svg-icon"
+                    /></Icon>
+                  </el-icon>
+                </button>
               </span>
             </div>
           </collapse-switch-item>
@@ -287,52 +392,82 @@ const isDataEaseBi = computed(() => appStore.getIsDataEaseBi)
             v-if="showProperties('jump-set') && !isDataEaseBi"
             :themes="themes"
             name="jumpSet"
-            :title="'跳转设置'"
+            :title="t('visualization.jump_set')"
             v-model="chart.jumpActive"
             @modelChange="linkJumpActiveChange"
           >
             <div class="inner-container">
-              <span class="label" :class="'label-' + props.themes">跳转设置</span>
+              <span class="label" :class="'label-' + props.themes">{{
+                t('visualization.jump_set')
+              }}</span>
               <span class="right-btns">
                 <template v-if="seniorCounts.jumpCount">
                   <span class="set-text-info" :class="{ 'set-text-info-dark': themes === 'dark' }">
-                    已设置
+                    {{ t('visualization.already_setting') }}
                   </span>
-                  <!--                  <el-button
-                    class="circle-button font14"
-                    :title="t('chart.delete')"
+                  <button
                     :class="'label-' + props.themes"
-                    text
-                    size="small"
-                    :style="{ width: '24px', marginLeft: '6px' }"
-                    @click="linkJumpSetOpen"
+                    class="circle-button_icon"
+                    :title="t('chart.delete')"
+                    :style="{ margin: '0 8px' }"
+                    @click="removeJumpSenior"
                   >
-                    <template #icon>
-                      <el-icon size="14px">
-                        <Icon name="icon_delete-trash_outlined" />
-                      </el-icon>
-                    </template>
-                  </el-button>-->
+                    <el-icon>
+                      <Icon
+                        ><icon_deleteTrash_outlined
+                          :class="chart.jumpActive && 'primary-color'"
+                          class="svg-icon"
+                      /></Icon>
+                    </el-icon>
+                  </button>
                 </template>
-                <el-button
-                  class="circle-button font14"
-                  :title="t('chart.edit')"
+                <button
                   :class="'label-' + props.themes"
-                  text
-                  size="small"
-                  :style="{ width: '24px', marginLeft: '6px' }"
+                  class="circle-button_icon"
+                  :title="t('chart.edit')"
                   @click="linkJumpSetOpen"
                   :disabled="!chart.jumpActive"
                 >
-                  <template #icon>
-                    <el-icon size="14px">
-                      <Icon name="icon_edit_outlined" />
-                    </el-icon>
-                  </template>
-                </el-button>
+                  <el-icon>
+                    <Icon
+                      ><icon_edit_outlined
+                        :class="chart.jumpActive && 'primary-color'"
+                        class="svg-icon"
+                    /></Icon>
+                  </el-icon>
+                </button>
               </span>
             </div>
           </collapse-switch-item>
+          <collapse-switch-item
+            :effect="themes"
+            :title="t('visualization.bubble_dynamic_effect')"
+            :change-model="chart.senior.bubbleCfg"
+            v-if="showProperties('bubble-animate')"
+            v-model="chart.senior.bubbleCfg.enable"
+            name="bubbleAnimate"
+            @modelChange="onBubbleAnimateChange"
+          >
+            <bubble-animate-cfg
+              :themes="themes"
+              :chart="props.chart"
+              :property-inner="propertyInnerAll['bubble-animate']"
+              @onBubbleAnimateChange="onBubbleAnimateChange"
+            />
+          </collapse-switch-item>
+          <carousel-setting
+            v-if="curComponent?.innerType === 'picture-group'"
+            :element="curComponent"
+            :themes="themes"
+          ></carousel-setting>
+          <el-collapse-item
+            :effect="themes"
+            name="events"
+            :title="t('visualization.event')"
+            v-if="eventsShow"
+          >
+            <common-event :themes="themes" :events-info="eventInfo"></common-event>
+          </el-collapse-item>
         </el-collapse>
       </el-row>
     </div>
@@ -359,6 +494,9 @@ span {
   display: flex;
   height: 100%;
   width: 100%;
+  .attr-style {
+    width: 100%;
+  }
 }
 
 .prop {
@@ -389,23 +527,11 @@ span {
 }
 
 .label-dark {
-  font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+  font-family: var(--de-custom_font, 'PingFang');
   font-style: normal;
   font-weight: 400;
   line-height: 20px;
-  color: #a6a6a6 !important;
-  &.ed-button {
-    color: var(--ed-color-primary) !important;
-  }
-  &.is-disabled {
-    color: #5f5f5f !important;
-  }
-}
-
-.font14 {
-  :deep(.ed-icon) {
-    font-size: 14px;
-  }
+  color: #a6a6a6;
 }
 
 .inner-container {

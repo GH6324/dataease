@@ -1,9 +1,20 @@
 <script lang="ts" setup>
+import icon_bold_outlined from '@/assets/svg/icon_bold_outlined.svg'
+import icon_italic_outlined from '@/assets/svg/icon_italic_outlined.svg'
+import icon_leftAlignment_outlined from '@/assets/svg/icon_left-alignment_outlined.svg'
+import icon_centerAlignment_outlined from '@/assets/svg/icon_center-alignment_outlined.svg'
+import icon_rightAlignment_outlined from '@/assets/svg/icon_right-alignment_outlined.svg'
+import icon_info_outlined from '@/assets/svg/icon_info_outlined.svg'
 import { computed, onMounted, PropType, reactive, watch } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { COLOR_PANEL, DEFAULT_TABLE_CELL } from '@/views/chart/components/editor/util/chart'
 import { ElSpace } from 'element-plus-secondary'
 import { cloneDeep, defaultsDeep } from 'lodash-es'
+import { convertToAlphaColor, isAlphaColor } from '@/views/chart/components/js/util'
+import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
+import { storeToRefs } from 'pinia'
+const dvMainStore = dvMainStoreWithOut()
+const { mobileInPc } = storeToRefs(dvMainStore)
 
 const { t } = useI18n()
 
@@ -39,6 +50,12 @@ const fontSizeList = computed(() => {
       value: i
     })
   }
+  for (let i = 50; i <= 200; i = i + 10) {
+    arr.push({
+      name: i + '',
+      value: i
+    })
+  }
   return arr
 })
 
@@ -55,7 +72,21 @@ const changeTableCell = prop => {
 const init = () => {
   const tableCell = props.chart?.customAttr?.tableCell
   if (tableCell) {
+    tableCell.mergeCells = tableCell.mergeCells === undefined ? false : tableCell.mergeCells
     state.tableCellForm = defaultsDeep(cloneDeep(tableCell), cloneDeep(DEFAULT_TABLE_CELL))
+    const alpha = props.chart.customAttr.basicStyle.alpha
+    if (!isAlphaColor(state.tableCellForm.tableItemBgColor)) {
+      state.tableCellForm.tableItemBgColor = convertToAlphaColor(
+        state.tableCellForm.tableItemBgColor,
+        alpha
+      )
+    }
+    if (!isAlphaColor(state.tableCellForm.tableItemSubBgColor)) {
+      state.tableCellForm.tableItemSubBgColor = convertToAlphaColor(
+        state.tableCellForm.tableItemSubBgColor,
+        alpha
+      )
+    }
   }
 }
 const showProperty = prop => props.propertyInner?.includes(prop)
@@ -79,6 +110,7 @@ onMounted(() => {
         :trigger-width="108"
         v-model="state.tableCellForm.tableItemBgColor"
         :predefine="predefineColors"
+        show-alpha
         @change="changeTableCell('tableItemBgColor')"
       />
     </el-form-item>
@@ -107,6 +139,7 @@ onMounted(() => {
         :predefine="predefineColors"
         :disabled="!state.tableCellForm.enableTableCrossBG"
         is-custom
+        show-alpha
         @change="changeTableCell('tableItemSubBgColor')"
       />
     </el-form-item>
@@ -145,13 +178,60 @@ onMounted(() => {
           />
         </el-select>
       </el-form-item>
+    </el-space>
+    <el-space :class="{ 'mobile-style': mobileInPc }">
+      <el-form-item class="form-item" :class="'form-item-' + themes">
+        <el-checkbox
+          :effect="themes"
+          class="icon-checkbox"
+          v-model="state.tableCellForm.isBolder"
+          @change="changeTableCell('isBolder')"
+        >
+          <el-tooltip effect="dark" placement="top">
+            <template #content>
+              {{ t('chart.bolder') }}
+            </template>
+            <div
+              class="icon-btn"
+              :class="{ dark: themes === 'dark', active: state.tableCellForm.isBolder }"
+            >
+              <el-icon>
+                <Icon name="icon_bold_outlined"><icon_bold_outlined class="svg-icon" /></Icon>
+              </el-icon>
+            </div>
+          </el-tooltip>
+        </el-checkbox>
+      </el-form-item>
+
+      <el-form-item class="form-item" :class="'form-item-' + themes">
+        <el-checkbox
+          :effect="themes"
+          class="icon-checkbox"
+          v-model="state.tableCellForm.isItalic"
+          @change="changeTableCell('isItalic')"
+        >
+          <el-tooltip effect="dark" placement="top">
+            <template #content>
+              {{ t('chart.italic') }}
+            </template>
+            <div
+              class="icon-btn"
+              :class="{ dark: themes === 'dark', active: state.tableCellForm.isItalic }"
+            >
+              <el-icon>
+                <Icon name="icon_italic_outlined"><icon_italic_outlined class="svg-icon" /></Icon>
+              </el-icon>
+            </div>
+          </el-tooltip>
+        </el-checkbox>
+      </el-form-item>
+
+      <div class="position-divider" :class="'position-divider--' + themes"></div>
       <el-form-item
         class="form-item"
         :class="'form-item-' + themes"
         v-if="showProperty('tableItemAlign')"
       >
-        <template #label>&nbsp;</template>
-
         <el-radio-group
           class="icon-radio-group"
           v-model="state.tableCellForm.tableItemAlign"
@@ -170,7 +250,9 @@ onMounted(() => {
                 }"
               >
                 <el-icon>
-                  <Icon name="icon_left-alignment_outlined" />
+                  <Icon name="icon_left-alignment_outlined"
+                    ><icon_leftAlignment_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </div>
             </el-tooltip>
@@ -188,7 +270,9 @@ onMounted(() => {
                 }"
               >
                 <el-icon>
-                  <Icon name="icon_center-alignment_outlined" />
+                  <Icon name="icon_center-alignment_outlined"
+                    ><icon_centerAlignment_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </div>
             </el-tooltip>
@@ -206,7 +290,9 @@ onMounted(() => {
                 }"
               >
                 <el-icon>
-                  <Icon name="icon_right-alignment_outlined" />
+                  <Icon name="icon_right-alignment_outlined"
+                    ><icon_rightAlignment_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </div>
             </el-tooltip>
@@ -228,12 +314,138 @@ onMounted(() => {
             controls-position="right"
             v-model="state.tableCellForm.tableItemHeight"
             :min="20"
-            :max="100"
+            :max="1000"
             @change="changeTableCell('tableItemHeight')"
           />
         </el-form-item>
       </el-col>
     </el-row>
+    <el-form-item
+      class="form-item"
+      :class="'form-item-' + themes"
+      v-if="showProperty('tableFreeze')"
+    >
+      <el-checkbox
+        size="small"
+        :effect="themes"
+        :disabled="showProperty('mergeCells') && state.tableCellForm.mergeCells"
+        v-model="state.tableCellForm.tableFreeze"
+        @change="changeTableCell('tableFreeze')"
+      >
+        <span class="data-area-label">
+          <span style="margin-right: 4px">{{ t('chart.table_freeze') }}</span>
+          <el-tooltip
+            class="item"
+            effect="dark"
+            placement="bottom"
+            v-if="state.tableCellForm.mergeCells"
+          >
+            <template #content>
+              <div>{{ t('chart.table_freeze_tip') }}</div>
+            </template>
+            <el-icon class="hint-icon" :class="{ 'hint-icon--dark': themes === 'dark' }">
+              <Icon name="icon_info_outlined"><icon_info_outlined class="svg-icon" /></Icon>
+            </el-icon>
+          </el-tooltip>
+        </span>
+      </el-checkbox>
+    </el-form-item>
+    <el-row :gutter="8" v-if="showProperty('tableFreeze')">
+      <el-col :span="12">
+        <el-form-item
+          :label="t('chart.table_col_freeze_tip')"
+          class="form-item"
+          :class="'form-item-' + themes"
+          v-if="showProperty('tableColumnFreezeHead')"
+        >
+          <el-input-number
+            :effect="themes"
+            controls-position="right"
+            v-model="state.tableCellForm.tableColumnFreezeHead"
+            :disabled="
+              (showProperty('mergeCells') && state.tableCellForm.mergeCells) ||
+              !state.tableCellForm.tableFreeze
+            "
+            :min="0"
+            :max="100"
+            @change="changeTableCell('tableColumnFreezeHead')"
+          />
+        </el-form-item>
+      </el-col>
+      <el-col :span="12">
+        <el-form-item
+          :label="t('chart.table_row_freeze_tip')"
+          class="form-item"
+          :class="'form-item-' + themes"
+          v-if="showProperty('tableRowFreezeHead')"
+        >
+          <el-input-number
+            :effect="themes"
+            controls-position="right"
+            v-model="state.tableCellForm.tableRowFreezeHead"
+            :disabled="
+              (showProperty('mergeCells') && state.tableCellForm.mergeCells) ||
+              !state.tableCellForm.tableFreeze
+            "
+            :min="0"
+            :max="100"
+            @change="changeTableCell('tableRowFreezeHead')"
+          />
+        </el-form-item>
+      </el-col>
+    </el-row>
+    <el-form-item
+      class="form-item"
+      :class="'form-item-' + themes"
+      v-if="showProperty('mergeCells')"
+    >
+      <el-checkbox
+        size="small"
+        :effect="themes"
+        v-model="state.tableCellForm.mergeCells"
+        @change="changeTableCell('mergeCells')"
+      >
+        <span class="data-area-label">
+          <span style="margin-right: 4px">{{ t('chart.merge_cells') }}</span>
+          <el-tooltip class="item" effect="dark" placement="bottom">
+            <template #content>
+              <div>{{ t('chart.merge_cells_tips') }}</div>
+            </template>
+            <el-icon class="hint-icon" :class="{ 'hint-icon--dark': themes === 'dark' }">
+              <Icon name="icon_info_outlined"><icon_info_outlined class="svg-icon" /></Icon>
+            </el-icon>
+          </el-tooltip>
+        </span>
+      </el-checkbox>
+    </el-form-item>
+    <el-form-item
+      class="form-item"
+      :class="'form-item-' + themes"
+      v-if="showProperty('showHorizonBorder')"
+    >
+      <el-checkbox
+        size="small"
+        :effect="themes"
+        v-model="state.tableCellForm.showHorizonBorder"
+        @change="changeTableCell('showHorizonBorder')"
+      >
+        {{ t('chart.table_cell_show_horizon_border') }}
+      </el-checkbox>
+    </el-form-item>
+    <el-form-item
+      class="form-item"
+      :class="'form-item-' + themes"
+      v-if="showProperty('showVerticalBorder')"
+    >
+      <el-checkbox
+        size="small"
+        :effect="themes"
+        v-model="state.tableCellForm.showVerticalBorder"
+        @change="changeTableCell('showVerticalBorder')"
+      >
+        {{ t('chart.table_cell_show_vertical_border') }}
+      </el-checkbox>
+    </el-form-item>
   </el-form>
 </template>
 
@@ -286,5 +498,35 @@ onMounted(() => {
   :deep(.ed-radio__label) {
     padding: 0;
   }
+}
+.position-divider {
+  width: 1px;
+  height: 18px;
+  margin-bottom: 8px;
+  background: rgba(31, 35, 41, 0.15);
+
+  &.position-divider--dark {
+    background: rgba(235, 235, 235, 0.15);
+  }
+}
+.icon-checkbox {
+  :deep(.ed-checkbox__input) {
+    display: none;
+  }
+  :deep(.ed-checkbox__label) {
+    padding: 0;
+  }
+}
+
+.mobile-style {
+  margin-top: 25px;
+}
+.data-area-label {
+  text-align: left;
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
 }
 </style>

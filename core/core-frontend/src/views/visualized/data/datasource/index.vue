@@ -1,19 +1,61 @@
 <script lang="tsx" setup>
-import { computed, reactive, ref, shallowRef, nextTick, watch, onMounted } from 'vue'
+import icon_down_outlined1 from '@/assets/svg/icon_down_outlined-1.svg'
+import icon_down_outlined from '@/assets/svg/icon_down_outlined.svg'
+import icon_copy_filled from '@/assets/svg/icon_copy_filled.svg'
+import icon_dataset from '@/assets/svg/icon_dataset.svg'
+import icon_deleteTrash_outlined from '@/assets/svg/icon_delete-trash_outlined.svg'
+import icon_intoItem_outlined from '@/assets/svg/icon_into-item_outlined.svg'
+import { debounce } from 'lodash-es'
+import icon_rename_outlined from '@/assets/svg/icon_rename_outlined.svg'
+import icon_warning_colorful_red from '@/assets/svg/icon_warning_colorful_red.svg'
+import dvFolder from '@/assets/svg/dv-folder.svg'
+import dvNewFolder from '@/assets/svg/dv-new-folder.svg'
+import icon_fileAdd_outlined from '@/assets/svg/icon_file-add_outlined.svg'
+import icon_searchOutline_outlined from '@/assets/svg/icon_search-outline_outlined.svg'
+import dvSortAsc from '@/assets/svg/dv-sort-asc.svg'
+import dvSortDesc from '@/assets/svg/dv-sort-desc.svg'
+import icon_add_outlined from '@/assets/svg/icon_add_outlined.svg'
+import icon_info_outlined from '@/assets/svg/icon_info_outlined.svg'
+import icon_dataset_outlined from '@/assets/svg/icon_dataset_outlined.svg'
+import icon_newItem_outlined from '@/assets/svg/icon_new-item_outlined.svg'
+import icon_describe_outlined from '@/assets/svg/icon_describe_outlined.svg'
+import icon_edit_outlined from '@/assets/svg/icon_edit_outlined.svg'
+import icon_succeed_filled from '@/assets/svg/icon_succeed_filled.svg'
+import icon_close_filled from '@/assets/svg/icon_close_filled.svg'
+import icon_replace_outlined from '@/assets/svg/icon_replace_outlined.svg'
+import iconMaybe_outlined from '@/assets/svg/icon-maybe_outlined.svg'
+import { computed, h, unref, reactive, ref, shallowRef, nextTick, watch, onMounted } from 'vue'
 import { dsTypes } from '@/views/visualized/data/datasource/form/option'
 import type { TabPaneName, ElMessageBoxOptions } from 'element-plus-secondary'
-import { ElIcon, ElMessageBox, ElMessage, ElScrollbar, ElAside } from 'element-plus-secondary'
+import {
+  ElIcon,
+  ElButton,
+  ElMessageBox,
+  ElMessage,
+  ElScrollbar,
+  ElAside
+} from 'element-plus-secondary'
+import { treeDraggble } from '@/utils/treeDraggble'
 import GridTable from '@/components/grid-table/src/GridTable.vue'
 import ArrowSide from '@/views/common/DeResourceArrow.vue'
+import relationChart from '@/components/relation-chart/index.vue'
 import { HandleMore } from '@/components/handle-more'
 import { Icon } from '@/components/icon-custom'
 import { fieldType } from '@/utils/attr'
-import { listSyncRecord, uploadFile } from '@/api/datasource'
+import { useEmitt } from '@/hooks/web/useEmitt'
+import {
+  getHidePwById,
+  listSyncRecord,
+  uploadFile,
+  perDeleteDatasource,
+  getSimpleDs,
+  supportSetKey
+} from '@/api/datasource'
 import CreatDsGroup from './form/CreatDsGroup.vue'
 import type { Tree } from '../dataset/form/CreatDsGroup.vue'
 import { previewData, getById } from '@/api/datasource'
 import { useI18n } from '@/hooks/web/useI18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import DatasetDetail from '@/views/visualized/data/dataset/DatasetDetail.vue'
 import { timestampFormatDate } from '@/views/visualized/data/dataset/form/util'
 import EmptyBackground from '@/components/empty-background/src/EmptyBackground.vue'
@@ -30,7 +72,6 @@ import {
   syncApiDs,
   syncApiTable
 } from '@/api/datasource'
-import { Base64 } from 'js-base64'
 import type { SyncSetting, Node } from './form/option'
 import EditorDatasource from './form/index.vue'
 import ExcelInfo from './ExcelInfo.vue'
@@ -41,6 +82,16 @@ import type { BusiTreeNode, BusiTreeRequest } from '@/models/tree/TreeNode'
 import { useMoveLine } from '@/hooks/web/useMoveLine'
 import { cloneDeep } from 'lodash-es'
 import { interactiveStoreWithOut } from '@/store/modules/interactive'
+import treeSort from '@/utils/treeSortUtils'
+import { useCache } from '@/hooks/web/useCache'
+import { useEmbedded } from '@/store/modules/embedded'
+import { XpackComponent } from '@/components/plugin'
+import { iconFieldMap } from '@/components/icon-group/field-list'
+import { iconDatasourceMap } from '@/components/icon-group/datasource-list'
+import { querySymmetricKey } from '@/api/login'
+import { symmetricDecrypt } from '@/utils/encryption'
+import { isFreeFolder } from '@/utils/utils'
+const route = useRoute()
 const interactiveStore = interactiveStoreWithOut()
 interface Field {
   fieldShortName: string
@@ -49,7 +100,7 @@ interface Field {
   originName: string
   deType: number
 }
-
+const { wsCache } = useCache()
 const { t } = useI18n()
 const router = useRouter()
 const appStore = useAppStoreWithOut()
@@ -61,6 +112,7 @@ const state = reactive({
     pageSize: 10,
     total: 0
   },
+  curSortType: 'time_desc',
   filterTable: []
 })
 
@@ -73,8 +125,16 @@ const recordState = reactive({
 })
 const isDataEaseBi = computed(() => appStore.getIsDataEaseBi)
 const isIframe = computed(() => appStore.getIsIframe)
-
+const embedded = useEmbedded()
 const createDataset = (tableName?: string) => {
+  if (isDataEaseBi.value) {
+    embedded.clearState()
+    embedded.setDatasourceId(nodeInfo.id as string)
+    embedded.setTableName(tableName)
+    useEmitt().emitter.emit('changeCurrentComponent', 'DatasetEditor')
+    return
+  }
+  wsCache.set('ds-info-id', nodeInfo.id)
   router.push({
     path: '/dataset-form',
     query: {
@@ -88,31 +148,32 @@ const { width, node } = useMoveLine('DATASOURCE')
 
 const dsTableDetail = reactive({
   tableName: '',
-  remark: ''
+  name: ''
 })
 const rootManage = ref(false)
 const nickName = ref('')
 const dsName = ref('')
 const userDrawer = ref(false)
 const rawDatasourceList = ref([])
-const showPriority = ref(true)
+const showPriority = ref(false)
+const showSSH = ref(true)
 const datasourceEditor = ref()
 const activeTab = ref('')
 const menuList = [
   {
-    label: '移动到',
-    svgName: 'icon_into-item_outlined',
+    label: t('chart.move_to'),
+    svgName: icon_intoItem_outlined,
     command: 'move'
   },
   {
-    label: '重命名',
-    svgName: 'icon_rename_outlined',
+    label: t('data_set.rename'),
+    svgName: icon_rename_outlined,
     command: 'rename'
   },
   {
-    label: '删除',
+    label: t('common.delete'),
     divided: true,
-    svgName: 'icon_delete-trash_outlined',
+    svgName: icon_deleteTrash_outlined,
     command: 'delete'
   }
 ]
@@ -123,24 +184,19 @@ const typeMap = dsTypes.reduce((pre, next) => {
 }, {})
 
 const datasetTypeList = computed(() => {
-  const list = [
+  return [
     {
-      label: '新建数据源',
-      svgName: 'icon_dataset',
+      label: t('datasource.create'),
+      svgName: icon_dataset,
       command: 'datasource'
     },
     {
-      label: '新建文件夹',
+      label: t('deDataset.new_folder'),
       divided: true,
-      svgName: 'dv-folder',
+      svgName: dvFolder,
       command: 'folder'
     }
   ]
-  if (isDataEaseBi.value) {
-    list.shift()
-    list[0].divided = false
-  }
-  return list
 })
 
 const dsTableDataLoading = ref(false)
@@ -157,6 +213,18 @@ const selectDataset = row => {
     })
 }
 
+const originResourceTree = shallowRef([])
+
+const handleSortTypeChange = sortType => {
+  state.datasourceTree = treeSort(originResourceTree.value, sortType)
+  state.curSortType = sortType
+  wsCache.set('TreeSort-datasource', state.curSortType)
+}
+
+const sortTypeChange = sortType => {
+  state.datasourceTree = treeSort(originResourceTree.value, sortType)
+  state.curSortType = sortType
+}
 const handleSizeChange = pageSize => {
   state.paginationConfig.currentPage = 1
   state.paginationConfig.pageSize = pageSize
@@ -192,10 +260,11 @@ const generateColumns = (arr: Field[]) =>
     headerCellRenderer: ({ column }) => (
       <div class="flex-align-center">
         <ElIcon style={{ marginRight: '6px' }}>
-          <Icon
-            name={`field_${fieldType[column.deType]}`}
-            className={`field-icon-${fieldType[column.deType]}`}
-          ></Icon>
+          <Icon className={`field-icon-${fieldType[column.deType]}`}>
+            {h(iconFieldMap[fieldType[column.deType]], {
+              class: `svg-icon field-icon-${fieldType[column.deType]}`
+            })}
+          </Icon>
         </ElIcon>
         <span class="ellipsis" title={column.title} style={{ width: '120px' }}>
           {column.title}
@@ -219,46 +288,52 @@ const handleLoadExcel = data => {
 }
 
 const validateDS = () => {
-  validateById(nodeInfo.id as number).then(res => {
-    if (res.data.type === 'API') {
-      let error = 0
-      const status = JSON.parse(res.data.status)
-      for (let i = 0; i < status.length; i++) {
-        if (status[i].status === 'Error') {
-          error++
-        }
-        for (let i = 0; i < nodeInfo.apiConfiguration.length; i++) {
-          if (nodeInfo.apiConfiguration[i].name === status[i].name) {
-            nodeInfo.apiConfiguration[i].status = status[i].status
+  let nodeTmpInfo = reactive<Node>(cloneDeep(defaultInfo))
+  Object.assign(nodeTmpInfo, cloneDeep(nodeInfo))
+  validateById(nodeTmpInfo.id as number)
+    .then(res => {
+      if (res.data.type === 'API') {
+        let error = 0
+        const dsStatus = JSON.parse(res.data.status)
+        for (let i = 0; i < dsStatus.length; i++) {
+          if (dsStatus[i].status === 'Error') {
+            error++
+          }
+          for (let i = 0; i < nodeTmpInfo.apiConfiguration.length; i++) {
+            if (nodeInfo.apiConfiguration[i].name === dsStatus[i].name) {
+              nodeInfo.apiConfiguration[i].status = dsStatus[i].status
+            }
           }
         }
-      }
-      if (error === 0) {
-        ElMessage.success('校验成功')
+        if (error === 0) {
+          changeDsStatus(state.datasourceTree, nodeTmpInfo.id, Math.abs(nodeTmpInfo.extraFlag))
+          ElMessage.success(t('data_source.verification_successful'))
+        } else {
+          changeDsStatus(state.datasourceTree, nodeTmpInfo.id, -Math.abs(nodeTmpInfo.extraFlag))
+          ElMessage.error(t('data_source.verification_failed'))
+        }
       } else {
-        ElMessage.error('校验失败')
+        changeDsStatus(state.datasourceTree, nodeTmpInfo.id, Math.abs(nodeTmpInfo.extraFlag))
+        ElMessage.success(t('data_source.verification_successful'))
       }
-    } else {
-      ElMessage.success('校验成功')
-    }
-  })
+    })
+    .catch(() => {
+      changeDsStatus(state.datasourceTree, nodeTmpInfo.id, -Math.abs(nodeTmpInfo.extraFlag))
+    })
 }
 
 const dialogErrorInfo = ref(false)
 const dialogMsg = ref('')
 
 const formatSimpleCron = (info?: SyncSetting) => {
-  const { syncRate, simpleCronValue, simpleCronType, startTime, endTime, cron, endLimit } = info
+  const { syncRate, simpleCronValue, simpleCronType, startTime, endTime, cron } = info
   let start = '-'
   let end = '-'
   if (startTime) {
     start = dayjs(new Date(startTime)).format('YYYY-MM-DD HH:mm:ss')
   }
-  if (endLimit === '1' && endTime) {
+  if (endTime) {
     end = dayjs(new Date(endTime)).format('YYYY-MM-DD HH:mm:ss')
-  }
-  if (endLimit === '0') {
-    end = '无限制'
   }
   let strArr = []
   switch (syncRate) {
@@ -273,7 +348,9 @@ const formatSimpleCron = (info?: SyncSetting) => {
     case 'SIMPLE_CRON':
       const type = t(`common.${simpleCronType}`)
       strArr.push(
-        `${t('dataset.simple_cron')}: ${t('common.every')}${simpleCronValue}${type}更新一次`
+        `${t('dataset.simple_cron')}: ${t('common.every')}${simpleCronValue}${type}${t(
+          'data_source.update_once'
+        )}`
       )
       strArr.push(`${t('dataset.start_time')}: ${start}`)
       strArr.push(`${t('dataset.end_time')}: ${end}`)
@@ -290,9 +367,32 @@ const showErrorInfo = info => {
   dialogErrorInfo.value = true
 }
 
+const pluginDs = ref([])
+const loadDsPlugin = data => {
+  pluginDs.value = data
+  pluginDs.value.forEach(ele => {
+    typeMap[ele.type] = ele.name
+  })
+}
+const getDsIcon = data => {
+  if (pluginDs?.value.length === 0) return null
+  if (!data.leaf) return null
+
+  const arr = pluginDs.value.filter(ele => {
+    return ele.type === data.type
+  })
+  return arr && arr.length > 0 ? arr[0].icon : null
+}
+const getDsIconType = type => {
+  const arr = pluginDs.value.filter(ele => {
+    return ele.type === type
+  })
+  return arr && arr.length > 0 ? arr[0].icon : null
+}
+
 const getDsIconName = data => {
-  if (!data.leaf) return 'dv-folder'
-  return `${data.type}-ds`
+  if (!data.leaf) return dvFolder
+  return iconDatasourceMap[data.type]
 }
 
 const handleTabClick = tab => {
@@ -304,7 +404,9 @@ const tabList = shallowRef([])
 
 const initSearch = () => {
   handleCurrentChange(1)
-  state.filterTable = tableData.value.filter(ele => ele.tableName.includes(nickName.value))
+  state.filterTable = tableData.value.filter(ele =>
+    ele.tableName.toLowerCase().includes(nickName.value.toLowerCase())
+  )
   state.paginationConfig.total = state.filterTable.length
 }
 
@@ -327,7 +429,9 @@ const defaultInfo = {
   configuration: null,
   syncSetting: null,
   apiConfiguration: [],
-  weight: 0
+  weight: 0,
+  enableDataFill: false,
+  extraFlag: 0
 }
 const nodeInfo = reactive<Node>(cloneDeep(defaultInfo))
 const infoList = computed(() => {
@@ -338,21 +442,21 @@ const infoList = computed(() => {
 })
 const saveDsFolder = (params, successCb, finallyCb, cmd) => {
   let method = move
-  let message = '移动成功'
+  let message = t('data_set.moved_successfully')
 
   switch (cmd) {
     case 'move':
       method = move
-      message = '移动成功'
+      message = t('data_set.moved_successfully')
 
       break
     case 'rename':
       method = reName
-      message = '重命名成功'
+      message = t('data_set.rename_successful')
       break
     default:
       method = createFolder
-      message = '新建成功'
+      message = t('data_source.create_successfully')
       break
   }
   method(params)
@@ -370,10 +474,14 @@ const saveDsFolder = (params, successCb, finallyCb, cmd) => {
 
 const dsLoading = ref(false)
 const mounted = ref(false)
+const isSupportSetKey = ref(false)
+const symmetricKey = ref('')
 
 const listDs = () => {
   rawDatasourceList.value = []
   dsLoading.value = true
+  let curSortType = sortList[Number(wsCache.get('TreeSort-backend')) ?? 1].value
+  curSortType = wsCache.get('TreeSort-datasource') ?? curSortType
   const request = { busiFlag: 'datasource' } as BusiTreeRequest
   interactiveStore
     .setInteractive(request)
@@ -382,9 +490,13 @@ const listDs = () => {
       if (nodeData.length && nodeData[0]['id'] === '0' && nodeData[0]['name'] === 'root') {
         rootManage.value = nodeData[0]['weight'] >= 7
         state.datasourceTree = nodeData[0]['children'] || []
+        originResourceTree.value = cloneDeep(unref(state.datasourceTree))
+        sortTypeChange(curSortType)
         return
       }
+      originResourceTree.value = cloneDeep(unref(state.datasourceTree))
       state.datasourceTree = nodeData
+      sortTypeChange(curSortType)
     })
     .finally(() => {
       mounted.value = true
@@ -394,8 +506,33 @@ const listDs = () => {
       if (!!id) {
         Object.assign(nodeInfo, cloneDeep(defaultInfo))
         dfsDatasourceTree(state.datasourceTree, id)
+        setTimeout(() => {
+          dsListTree.value.setCurrentKey(nodeInfo.id, true)
+        }, 100)
       }
     })
+}
+
+const setSupportSetKey = () => {
+  supportSetKey()
+    .then(response => {
+      isSupportSetKey.value = response.data
+    })
+    .catch(error => {
+      console.warn(error?.message)
+    })
+}
+const changeDsStatus = (ds, id, extraFlag) => {
+  ds.some(ele => {
+    if (ele.id === id) {
+      ele.extraFlag = extraFlag
+      return true
+    }
+    if (!!ele.children?.length) {
+      changeDsStatus(ele.children, id, extraFlag)
+    }
+    return false
+  })
 }
 
 const dfsDatasourceTree = (ds, id) => {
@@ -411,10 +548,30 @@ const dfsDatasourceTree = (ds, id) => {
   })
 }
 
-listDs()
-
 const creatDsFolder = ref()
+const sortList = [
+  {
+    name: t('visualization.time_asc'),
+    value: 'time_asc'
+  },
+  {
+    name: t('visualization.time_desc'),
+    value: 'time_desc',
+    divided: true
+  },
+  {
+    name: t('visualization.name_asc'),
+    value: 'name_asc'
+  },
+  {
+    name: t('visualization.name_desc'),
+    value: 'name_desc'
+  }
+]
 
+const sortTypeTip = computed(() => {
+  return sortList.find(ele => ele.value === state.curSortType).name
+})
 const tableData = shallowRef([])
 const tabData = shallowRef([])
 const handleNodeClick = data => {
@@ -422,7 +579,11 @@ const handleNodeClick = data => {
     dsListTree.value.setCurrentKey(null)
     return
   }
-  return getById(data.id).then(res => {
+  let method = getHidePwById
+  if (data.weight < 7) {
+    method = getSimpleDs
+  }
+  return method(data.id).then(res => {
     let {
       name,
       createBy,
@@ -434,16 +595,21 @@ const handleNodeClick = data => {
       configuration,
       syncSetting,
       apiConfigurationStr,
+      paramsStr,
       fileName,
       size,
       description,
-      lastSyncTime
+      lastSyncTime,
+      enableDataFill
     } = res.data
     if (configuration) {
-      configuration = JSON.parse(Base64.decode(configuration))
+      configuration = JSON.parse(symmetricDecrypt(configuration, symmetricKey.value))
+    }
+    if (paramsStr) {
+      paramsStr = JSON.parse(symmetricDecrypt(paramsStr, symmetricKey.value))
     }
     if (apiConfigurationStr) {
-      apiConfigurationStr = JSON.parse(Base64.decode(apiConfigurationStr))
+      apiConfigurationStr = JSON.parse(symmetricDecrypt(apiConfigurationStr, symmetricKey.value))
     }
     Object.assign(nodeInfo, {
       name,
@@ -459,8 +625,11 @@ const handleNodeClick = data => {
       configuration,
       syncSetting,
       apiConfiguration: apiConfigurationStr,
+      paramsConfiguration: paramsStr,
       weight: data.weight,
-      lastSyncTime
+      lastSyncTime,
+      enableDataFill,
+      extraFlag: data.extraFlag
     })
     activeTab.value = ''
     activeName.value = 'config'
@@ -470,7 +639,7 @@ const handleNodeClick = data => {
   })
 }
 const createDatasource = (data?: Tree) => {
-  datasourceEditor.value.init(null, data?.id)
+  datasourceEditor.value.init(null, data?.id, null, isSupportSetKey.value)
 }
 const showRecord = ref(false)
 const dsListTree = ref()
@@ -531,26 +700,138 @@ const nodeCollapse = data => {
 
 const filterNode = (value: string, data: BusiTreeNode) => {
   if (!value) return true
-  return data.name?.includes(value)
+  return data.name?.toLowerCase().includes(value.toLowerCase())
 }
 
 const editDatasource = (editType?: number) => {
   if (nodeInfo.type === 'Excel') {
     nodeInfo.editType = editType
   }
-  datasourceEditor.value.init(nodeInfo)
+  return getById(nodeInfo.id).then(res => {
+    let arr = pluginDs.value.filter(ele => {
+      return ele.type == res.data.type
+    })
+    let {
+      name,
+      createBy,
+      id,
+      createTime,
+      creator,
+      type,
+      pid,
+      configuration,
+      syncSetting,
+      apiConfigurationStr,
+      paramsStr,
+      fileName,
+      size,
+      description,
+      lastSyncTime,
+      enableDataFill
+    } = res.data
+    if (configuration) {
+      configuration = JSON.parse(symmetricDecrypt(configuration, symmetricKey.value))
+    }
+    if (paramsStr) {
+      paramsStr = JSON.parse(symmetricDecrypt(paramsStr, symmetricKey.value))
+    }
+    if (apiConfigurationStr) {
+      apiConfigurationStr = JSON.parse(symmetricDecrypt(apiConfigurationStr, symmetricKey.value))
+    }
+    let datasource = reactive<Node>(cloneDeep(defaultInfo))
+    Object.assign(datasource, {
+      name,
+      pid,
+      description,
+      fileName,
+      size,
+      createTime,
+      creator,
+      createBy,
+      id,
+      type,
+      configuration,
+      syncSetting,
+      apiConfiguration: apiConfigurationStr,
+      paramsConfiguration: paramsStr,
+      lastSyncTime,
+      enableDataFill,
+      isPlugin: arr && arr.length > 0,
+      staticMap: arr[0]?.staticMap
+    })
+    datasourceEditor.value.init(datasource, null, null, isSupportSetKey.value)
+  })
 }
 
 const handleEdit = async data => {
   await handleNodeClick(data)
-  datasourceEditor.value.init(nodeInfo)
+  editDatasource()
 }
 
+const { handleDrop, allowDrop, handleDragStart } = treeDraggble(
+  state,
+  'datasourceTree',
+  move,
+  'datasource',
+  originResourceTree
+)
+
 const handleCopy = async data => {
-  await handleNodeClick(data)
-  nodeInfo.id = ''
-  nodeInfo.name = '复制数据源'
-  datasourceEditor.value.init(nodeInfo)
+  getById(data.id).then(res => {
+    let {
+      name,
+      createBy,
+      id,
+      createTime,
+      creator,
+      type,
+      pid,
+      configuration,
+      syncSetting,
+      apiConfigurationStr,
+      paramsStr,
+      fileName,
+      size,
+      description,
+      lastSyncTime
+    } = res.data
+    if (configuration) {
+      configuration = JSON.parse(symmetricDecrypt(configuration, symmetricKey.value))
+    }
+    if (paramsStr) {
+      paramsStr = JSON.parse(symmetricDecrypt(paramsStr, symmetricKey.value))
+    }
+    if (apiConfigurationStr) {
+      apiConfigurationStr = JSON.parse(symmetricDecrypt(apiConfigurationStr, symmetricKey.value))
+    }
+    let datasource = reactive<Node>(cloneDeep(defaultInfo))
+    Object.assign(datasource, {
+      name,
+      pid,
+      description,
+      fileName,
+      size,
+      createTime,
+      creator,
+      createBy,
+      id,
+      type,
+      configuration,
+      syncSetting,
+      apiConfiguration: apiConfigurationStr,
+      paramsConfiguration: paramsStr,
+      lastSyncTime
+    })
+    datasource.id = ''
+    datasource.copy = true
+    datasource.name = t('datasource.copy')
+    if (datasource.type === 'API') {
+      for (let i = 0; i < datasource.apiConfiguration.length; i++) {
+        datasource.apiConfiguration[i].deTableName = ''
+      }
+    }
+    datasourceEditor.value.init(datasource, null, null, isSupportSetKey.value)
+  })
 }
 
 const handleDatasourceTree = (cmd: string, data?: Tree) => {
@@ -561,6 +842,7 @@ const handleDatasourceTree = (cmd: string, data?: Tree) => {
     creatDsFolder.value.createInit(cmd, data || {})
   }
 }
+const relationChartRef = ref()
 const operation = (cmd: string, data: Tree, nodeType: string) => {
   if (cmd === 'copy') {
     handleCopy(data)
@@ -577,22 +859,75 @@ const operation = (cmd: string, data: Tree, nodeType: string) => {
       showClose: false
     }
     if (!!data.children?.length) {
-      options.tip = '删除后，此文件夹下的所有资源都会被删除，请谨慎操作。'
+      options.tip = t('data_source.operate_with_caution')
     } else {
       delete options.tip
     }
-    ElMessageBox.confirm(
-      nodeType === 'folder' ? '确定删除该文件夹吗' : t('datasource.this_data_source'),
-      options as ElMessageBoxOptions
-    ).then(() => {
-      deleteById(data.id as number).then(() => {
-        if (data.id === nodeInfo.id) {
-          Object.assign(nodeInfo, cloneDeep(defaultInfo))
+
+    if (nodeType !== 'folder') {
+      perDeleteDatasource(data.id).then(res => {
+        if (res === true) {
+          const onClick = () => {
+            relationChartRef.value.getChartData({
+              queryType: 'datasource',
+              num: data.id,
+              label: data.name
+            })
+          }
+
+          ElMessageBox.confirm('', {
+            confirmButtonType: 'danger',
+            type: 'warning',
+            autofocus: false,
+            confirmButtonText: t('common.sure'),
+            showClose: false,
+            dangerouslyUseHTMLString: true,
+            message: h('div', null, [
+              h('p', { style: 'margin-bottom: 8px;' }, t('datasource.this_data_source')),
+              h('p', { class: 'tip' }, t('data_source.confirm_to_delete')),
+              h(
+                ElButton,
+                { text: true, onClick: onClick, style: 'margin-left: -4px;' },
+                t('data_source.view_blood_relationship')
+              )
+            ])
+          }).then(() => {
+            deleteById(data.id as number).then(() => {
+              if (data.id === nodeInfo.id) {
+                Object.assign(nodeInfo, cloneDeep(defaultInfo))
+              }
+              listDs()
+              ElMessage.success(t('dataset.delete_success'))
+            })
+          })
+        } else {
+          ElMessageBox.confirm(
+            t('datasource.this_data_source'),
+            options as ElMessageBoxOptions
+          ).then(() => {
+            deleteById(data.id as number).then(() => {
+              if (data.id === nodeInfo.id) {
+                Object.assign(nodeInfo, cloneDeep(defaultInfo))
+              }
+              listDs()
+              ElMessage.success(t('dataset.delete_success'))
+            })
+          })
         }
-        listDs()
-        ElMessage.success(t('dataset.delete_success'))
       })
-    })
+    } else {
+      ElMessageBox.confirm(t('data_set.delete_this_folder'), options as ElMessageBoxOptions).then(
+        () => {
+          deleteById(data.id as number).then(() => {
+            if (data.id === nodeInfo.id) {
+              Object.assign(nodeInfo, cloneDeep(defaultInfo))
+            }
+            listDs()
+            ElMessage.success(t('dataset.delete_success'))
+          })
+        }
+      )
+    }
   } else {
     creatDsFolder.value.createInit(nodeType, data, cmd)
   }
@@ -601,25 +936,30 @@ const operation = (cmd: string, data: Tree, nodeType: string) => {
 const handleClick = (tabName: TabPaneName) => {
   switch (tabName) {
     case 'config':
-      listDatasourceTables({ datasourceId: nodeInfo.id }).then(res => {
-        tabList.value = res.data.map(ele => {
-          const { name, tableName } = ele
-          return {
-            value: name,
-            label: tableName
-          }
-        })
-        if (!!tabList.value.length && !activeTab.value) {
-          activeTab.value = tabList.value[0].value
-          if (nodeInfo.type === 'Excel') {
+      tableData.value = []
+      if (nodeInfo.type === 'Excel') {
+        listDatasourceTables({ datasourceId: nodeInfo.id }).then(res => {
+          tabList.value = res.data.map(ele => {
+            const { name, tableName } = ele
+            return {
+              value: name,
+              label: tableName
+            }
+          })
+          if (!!tabList.value.length && !activeTab.value) {
+            activeTab.value = tabList.value[0].value
             handleTabClick(activeTab)
           }
-        }
-        tableData.value = res.data
-      })
+          tableData.value = res.data
+        })
+      }
       break
     case 'table':
-      initSearch()
+      tableData.value = []
+      listDatasourceTables({ datasourceId: nodeInfo.id }).then(res => {
+        tableData.value = res.data
+        initSearch()
+      })
       break
     default:
       break
@@ -647,8 +987,11 @@ const uploadExcel = editType => {
   addLoading.value = editType === 1
   return uploadFile(formData)
     .then(res => {
+      if (res?.code !== 0) {
+        return
+      }
       nodeInfo.editType = editType
-      datasourceEditor.value.init(nodeInfo, nodeInfo.id, res)
+      datasourceEditor.value.init(nodeInfo, nodeInfo.id, res, isSupportSetKey.value)
     })
     .finally(() => {
       replaceLoading.value = false
@@ -660,11 +1003,37 @@ const defaultProps = {
   children: 'children',
   label: 'name'
 }
+
+const loadInit = () => {
+  const historyTreeSort = wsCache.get('TreeSort-datasource')
+  if (historyTreeSort) {
+    state.curSortType = historyTreeSort
+  }
+}
+
+const proxyAllowDrop = debounce((arg1, arg2) => {
+  const flagArray = ['dashboard', 'dataV', 'dataset', 'datasource']
+  const flag = flagArray.findIndex(item => item === 'datasource')
+  if (flag < 0 || !isFreeFolder(arg2, flag + 1)) {
+    return allowDrop(arg1, arg2)
+  }
+  ElMessage.warning(t('free.save_error'))
+  return false
+}, 300)
 onMounted(() => {
+  const dsId = wsCache.get('ds-info-id') || route.params.id
+  nodeInfo.id = (dsId as string) || (route.query.id as string) || ''
+  wsCache.delete('ds-info-id')
+  loadInit()
+  listDs()
+  setSupportSetKey()
   const { opt } = router.currentRoute.value.query
   if (opt && opt === 'create') {
-    datasourceEditor.value.init(null, null)
+    datasourceEditor.value.init(null, null, null, isSupportSetKey.value)
   }
+  querySymmetricKey().then(res => {
+    symmetricKey.value = res.data
+  })
 })
 
 const sideTreeStatus = ref(true)
@@ -681,12 +1050,12 @@ const mouseleave = () => {
 }
 
 const getMenuList = (val: boolean) => {
-  return !val || isDataEaseBi.value
+  return !val
     ? menuList
     : [
         {
           label: t('common.copy'),
-          svgName: 'icon_copy_filled',
+          svgName: icon_copy_filled,
           command: 'copy'
         }
       ].concat(menuList)
@@ -718,23 +1087,20 @@ const getMenuList = (val: boolean) => {
           <div class="icon-methods">
             <span class="title"> {{ t('datasource.datasource') }} </span>
             <div v-if="rootManage" class="flex-align-center">
-              <el-tooltip effect="dark" content="新建文件夹" placement="top">
+              <el-tooltip effect="dark" :content="t('deDataset.new_folder')" placement="top">
                 <el-icon
                   class="custom-icon btn"
-                  :style="{ marginRight: isDataEaseBi ? 0 : '20px' }"
+                  :style="{ marginRight: '20px' }"
                   @click="handleDatasourceTree('folder')"
                 >
-                  <Icon name="dv-new-folder" />
+                  <Icon name="dv-new-folder"><dvNewFolder class="svg-icon" /></Icon>
                 </el-icon>
               </el-tooltip>
-              <el-tooltip
-                v-if="!isDataEaseBi"
-                effect="dark"
-                :content="t('datasource.create')"
-                placement="top"
-              >
+              <el-tooltip effect="dark" :content="t('datasource.create')" placement="top">
                 <el-icon class="custom-icon btn" @click="createDatasource">
-                  <Icon name="icon_file-add_outlined" />
+                  <Icon name="icon_file-add_outlined"
+                    ><icon_fileAdd_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </el-tooltip>
             </div>
@@ -748,10 +1114,40 @@ const getMenuList = (val: boolean) => {
           >
             <template #prefix>
               <el-icon>
-                <Icon name="icon_search-outline_outlined" />
+                <Icon name="icon_search-outline_outlined"
+                  ><icon_searchOutline_outlined class="svg-icon"
+                /></Icon>
               </el-icon>
             </template>
           </el-input>
+          <el-dropdown @command="handleSortTypeChange" trigger="click">
+            <el-icon class="filter-icon-span">
+              <el-tooltip :offset="16" effect="dark" :content="sortTypeTip" placement="top">
+                <Icon name="dv-sort-asc" class="opt-icon"
+                  ><dvSortAsc v-if="state.curSortType.includes('asc')" class="svg-icon opt-icon"
+                /></Icon>
+              </el-tooltip>
+              <el-tooltip :offset="16" effect="dark" :content="sortTypeTip" placement="top">
+                <Icon name="dv-sort-desc" class="opt-icon"
+                  ><dvSortDesc v-if="state.curSortType.includes('desc')" class="svg-icon opt-icon"
+                /></Icon>
+              </el-tooltip>
+            </el-icon>
+            <template #dropdown>
+              <el-dropdown-menu style="width: 246px">
+                <template :key="ele.value" v-for="ele in sortList">
+                  <el-dropdown-item
+                    class="ed-select-dropdown__item"
+                    :class="ele.value === state.curSortType && 'selected'"
+                    :command="ele.value"
+                  >
+                    {{ ele.name }}
+                  </el-dropdown-item>
+                  <li v-if="ele.divided" class="ed-dropdown-menu__item--divided"></li>
+                </template>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
         <el-scrollbar @scroll="handleScroll" ref="scrollbarRef" class="custom-tree">
           <el-tree
@@ -765,40 +1161,66 @@ const getMenuList = (val: boolean) => {
             :default-expanded-keys="expandedKey"
             :data="state.datasourceTree"
             :props="defaultProps"
+            @node-drag-start="handleDragStart"
+            :allow-drop="proxyAllowDrop"
+            @node-drop="handleDrop"
+            draggable
             @node-click="handleNodeClick"
           >
             <template #default="{ node, data }">
-              <span class="custom-tree-node">
+              <span class="custom-tree-node" style="position: relative">
                 <el-icon :class="data.leaf && 'icon-border'" style="font-size: 18px">
-                  <Icon :name="getDsIconName(data)"></Icon>
+                  <Icon :static-content="getDsIcon(data)"
+                    ><component class="svg-icon" :is="getDsIconName(data)"></component
+                  ></Icon>
+                </el-icon>
+                <el-icon
+                  style="position: absolute; top: 10px; left: 10px; font-size: 12px"
+                  v-if="data.extraFlag <= -1"
+                >
+                  <Icon><icon_warning_colorful_red class="svg-icon" /></Icon>
                 </el-icon>
                 <span
                   :title="node.label"
                   class="label-tooltip ellipsis"
                   :class="data.type === 'Excel' && 'excel'"
+                  v-if="data.extraFlag > -1"
                   >{{ node.label }}</span
                 >
+                <el-tooltip
+                  effect="dark"
+                  v-else
+                  :content="`${t('data_set.invalid_data_source')}: ${node.label}`"
+                  placement="top"
+                >
+                  <span
+                    :title="node.label"
+                    class="label-tooltip ellipsis"
+                    :class="data.type === 'Excel' && 'excel'"
+                    >{{ node.label }}</span
+                  >
+                </el-tooltip>
                 <div class="icon-more" v-if="data.weight >= 7">
                   <handle-more
                     icon-size="24px"
                     @handle-command="cmd => handleDatasourceTree(cmd, data)"
                     :menu-list="datasetTypeList"
-                    icon-name="icon_add_outlined"
+                    :icon-name="icon_add_outlined"
                     placement="bottom-start"
                     v-if="!data.leaf"
                   ></handle-more>
                   <el-icon
                     class="hover-icon"
                     @click.stop="handleEdit(data)"
-                    v-else-if="data.type !== 'Excel' && !isDataEaseBi"
+                    v-else-if="data.type !== 'Excel'"
                   >
-                    <icon name="icon_edit_outlined"></icon>
+                    <icon name="icon_edit_outlined"><icon_edit_outlined class="svg-icon" /></icon>
                   </el-icon>
                   <handle-more
                     @handle-command="
                       cmd => operation(cmd, data, data.leaf ? 'datasource' : 'folder')
                     "
-                    :menu-list="getMenuList(!['Excel', 'API'].includes(data.type) && data.leaf)"
+                    :menu-list="getMenuList(!['Excel'].includes(data.type) && data.leaf)"
                   ></handle-more>
                 </div>
               </span>
@@ -811,19 +1233,15 @@ const getMenuList = (val: boolean) => {
     <div
       class="datasource-content"
       :class="{
-        auto: isIframe,
+        auto: isIframe || isDataEaseBi,
         h100: isDataEaseBi || isIframe
       }"
     >
       <template v-if="!state.datasourceTree.length && mounted">
-        <empty-background description="暂无数据源" img-type="none">
-          <el-button
-            v-if="rootManage && !isDataEaseBi"
-            @click="() => createDatasource()"
-            type="primary"
-          >
+        <empty-background :description="t('data_source.no_data_source')" img-type="none">
+          <el-button v-if="rootManage" @click="() => createDatasource()" type="primary">
             <template #icon>
-              <Icon name="icon_add_outlined"></Icon>
+              <Icon name="icon_add_outlined"><icon_add_outlined class="svg-icon" /></Icon>
             </template>
             {{ t('datasource.create') }}</el-button
           >
@@ -833,7 +1251,9 @@ const getMenuList = (val: boolean) => {
         <div class="datasource-info">
           <div class="info-method">
             <el-icon class="icon-border">
-              <Icon :name="`${nodeInfo.type}-ds`"></Icon>
+              <Icon :static-content="getDsIconType(nodeInfo.type)"
+                ><component class="svg-icon" :is="iconDatasourceMap[nodeInfo.type]"></component
+              ></Icon>
             </el-icon>
             <span :title="nodeInfo.name" class="name ellipsis">
               {{ nodeInfo.name }}
@@ -845,7 +1265,7 @@ const getMenuList = (val: boolean) => {
             <el-popover :offset="8" show-arrow placement="bottom" width="290" trigger="hover">
               <template #reference>
                 <el-icon size="16px" class="create-user">
-                  <Icon name="icon_info_outlined"></Icon>
+                  <Icon name="icon_info_outlined"><icon_info_outlined class="svg-icon" /></Icon>
                 </el-icon>
               </template>
               <dataset-detail
@@ -853,12 +1273,14 @@ const getMenuList = (val: boolean) => {
                 :creator="infoList.creator"
               ></dataset-detail>
             </el-popover>
-            <div class="right-btn flex-align-center" v-if="!isDataEaseBi">
+            <div class="right-btn flex-align-center">
               <el-button secondary @click="createDataset(null)" v-permission="['dataset']">
                 <template #icon>
-                  <Icon name="icon_dataset_outlined"></Icon>
+                  <Icon name="icon_dataset_outlined"
+                    ><icon_dataset_outlined class="svg-icon"
+                  /></Icon>
                 </template>
-                新建数据集
+                {{ t('data_set.a_new_dataset') }}
               </el-button>
               <el-button
                 v-if="nodeInfo.type !== 'Excel' && nodeInfo.weight >= 7"
@@ -883,9 +1305,11 @@ const getMenuList = (val: boolean) => {
                   <template #trigger>
                     <el-button v-loading="replaceLoading" class="replace-excel" type="primary">
                       <template #icon>
-                        <Icon name="icon_edit_outlined"></Icon>
+                        <Icon name="icon_edit_outlined"
+                          ><icon_edit_outlined class="svg-icon"
+                        /></Icon>
                       </template>
-                      替换数据
+                      {{ t('data_source.replace_data') }}
                     </el-button>
                   </template>
                 </el-upload>
@@ -904,18 +1328,20 @@ const getMenuList = (val: boolean) => {
                   <template #trigger>
                     <el-button v-loading="addLoading" type="primary">
                       <template #icon>
-                        <Icon name="icon_new-item_outlined"></Icon>
+                        <Icon name="icon_new-item_outlined"
+                          ><icon_newItem_outlined class="svg-icon"
+                        /></Icon>
                       </template>
-                      追加数据
+                      {{ t('data_source.append_data') }}
                     </el-button>
                   </template>
                 </el-upload>
               </template>
               <el-button v-else-if="nodeInfo.weight >= 7" @click="editDatasource()" type="primary">
                 <template #icon>
-                  <Icon name="icon_edit_outlined"></Icon>
+                  <Icon name="icon_edit_outlined"><icon_edit_outlined class="svg-icon" /></Icon>
                 </template>
-                编辑
+                {{ t('chart.edit') }}
               </el-button>
             </div>
           </div>
@@ -938,7 +1364,9 @@ const getMenuList = (val: boolean) => {
             >
               <template #prefix>
                 <el-icon>
-                  <Icon name="icon_search-outline_outlined"></Icon>
+                  <Icon name="icon_search-outline_outlined"
+                    ><icon_searchOutline_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </template>
             </el-input>
@@ -960,13 +1388,15 @@ const getMenuList = (val: boolean) => {
                 key="status"
                 prop="status"
                 v-if="['api'].includes(nodeInfo.type.toLowerCase())"
-                label="最近更新状态"
+                :label="t('data_source.latest_update_status')"
               >
                 <template #default="scope">
                   <div class="flex-align-center">
                     <template v-if="scope.row.status === 'Completed'">
-                      <el-icon>
-                        <icon name="icon_succeed_filled"></icon>
+                      <el-icon style="margin-right: 8px">
+                        <icon name="icon_succeed_filled"
+                          ><icon_succeed_filled class="svg-icon"
+                        /></icon>
                       </el-icon>
                       {{ t('dataset.completed') }}
                     </template>
@@ -974,8 +1404,10 @@ const getMenuList = (val: boolean) => {
                       {{ t('dataset.underway') }}
                     </template>
                     <template v-if="scope.row.status === 'Error' || scope.row.status === 'Warning'">
-                      <el-icon>
-                        <icon class="field-icon-red" name="icon_close_filled"></icon>
+                      <el-icon style="margin-right: 8px">
+                        <icon class="field-icon-red" name="icon_close_filled"
+                          ><icon_close_filled class="svg-icon field-icon-red"
+                        /></icon>
                       </el-icon>
                       {{ t('dataset.error') }}
                     </template>
@@ -986,7 +1418,7 @@ const getMenuList = (val: boolean) => {
                 key="lastUpdateTime"
                 prop="lastUpdateTime"
                 v-if="['excel', 'api'].includes(nodeInfo.type.toLowerCase())"
-                label="最近更新时间"
+                :label="t('data_source.latest_update_time')"
               >
                 <template v-slot:default="scope">
                   <span>{{ timestampFormatDate(scope.row.lastUpdateTime) }}</span>
@@ -999,26 +1431,25 @@ const getMenuList = (val: boolean) => {
                 width="108"
               >
                 <template #default="scope">
-                  <el-tooltip
-                    v-if="!isDataEaseBi"
-                    effect="dark"
-                    content="新建数据集"
-                    placement="top"
-                  >
+                  <el-tooltip effect="dark" :content="t('data_set.a_new_dataset')" placement="top">
                     <el-button
-                      @click.stop="createDataset(scope.row.name)"
+                      @click.stop="createDataset(scope.row.tableName)"
                       text
                       v-permission="['dataset']"
                     >
                       <template #icon>
-                        <Icon name="icon_dataset_outlined"></Icon>
+                        <Icon name="icon_dataset_outlined"
+                          ><icon_dataset_outlined class="svg-icon"
+                        /></Icon>
                       </template>
                     </el-button>
                   </el-tooltip>
                   <el-tooltip effect="dark" :content="t('visualization.details')" placement="top">
                     <el-button @click.stop="selectDataset(scope.row)" text>
                       <template #icon>
-                        <Icon name="icon_describe_outlined"></Icon>
+                        <Icon name="icon_describe_outlined"
+                          ><icon_describe_outlined class="svg-icon"
+                        /></Icon>
                       </template>
                     </el-button>
                   </el-tooltip>
@@ -1032,7 +1463,7 @@ const getMenuList = (val: boolean) => {
             <template v-if="slotProps.active">
               <el-row :gutter="24">
                 <el-col :span="12">
-                  <BaseInfoItem :label="t('auth.datasource') + t('common.name')">{{
+                  <BaseInfoItem :label="t('auth.datasource') + ' ' + t('common.name')">{{
                     nodeInfo.name
                   }}</BaseInfoItem>
                 </el-col>
@@ -1044,7 +1475,7 @@ const getMenuList = (val: boolean) => {
               </el-row>
               <el-row :gutter="24">
                 <el-col v-if="nodeInfo.type === 'Excel'" :span="12">
-                  <BaseInfoItem label="文件">
+                  <BaseInfoItem :label="t('data_source.document')">
                     <ExcelInfo :name="nodeInfo.fileName" :size="nodeInfo.size"></ExcelInfo>
                   </BaseInfoItem>
                 </el-col>
@@ -1054,15 +1485,17 @@ const getMenuList = (val: boolean) => {
                   }}</BaseInfoItem>
                 </el-col>
               </el-row>
-              <template v-if="!['Excel', 'API'].includes(nodeInfo.type)">
-                <el-row :gutter="24">
+              <template
+                v-if="!['Excel', 'API', 'es'].includes(nodeInfo.type) && nodeInfo.weight >= 7"
+              >
+                <el-row :gutter="24" v-show="nodeInfo.configuration.urlType !== 'jdbcUrl'">
                   <el-col :span="12">
                     <BaseInfoItem :label="t('datasource.host')">{{
                       nodeInfo.configuration.host
                     }}</BaseInfoItem>
                   </el-col>
                 </el-row>
-                <el-row :gutter="24">
+                <el-row :gutter="24" v-show="nodeInfo.configuration.urlType !== 'jdbcUrl'">
                   <el-col :span="12">
                     <BaseInfoItem :label="t('datasource.port')">{{
                       nodeInfo.configuration.port
@@ -1074,7 +1507,7 @@ const getMenuList = (val: boolean) => {
                     }}</BaseInfoItem>
                   </el-col>
                 </el-row>
-                <el-row :gutter="24">
+                <el-row :gutter="24" v-show="nodeInfo.configuration.urlType !== 'jdbcUrl'">
                   <el-col :span="12">
                     <BaseInfoItem :label="t('datasource.user_name')">{{
                       nodeInfo.configuration.username
@@ -1086,17 +1519,75 @@ const getMenuList = (val: boolean) => {
                     }}</BaseInfoItem>
                   </el-col>
                 </el-row>
-                <span
-                  v-if="!['es', 'api'].includes(nodeInfo.type.toLowerCase())"
-                  class="de-expand"
-                  @click="showPriority = !showPriority"
-                  >{{ t('datasource.priority') }}
-                  <el-icon>
-                    <Icon
-                      :name="showPriority ? 'icon_down_outlined' : 'icon_down_outlined-1'"
-                    ></Icon>
-                  </el-icon>
-                </span>
+                <el-row :gutter="24" v-show="nodeInfo.configuration.urlType === 'jdbcUrl'">
+                  <el-col :span="12">
+                    <BaseInfoItem :label="t('datasource.jdbcUrl')">{{
+                      nodeInfo.configuration.jdbcUrl
+                    }}</BaseInfoItem>
+                  </el-col>
+                </el-row>
+                <el-row :gutter="24" v-show="nodeInfo.configuration.urlType === 'jdbcUrl'">
+                  <el-col :span="12">
+                    <BaseInfoItem :label="t('datasource.user_name')">{{
+                      nodeInfo.configuration.username
+                    }}</BaseInfoItem>
+                  </el-col>
+                </el-row>
+                <el-row :gutter="24">
+                  <span
+                    v-if="
+                      !['es', 'api'].includes(nodeInfo.type.toLowerCase()) &&
+                      nodeInfo.configuration.urlType !== 'jdbcUrl'
+                    "
+                    class="de-expand"
+                    @click="showSSH = !showSSH"
+                    >{{ t('data_source.ssh_settings') }}
+                    <el-icon>
+                      <Icon
+                        ><component
+                          :is="showSSH ? icon_down_outlined : icon_down_outlined1"
+                        ></component
+                      ></Icon>
+                    </el-icon>
+                  </span>
+                </el-row>
+                <template v-if="showSSH">
+                  <el-row :gutter="24" v-if="nodeInfo.configuration.useSSH">
+                    <el-col :span="12">
+                      <BaseInfoItem :label="t('data_source.host')">{{
+                        nodeInfo.configuration.sshHost
+                      }}</BaseInfoItem>
+                    </el-col>
+                    <el-col :span="12">
+                      <BaseInfoItem :label="t('data_source.port')">{{
+                        nodeInfo.configuration.sshPort
+                      }}</BaseInfoItem>
+                    </el-col>
+                  </el-row>
+                  <el-row :gutter="24" v-if="nodeInfo.configuration.useSSH">
+                    <el-col :span="12">
+                      <BaseInfoItem :label="t('datasource.user_name')">{{
+                        nodeInfo.configuration.sshUserName
+                      }}</BaseInfoItem>
+                    </el-col>
+                  </el-row>
+                </template>
+                <el-row :gutter="24">
+                  <span
+                    v-if="!['es', 'api'].includes(nodeInfo.type.toLowerCase())"
+                    class="de-expand"
+                    @click="showPriority = !showPriority"
+                    >{{ t('datasource.priority') }}
+                    <el-icon>
+                      <Icon
+                        ><component
+                          :is="showPriority ? icon_down_outlined : icon_down_outlined1"
+                        ></component
+                      ></Icon>
+                    </el-icon>
+                  </span>
+                </el-row>
+
                 <template v-if="showPriority">
                   <el-row :gutter="24">
                     <el-col :span="12">
@@ -1126,11 +1617,26 @@ const getMenuList = (val: boolean) => {
                     </el-col>
                   </el-row>
                 </template>
+
+                <!--    数据填报      -->
+                <XpackComponent
+                  :nodeInfo="nodeInfo"
+                  jsname="L2NvbXBvbmVudC9kYXRhLWZpbGxpbmcvRGF0YXNvdXJjZURhdGFGaWxsaW5nSW5mbw=="
+                />
+              </template>
+              <template v-if="['es'].includes(nodeInfo.type) && nodeInfo.weight >= 7">
+                <el-row :gutter="24">
+                  <el-col :span="12">
+                    <BaseInfoItem :label="t('datasource.datasource_url')">{{
+                      nodeInfo.configuration.url
+                    }}</BaseInfoItem>
+                  </el-col>
+                </el-row>
               </template>
             </template>
           </BaseInfoContent>
           <BaseInfoContent
-            v-if="nodeInfo.type === 'API'"
+            v-if="nodeInfo.type === 'API' && nodeInfo.weight >= 7"
             v-slot="slotProps"
             :name="t('datasource.data_table')"
           >
@@ -1138,7 +1644,9 @@ const getMenuList = (val: boolean) => {
               <div v-for="api in nodeInfo.apiConfiguration" :key="api.id" class="api-card">
                 <el-row>
                   <el-col :span="19">
-                    <span class="name ellipsis">{{ api.name }}</span>
+                    <span class="name">
+                      <span class="ellipsis" :title="api.name">{{ api.name }}</span>
+                    </span>
                     <span v-if="api.status === 'Error'" class="de-tag error-color">{{
                       t('datasource.invalid')
                     }}</span>
@@ -1149,16 +1657,16 @@ const getMenuList = (val: boolean) => {
                   <el-col style="text-align: right" :span="5">
                     <el-button @click="updateApiTable(api)" text>
                       <template #icon>
-                        <icon name="icon_replace_outlined"></icon>
+                        <icon name="icon_replace_outlined"
+                          ><icon_replace_outlined class="svg-icon"
+                        /></icon>
                       </template>
                     </el-button>
                   </el-col>
                 </el-row>
-                <el-row>
-                  <el-col :span="19">
-                    <span>数据时间： {{ timestampFormatDate(api['updateTime']) }}</span>
-                  </el-col>
-                </el-row>
+                <div>
+                  {{ t('data_source.data_time') }} {{ timestampFormatDate(api['updateTime']) }}
+                </div>
 
                 <div class="req-title">
                   <span>{{ t('datasource.method') }}</span>
@@ -1166,7 +1674,7 @@ const getMenuList = (val: boolean) => {
                 </div>
                 <div class="req-value">
                   <span>{{ api.method }}</span>
-                  <el-tooltip w effect="dark" :content="api.url" placement="top">
+                  <el-tooltip effect="dark" :content="api.url" placement="top">
                     <span>{{ api.url }}</span>
                   </el-tooltip>
                 </div>
@@ -1174,13 +1682,13 @@ const getMenuList = (val: boolean) => {
             </div>
             <el-button @click="updateApiDs" class="update-records" text>
               <template #icon>
-                <icon name="icon_replace_outlined"></icon>
+                <icon name="icon_replace_outlined"><icon_replace_outlined class="svg-icon" /></icon>
               </template>
-              全部更新
+              {{ t('data_source.update_all') }}
             </el-button>
           </BaseInfoContent>
           <BaseInfoContent
-            v-if="nodeInfo.type === 'API'"
+            v-if="nodeInfo.type === 'API' && nodeInfo.weight >= 7"
             v-slot="slotProps"
             :name="t('dataset.update_setting')"
             :time="(nodeInfo.lastSyncTime as string)"
@@ -1207,7 +1715,9 @@ const getMenuList = (val: boolean) => {
             </template>
             <el-button @click="getRecord" class="update-records" text>
               <template #icon>
-                <icon name="icon_describe_outlined"></icon>
+                <icon name="icon_describe_outlined"
+                  ><icon_describe_outlined class="svg-icon"
+                /></icon>
               </template>
               {{ t('dataset.update_records') }}
             </el-button>
@@ -1237,7 +1747,7 @@ const getMenuList = (val: boolean) => {
                         fixed
                         ><template #empty>
                           <empty-background
-                            description="暂无数据"
+                            :description="t('data_set.no_data')"
                             img-type="noneWhite"
                           /> </template
                       ></el-table-v2>
@@ -1250,7 +1760,7 @@ const getMenuList = (val: boolean) => {
         </template>
       </template>
       <template v-else-if="mounted">
-        <empty-background description="请在左侧选择数据源" img-type="select" />
+        <empty-background :description="t('data_source.on_the_left')" img-type="select" />
       </template>
     </div>
     <EditorDatasource @refresh="refresh" ref="datasourceEditor"></EditorDatasource>
@@ -1275,7 +1785,7 @@ const getMenuList = (val: boolean) => {
             {{ t('datasource.table_description') }}
           </p>
           <p class="table-value">
-            {{ dsTableDetail.remark || '-' }}
+            {{ dsTableDetail.name || '-' }}
           </p>
         </el-col>
       </el-row>
@@ -1292,9 +1802,12 @@ const getMenuList = (val: boolean) => {
             <template #default="scope">
               <div class="flex-align-center icon">
                 <el-icon>
-                  <icon
-                    :name="`field_${fieldType[scope.row.deType]}`"
-                    :class="`field-icon-${fieldType[scope.row.deType]}`"
+                  <icon :class="`field-icon-${fieldType[scope.row.deType]}`"
+                    ><component
+                      class="svg-icon"
+                      :class="`field-icon-${fieldType[scope.row.deType]}`"
+                      :is="iconFieldMap[fieldType[scope.row.deType]]"
+                    ></component
                   ></icon>
                 </el-icon>
                 {{
@@ -1357,12 +1870,12 @@ const getMenuList = (val: boolean) => {
             <span>{{ timestampFormatDate(scope.row.endTime) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="taskStatus" label="更新结果">
+        <el-table-column prop="taskStatus" :label="t('data_source.update_result')">
           <template #default="scope">
             <div class="flex-align-center">
               <template v-if="scope.row.taskStatus === 'Completed'">
-                <el-icon>
-                  <icon name="icon_succeed_filled"></icon>
+                <el-icon style="margin-right: 8px">
+                  <icon name="icon_succeed_filled"><icon_succeed_filled class="svg-icon" /></icon>
                 </el-icon>
                 {{ t('dataset.completed') }}
               </template>
@@ -1373,12 +1886,14 @@ const getMenuList = (val: boolean) => {
               <template
                 v-if="scope.row.taskStatus === 'Error' || scope.row.taskStatus === 'Warning'"
               >
-                <el-icon>
-                  <icon class="field-icon-red" name="icon_close_filled"></icon>
+                <el-icon style="margin-right: 8px">
+                  <icon class="field-icon-red" name="icon_close_filled"
+                    ><icon_close_filled class="svg-icon field-icon-red"
+                  /></icon>
                 </el-icon>
                 {{ t('dataset.error') }}
                 <el-icon @click="showErrorInfo(scope.row.info)" class="error-info">
-                  <icon name="icon-maybe_outlined"></icon>
+                  <icon name="icon-maybe_outlined"><iconMaybe_outlined class="svg-icon" /></icon>
                 </el-icon>
               </template>
             </div>
@@ -1390,7 +1905,7 @@ const getMenuList = (val: boolean) => {
       v-model="dialogErrorInfo"
       :close-on-press-escape="false"
       :close-on-click-modal="false"
-      title="失败详情"
+      :title="t('data_source.failure_details')"
       width="600px"
     >
       <span>{{ dialogMsg }}</span>
@@ -1402,12 +1917,40 @@ const getMenuList = (val: boolean) => {
         </span>
       </template>
     </el-dialog>
+    <relationChart ref="relationChartRef"></relationChart>
+
+    <XpackComponent
+      jsname="L2NvbXBvbmVudC9wbHVnaW5zLWhhbmRsZXIvRHNDYXRlZ29yeUhhbmRsZXI="
+      @load-ds-plugin="loadDsPlugin"
+    />
   </div>
 </template>
 
 <style lang="less" scoped>
 @import '@/style/mixin.less';
 
+.filter-icon-span {
+  border: 1px solid #bbbfc4;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  color: #1f2329;
+  padding: 8px;
+  margin-left: 8px;
+  font-size: 16px;
+  cursor: pointer;
+
+  .opt-icon:focus {
+    outline: none !important;
+  }
+  &:hover {
+    background: #f5f6f7;
+  }
+
+  &:active {
+    background: #eff0f1;
+  }
+}
 .datasource-manage {
   display: flex;
   width: 100%;
@@ -1467,6 +2010,7 @@ const getMenuList = (val: boolean) => {
 
       .search-bar {
         padding-bottom: 10px;
+        width: calc(100% - 40px);
       }
     }
   }
@@ -1529,12 +2073,13 @@ const getMenuList = (val: boolean) => {
     border-radius: 4px;
     margin: 0 0 16px 16px;
     padding: 16px;
-    font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+    font-family: var(--de-custom_font, 'PingFang');
     .name {
       font-size: 16px;
       font-weight: 500;
       margin-right: 8px;
-      max-width: 80%;
+      max-width: 70%;
+      display: inline-flex;
     }
     .req-title,
     .req-value {
@@ -1542,7 +2087,7 @@ const getMenuList = (val: boolean) => {
       font-size: 14px;
       font-weight: 400;
       :nth-child(1) {
-        width: 100px;
+        width: 110px;
       }
 
       :nth-child(2) {
@@ -1578,6 +2123,7 @@ const getMenuList = (val: boolean) => {
       border-radius: 2px;
       padding: 1px 6px;
       height: 24px;
+      font-size: 14px;
     }
 
     .error-color {
@@ -1591,7 +2137,7 @@ const getMenuList = (val: boolean) => {
   }
 
   .de-expand {
-    font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+    font-family: var(--de-custom_font, 'PingFang');
     font-size: 14px;
     font-weight: 400;
     line-height: 22px;
@@ -1655,7 +2201,7 @@ const getMenuList = (val: boolean) => {
         width: 100%;
         display: flex;
         align-items: center;
-        font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+        font-family: var(--de-custom_font, 'PingFang');
         font-size: 16px;
         font-weight: 500;
 
@@ -1703,7 +2249,7 @@ const getMenuList = (val: boolean) => {
       padding: 24px;
       margin: 24px;
       background: #fff;
-      height: calc(100vh - 190px);
+      height: calc(100vh - 200px);
 
       .search-operate {
         width: 280px;
@@ -1781,7 +2327,7 @@ const getMenuList = (val: boolean) => {
 
   .table-value,
   .table-name {
-    font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+    font-family: var(--de-custom_font, 'PingFang');
     font-size: 14px;
     font-weight: 400;
     margin: 0;

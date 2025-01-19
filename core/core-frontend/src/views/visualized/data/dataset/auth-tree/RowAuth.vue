@@ -28,9 +28,9 @@ const svgDashinePath = computed(() => {
 })
 
 const init = expressionTree => {
-  const { logic: lg = 'or', items = [] } = expressionTree
-  logic.value = lg
-  relationList.value = dfsInit(items)
+  const { items } = expressionTree
+  logic.value = expressionTree.logic || 'or'
+  relationList.value = dfsInit(items || [])
 }
 const submit = () => {
   errorMessage.value = ''
@@ -42,12 +42,12 @@ const submit = () => {
 }
 const errorDetected = ({ enumValue, deType, filterType, term, value, name }) => {
   if (!name) {
-    errorMessage.value = '过滤字段不能为空'
+    errorMessage.value = t('data_set.cannot_be_empty_')
     return
   }
   if (filterType === 'logic') {
     if (!term) {
-      errorMessage.value = '规则条件不能为空'
+      errorMessage.value = t('data_set.cannot_be_empty_de_ruler')
       return
     }
     if (!term.includes('null') && !term.includes('empty') && value === '') {
@@ -73,7 +73,7 @@ const dfsInit = arr => {
   arr.forEach(ele => {
     const { subTree } = ele
     if (subTree) {
-      const { items, logic } = subTree
+      const { items = [], logic } = subTree
       const child = dfsInit(items)
       elementList.push({ logic, child })
     } else {

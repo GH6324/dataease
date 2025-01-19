@@ -35,7 +35,7 @@ const loadTableData = () => {
   shortcutOption
     .loadData({ type: 'panel', keyword: '', asc: false })
     .then(res => {
-      state.tableData = res.data
+      state.tableData = (res.data || []).filter(ele => ele.extFlag === 1)
     })
     .finally(() => {
       emits('setLoading', false)
@@ -63,7 +63,7 @@ const loadShareTableData = () => {
       data: { type: 'panel', keyword: '', asc: false }
     })
     .then(res => {
-      state.tableData = res.data
+      state.tableData = (res.data || []).filter(ele => ele.extFlag === 1)
     })
     .finally(() => {
       emits('setLoading', false)
@@ -72,7 +72,7 @@ const loadShareTableData = () => {
 }
 
 const tablePaneList = ref([
-  { title: '最近使用', name: 'recent', disabled: false },
+  { title: t('work_branch.recent'), name: 'recent', disabled: false },
   { title: '我的收藏', name: 'store', disabled: false },
   { title: t('visualization.share_out'), name: 'share', disabled: false }
 ])

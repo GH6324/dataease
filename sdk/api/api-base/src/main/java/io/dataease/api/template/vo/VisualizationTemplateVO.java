@@ -77,9 +77,19 @@ public class VisualizationTemplateVO {
     private String dynamicData;
 
     /**
+     * app数据
+     */
+    private String appData;
+
+    /**
      * 使用次数
      */
     private Integer useCount;
+
+    /**
+     * 版本号
+     */
+    private Integer version;
 
     /**
      * 分类

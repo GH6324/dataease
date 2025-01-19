@@ -2,12 +2,13 @@ import router from './router'
 import { useUserStoreWithOut } from '@/store/modules/user'
 import { useAppStoreWithOut } from '@/store/modules/app'
 import type { RouteRecordRaw } from 'vue-router'
+import { getDefaultSettings } from '@/api/common'
 import { useNProgress } from '@/hooks/web/useNProgress'
 import { usePermissionStoreWithOut, pathValid, getFirstAuthMenu } from '@/store/modules/permission'
 import { usePageLoading } from '@/hooks/web/usePageLoading'
 import { getRoleRouters } from '@/api/common'
 import { useCache } from '@/hooks/web/useCache'
-import { isMobile } from '@/utils/utils'
+import { isMobile, checkPlatform, isLarkPlatform, isPlatformClient } from '@/utils/utils'
 import { interactiveStoreWithOut } from '@/store/modules/interactive'
 import { useAppearanceStoreWithOut } from '@/store/modules/appearance'
 import { useEmbedded } from '@/store/modules/embedded'
@@ -22,28 +23,46 @@ const { start, done } = useNProgress()
 
 const { loadStart, loadDone } = usePageLoading()
 
-const whiteList = ['/login', '/de-link', '/chart-view'] // 不重定向白名单
-const embeddedWindowWhiteList = ['/dvCanvas', '/dashboard']
+const whiteList = ['/login', '/de-link', '/chart-view', '/admin-login', '/401'] // 不重定向白名单
+const embeddedWindowWhiteList = ['/dvCanvas', '/dashboard', '/preview', '/dataset-embedded-form']
 const embeddedRouteWhiteList = ['/dataset-embedded', '/dataset-form', '/dataset-embedded-form']
 router.beforeEach(async (to, from, next) => {
   start()
   loadStart()
-  if (isMobile()) {
-    done()
-    loadDone()
-    if (to.name === 'link') {
-      window.location.href = window.origin + '/mobile.html#' + to.path
-    } else {
-      window.location.href = window.origin + '/mobile.html#/index'
-    }
-  }
+  const platform = checkPlatform()
   let isDesktop = wsCache.get('app.desktop')
   if (isDesktop === null) {
     await appStore.setAppModel()
     isDesktop = appStore.getDesktop
   }
+  if (isMobile() && !['/chart-view'].includes(to.path)) {
+    done()
+    loadDone()
+    if (to.name === 'link') {
+      let linkQuery = ''
+      if (Object.keys(to.query)) {
+        const tempQuery = Object.keys(to.query)
+          .map(key => key + '=' + to.query[key])
+          .join('&')
+        if (tempQuery) {
+          linkQuery = '?' + tempQuery
+        }
+      }
+      window.location.href = window.origin + '/mobile.html#' + to.path + linkQuery
+    } else if (
+      wsCache.get('user.token') ||
+      isDesktop ||
+      (!isPlatformClient() && !isLarkPlatform())
+    ) {
+      window.location.href = window.origin + '/mobile.html#/index'
+    }
+  }
   await appearanceStore.setAppearance()
-  if (wsCache.get('user.token') || isDesktop) {
+  await appearanceStore.setFontList()
+  const defaultSort = await getDefaultSettings()
+  wsCache.set('TreeSort-backend', defaultSort['basic.defaultSort'] ?? '1')
+  wsCache.set('open-backend', defaultSort['basic.defaultOpen'] ?? '0')
+  if ((wsCache.get('user.token') || isDesktop) && !to.path.startsWith('/de-link/')) {
     if (!userStore.getUid) {
       await userStore.setUser()
     }
@@ -54,7 +73,10 @@ router.beforeEach(async (to, from, next) => {
       if (permissionStore.getIsAddRouters) {
         let str = ''
         if (((from.query.redirect as string) || '?').split('?')[0] === to.path) {
-          str = ((from.query.redirect as string) || '?').split('?')[1]
+          str = ((window.location.hash as string) || '?').split('?').reverse()[0]
+          if (str.includes('redirect=')) {
+            str = ''
+          }
         }
         if (str) {
           to.fullPath += '?' + str
@@ -113,14 +135,15 @@ router.beforeEach(async (to, from, next) => {
       permissionStore.setCurrentPath(to.path)
       next()
     } else if (
-      embeddedWindowWhiteList.includes(to.path) ||
+      (!platform && embeddedWindowWhiteList.includes(to.path)) ||
       whiteList.includes(to.path) ||
       to.path.startsWith('/de-link/')
     ) {
+      await appearanceStore.setFontList()
       permissionStore.setCurrentPath(to.path)
       next()
     } else {
-      next(`/login?redirect=${to.path}`) // 否则全部重定向到登录页
+      next(`/login?redirect=${to.fullPath || to.path}`) // 否则全部重定向到登录页
     }
   }
 })

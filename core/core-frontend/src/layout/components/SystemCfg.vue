@@ -1,9 +1,12 @@
 <script lang="ts" setup>
+import iconSetting from '@/assets/svg/icon_organization_outlined.svg'
 import { useRouter } from 'vue-router'
 import { useAppearanceStoreWithOut } from '@/store/modules/appearance'
 import { computed } from 'vue'
+
 const appearanceStore = useAppearanceStoreWithOut()
 const navigateBg = computed(() => appearanceStore.getNavigateBg)
+const showDoc = computed(() => appearanceStore.getShowDoc)
 const { push, resolve } = useRouter()
 const redirectUser = () => {
   const sysMenu = resolve('/system')
@@ -13,10 +16,18 @@ const redirectUser = () => {
 </script>
 
 <template>
-  <el-tooltip class="box-item" effect="dark" content="组织管理中心" placement="top">
-    <div class="sys-setting" :class="{ 'is-light-setting': navigateBg && navigateBg === 'light' }">
+  <el-tooltip class="box-item" effect="dark" :content="$t('toolbox.org_center')" placement="top">
+    <div
+      class="sys-setting"
+      :class="{
+        'is-light-setting': navigateBg && navigateBg === 'light',
+        'in-iframe-setting': !showDoc
+      }"
+    >
       <el-icon @click="redirectUser">
-        <Icon class="icon-setting" name="icon-setting" />
+        <Icon class="icon-setting" name="icon-setting"
+          ><iconSetting class="svg-icon icon-setting"
+        /></Icon>
       </el-icon>
     </div>
   </el-tooltip>
@@ -35,9 +46,12 @@ const redirectUser = () => {
     background-color: #1e2738;
   }
 }
+.in-iframe-setting {
+  margin-left: 10px !important;
+}
 .is-light-setting {
   &:hover {
-    background-color: var(--ed-menu-hover-bg-color) !important;
+    background-color: #1f23291a !important;
   }
 }
 </style>

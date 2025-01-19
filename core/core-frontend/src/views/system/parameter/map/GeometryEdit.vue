@@ -1,4 +1,7 @@
 <script lang="ts" setup>
+import dvInfo from '@/assets/svg/dv-info.svg'
+import icon_upload_outlined from '@/assets/svg/icon_upload_outlined.svg'
+import deJson from '@/assets/svg/de-json.svg'
 import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElLoading } from 'element-plus-secondary'
 import { useI18n } from '@/hooks/web/useI18n'
@@ -36,9 +39,7 @@ const formatPid = computed(() => {
   const pid = state.form.pid
   return pid.replace(/(0+)$/g, '').replace(/\D/g, '')
 })
-const codeTips = ref(
-  '国家代码由三位数字组成，省、市、区县、乡镇代码由两位数字组成；非国家区域需要再后面补0'
-)
+const codeTips = ref(t('system.at_the_end'))
 const pidChange = () => {
   state.form.code = null
 }
@@ -47,7 +48,7 @@ const validateCode = (_: any, value: any, callback: any) => {
   if (isCountry) {
     const reg = /^[0-9]\d{2}$/
     if (!reg.test(value) || value === '000') {
-      const msg = '请输入非0的三位数字'
+      const msg = t('system.non_zero_three_digit_number')
       callback(new Error(msg))
     } else {
       callback()
@@ -56,7 +57,7 @@ const validateCode = (_: any, value: any, callback: any) => {
     const fullValue = formatPid.value + value
     const reg = /^[1-9](\d{8}|\d{10})$/
     if (!reg.test(fullValue)) {
-      const msg = '请输入9或11位数字'
+      const msg = t('system.or_11_digits')
       callback(new Error(msg))
     } else {
       callback()
@@ -68,7 +69,7 @@ const rule = reactive<FormRules>({
     {
       required: true,
       message: t('common.require'),
-      trigger: 'blur'
+      trigger: 'change'
     }
   ],
   code: [
@@ -145,7 +146,7 @@ const reset = () => {
 }
 
 const showLoading = () => {
-  loadingInstance.value = ElLoading.service({ target: '.basic-info-drawer' })
+  loadingInstance.value = ElLoading.service({ target: '.geometry-info-drawer' })
 }
 const closeLoading = () => {
   loadingInstance.value?.close()
@@ -154,7 +155,7 @@ const handleExceed: UploadProps['onExceed'] = () => {
   ElMessage.warning(t('userimport.exceedMsg'))
 }
 const handleError = () => {
-  ElMessage.warning('执行失败请联系管理员')
+  ElMessage.warning(t('system.contact_the_administrator'))
 }
 const setFile = (options: UploadRequestOptions) => {
   geoFile.value = options.file
@@ -163,12 +164,12 @@ const setFile = (options: UploadRequestOptions) => {
 const uploadValidate = file => {
   const suffix = file.name.substring(file.name.lastIndexOf('.') + 1)
   if (suffix !== 'json') {
-    ElMessage.warning('只能上传json文件')
+    ElMessage.warning(t('system.upload_json_files'))
     return false
   }
 
   if (file.size / 1024 / 1024 > 200) {
-    ElMessage.warning('最大上传200M')
+    ElMessage.warning(t('system.maximum_upload_200m'))
     return false
   }
   return true
@@ -188,9 +189,9 @@ defineExpose({
 
 <template>
   <el-drawer
-    title="地理信息"
+    :title="t('system.geographic_information')"
     v-model="dialogVisible"
-    custom-class="basic-info-drawer"
+    custom-class="geometry-info-drawer"
     size="600px"
     direction="rtl"
   >
@@ -202,7 +203,7 @@ defineExpose({
       label-width="80px"
       label-position="top"
     >
-      <el-form-item label="上级区域" prop="pid">
+      <el-form-item :label="t('system.superior_region')" prop="pid">
         <el-tree-select
           class="map-tree-selector"
           node-key="id"
@@ -216,12 +217,14 @@ defineExpose({
         />
       </el-form-item>
 
-      <el-form-item label="区域代码" prop="code">
+      <el-form-item :label="t('system.region_code')" prop="code">
         <template v-slot:label>
           <span class="area-code-label">
-            <span>区域代码</span>
+            <span>{{ t('system.region_code') }}</span>
             <el-tooltip effect="dark" :content="codeTips" placement="top">
-              <el-icon class="info-tips"><Icon name="dv-info"></Icon></el-icon>
+              <el-icon class="info-tips"
+                ><Icon name="dv-info"><dvInfo class="svg-icon" /></Icon
+              ></el-icon>
             </el-tooltip>
           </span>
         </template>
@@ -235,19 +238,19 @@ defineExpose({
           v-else
           class="box-item"
           effect="dark"
-          content="请先选择上级区域"
+          :content="t('system.superior_region_first')"
           placement="top"
         >
           <el-input v-model="state.form.code" disabled />
         </el-tooltip>
       </el-form-item>
 
-      <el-form-item label="区域名称" prop="name">
+      <el-form-item :label="t('system.region_name')" prop="name">
         <el-input v-model="state.form.name" />
       </el-form-item>
 
       <div class="geo-label-mask" />
-      <el-form-item label="坐标文件" prop="fileName">
+      <el-form-item :label="t('system.coordinate_file')" prop="fileName">
         <el-upload
           class="upload-geo"
           action=""
@@ -265,12 +268,12 @@ defineExpose({
           >
             <template #suffix>
               <el-icon>
-                <Icon name="icon_upload_outlined" />
+                <Icon name="icon_upload_outlined"><icon_upload_outlined class="svg-icon" /></Icon>
               </el-icon>
             </template>
             <template #prefix>
               <el-icon v-if="!!state.form.fileName">
-                <Icon name="de-json" />
+                <Icon name="de-json"><deJson class="svg-icon" /></Icon>
               </el-icon>
             </template>
           </el-input>
@@ -287,7 +290,28 @@ defineExpose({
     </template>
   </el-drawer>
 </template>
-
+<style lang="less">
+.geometry-info-drawer {
+  .ed-drawer__footer {
+    height: 64px !important;
+    padding: 16px 24px !important;
+    .dialog-footer {
+      height: 32px;
+      line-height: 32px;
+    }
+  }
+  .ed-form-item__label {
+    line-height: 22px !important;
+    height: 22px !important;
+  }
+  .ed-form-item {
+    margin-bottom: 16px;
+  }
+  .is-error {
+    margin-bottom: 40px !important;
+  }
+}
+</style>
 <style scoped lang="less">
 .map-tree-selector {
   width: 100%;

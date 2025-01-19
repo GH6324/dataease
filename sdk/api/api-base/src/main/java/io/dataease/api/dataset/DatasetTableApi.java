@@ -3,7 +3,7 @@ package io.dataease.api.dataset;
 import com.github.xiaoymin.knife4j.annotations.ApiSupport;
 import io.dataease.api.dataset.dto.MultFieldValuesRequest;
 import io.dataease.api.dataset.engine.SQLFunctionDTO;
-import io.dataease.dto.dataset.DatasetTableFieldDTO;
+import io.dataease.extensions.datasource.dto.DatasetTableFieldDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,6 +40,10 @@ public interface DatasetTableApi {
     @PostMapping("listByDatasetGroup/{id}")
     List<DatasetTableFieldDTO> listByDatasetGroup(@PathVariable Long id);
 
+    @Operation(summary = "获取数据集字段map")
+    @PostMapping("listByDsIds")
+    Map<String, List<DatasetTableFieldDTO>> listByDsIds(@RequestBody List<Long> ids);
+
     @Operation(summary = "删除字段")
     @PostMapping("delete/{id}")
     void delete(@PathVariable Long id);
@@ -47,6 +51,10 @@ public interface DatasetTableApi {
     @Operation(summary = "获取字段分组")
     @PostMapping("listByDQ/{id}")
     Map<String, List<DatasetTableFieldDTO>> listByDQ(@PathVariable Long id);
+
+    @Operation(summary = "获取copilot字段分组")
+    @PostMapping("copilotFields/{id}")
+    Map<String, List<DatasetTableFieldDTO>> copilotFields(@PathVariable Long id) throws Exception;
 
     @Operation(summary = "获取字段")
     @GetMapping("listWithPermissions/{id}")

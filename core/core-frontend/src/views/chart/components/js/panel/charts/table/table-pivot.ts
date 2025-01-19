@@ -1,25 +1,79 @@
-import { EXTRA_FIELD, PivotSheet, S2Event, S2Options, TOTAL_VALUE, S2Theme } from '@antv/s2'
+import {
+  EXTRA_FIELD,
+  PivotSheet,
+  S2Event,
+  S2Options,
+  TOTAL_VALUE,
+  S2Theme,
+  Totals,
+  PivotDataSet,
+  Query,
+  VALUE_FIELD,
+  QueryDataType,
+  TotalStatus,
+  Aggregation,
+  S2DataConfig
+} from '@antv/s2'
 import { formatterItem, valueFormatter } from '../../../formatter'
-import { hexColorToRGBA, parseJson } from '../../../util'
+import { hexColorToRGBA, isAlphaColor, parseJson } from '../../../util'
 import { S2ChartView, S2DrawOptions } from '../../types/impl/s2'
 import { TABLE_EDITOR_PROPERTY_INNER } from './common'
 import { useI18n } from '@/hooks/web/useI18n'
-import { maxBy, merge, minBy } from 'lodash-es'
-import { copyContent } from '../../common/common_table'
+import { isNumber, keys, maxBy, merge, minBy, some, isEmpty, get } from 'lodash-es'
+import { copyContent, CustomDataCell } from '../../common/common_table'
+import Decimal from 'decimal.js'
+import { DEFAULT_TABLE_HEADER } from '@/views/chart/components/editor/util/chart'
+
+type DataItem = Record<string, any>
 
 const { t } = useI18n()
 
+class CustomPivotDataset extends PivotDataSet {
+  getTotalValue(query: Query, totalStatus?: TotalStatus) {
+    const { options } = this.spreadsheet
+    const effectiveStatus = some(totalStatus)
+    const status = effectiveStatus ? totalStatus : this.getTotalStatus(query)
+    const { aggregation, calcFunc } =
+      getAggregationAndCalcFuncByQuery(status, options?.totals) || {}
+
+    // 聚合方式从用户配置的 s2Options.totals 取, 在触发前端兜底计算汇总逻辑时, 如果没有汇总的配置, 默认按 [求和] 计算,避免排序失效.
+    const defaultAggregation =
+      isEmpty(options?.totals) && !this.spreadsheet.isHierarchyTreeType() ? Aggregation.SUM : ''
+    const calcAction = calcActionByType[aggregation || defaultAggregation]
+
+    // 前端计算汇总值
+    if (calcAction || calcFunc) {
+      const data = this.getMultiData(query, {
+        queryType: QueryDataType.DetailOnly
+      })
+      let totalValue: number
+      if (calcFunc) {
+        totalValue = calcFunc(query, data, this.spreadsheet, status)
+      } else if (calcAction) {
+        totalValue = calcAction(data, VALUE_FIELD)
+      }
+
+      return {
+        ...query,
+        [VALUE_FIELD]: totalValue,
+        [query[EXTRA_FIELD]]: totalValue
+      }
+    }
+  }
+}
 /**
  * 透视表
  */
 export class TablePivot extends S2ChartView<PivotSheet> {
   properties: EditorProperty[] = [
+    'border-style',
     'background-overall-component',
     'basic-style-selector',
     'table-header-selector',
     'table-cell-selector',
     'table-total-selector',
     'title-selector',
+    'tooltip-selector',
     'function-cfg',
     'threshold',
     'linkage',
@@ -32,10 +86,21 @@ export class TablePivot extends S2ChartView<PivotSheet> {
       'tableTitleFontSize',
       'tableHeaderFontColor',
       'tableTitleHeight',
-      'tableHeaderAlign'
+      'tableHeaderAlign',
+      'showColTooltip',
+      'showRowTooltip',
+      'showHorizonBorder',
+      'showVerticalBorder'
     ],
     'table-total-selector': ['row', 'col'],
-    'basic-style-selector': ['tableColumnMode', 'tableBorderColor', 'tableScrollBarColor', 'alpha']
+    'basic-style-selector': [
+      'tableColumnMode',
+      'tableBorderColor',
+      'tableScrollBarColor',
+      'alpha',
+      'tableLayoutMode',
+      'showHoverStyle'
+    ]
   }
   axis: AxisType[] = ['xAxis', 'xAxisExt', 'yAxis', 'filter']
   axisConfig: AxisConfig = {
@@ -45,7 +110,8 @@ export class TablePivot extends S2ChartView<PivotSheet> {
     },
     xAxisExt: {
       name: `${t('chart.drag_block_table_data_column')} / ${t('chart.dimension')}`,
-      type: 'd'
+      type: 'd',
+      allowEmpty: true
     },
     yAxis: {
       name: `${t('chart.drag_block_table_data_column')} / ${t('chart.quota')}`,
@@ -57,13 +123,13 @@ export class TablePivot extends S2ChartView<PivotSheet> {
     const { container, chart, chartObj, action } = drawOption
     const containerDom = document.getElementById(container)
 
-    const { xAxis: columnFields, xAxisExt: rowFields, yAxis: valueFields } = chart
+    const { xAxisExt: columnFields, xAxis: rowFields, yAxis: valueFields } = chart
     const [c, r, v] = [columnFields, rowFields, valueFields].map(arr =>
       arr.map(i => i.dataeaseName)
     )
 
     // fields
-    const fields = chart.data.fields
+    const { fields, customCalc } = chart.data
     if (!fields || fields.length === 0) {
       if (chartObj) {
         chartObj.destroy()
@@ -74,7 +140,11 @@ export class TablePivot extends S2ChartView<PivotSheet> {
     const columns = []
     const meta = []
 
-    const valueFieldMap: Record<string, Axis> = chart.yAxis.reduce((p, n) => {
+    const valueFieldMap: Record<string, Axis> = [
+      ...chart.xAxis,
+      ...chart.xAxisExt,
+      ...chart.yAxis
+    ].reduce((p, n) => {
       p[n.dataeaseName] = n
       return p
     }, {})
@@ -83,12 +153,15 @@ export class TablePivot extends S2ChartView<PivotSheet> {
       columns.push(ele.dataeaseName)
       meta.push({
         field: ele.dataeaseName,
-        name: ele.name,
+        name: ele.chartShowName ?? ele.name,
         formatter: value => {
           if (!f) {
             return value
           }
           if (value === null || value === undefined) {
+            return value
+          }
+          if (![2, 3].includes(f.deType) || !isNumber(value)) {
             return value
           }
           if (f.formatterCfg) {
@@ -101,9 +174,10 @@ export class TablePivot extends S2ChartView<PivotSheet> {
     })
 
     // total config
-    const customAttr = parseJson(chart.customAttr)
-    const { tableTotal } = customAttr
-    tableTotal.row.subTotalsDimensions = r
+    const { basicStyle, tooltip, tableTotal } = parseJson(chart.customAttr)
+    if (!tableTotal.row.subTotalsDimensionsNew || tableTotal.row.subTotalsDimensions == undefined) {
+      tableTotal.row.subTotalsDimensions = r
+    }
     tableTotal.col.subTotalsDimensions = c
 
     // 解析合计、小计排序
@@ -142,6 +216,21 @@ export class TablePivot extends S2ChartView<PivotSheet> {
       }
       sortParams.push(sort)
     }
+    //列维度为空，行排序按照指标列来排序，取第一个有排序设置的指标
+    if (!columnFields?.length) {
+      const sortField = valueFields?.find(v => !['none', 'custom_sort'].includes(v.sort))
+      if (sortField) {
+        const sort = {
+          sortFieldId: r[0],
+          sortMethod: sortField.sort.toUpperCase(),
+          sortByMeasure: TOTAL_VALUE,
+          query: {
+            [EXTRA_FIELD]: sortField.dataeaseName
+          }
+        }
+        sortParams.push(sort)
+      }
+    }
     // 自定义总计小计
     const totals = [
       tableTotal.row.calcTotals,
@@ -149,6 +238,15 @@ export class TablePivot extends S2ChartView<PivotSheet> {
       tableTotal.col.calcTotals,
       tableTotal.col.calcSubTotals
     ]
+    const axisMap = {
+      row: chart.xAxis,
+      col: chart.xAxisExt,
+      quota: chart.yAxis
+    }
+    //树形模式下，列维度为空，行小计会变成列总计，特殊处理下
+    if (basicStyle.tableLayoutMode === 'tree' && !chart.xAxisExt?.length) {
+      tableTotal.col.calcTotals = tableTotal.row.calcSubTotals
+    }
     totals.forEach(total => {
       if (total.cfg?.length) {
         delete total.aggregation
@@ -156,15 +254,15 @@ export class TablePivot extends S2ChartView<PivotSheet> {
           p[n.dataeaseName] = n
           return p
         }, {})
-        total.calcFunc = (query, data) => {
-          return customCalcFunc(query, data, totalCfgMap)
+        total.calcFunc = (query, data, _, status) => {
+          return customCalcFunc(query, data, status, chart, totalCfgMap, axisMap, customCalc)
         }
       }
     })
     // 空值处理
     const newData = this.configEmptyDataStrategy(chart)
     // data config
-    const s2DataConfig = {
+    const s2DataConfig: S2DataConfig = {
       fields: {
         rows: r,
         columns: c,
@@ -174,18 +272,37 @@ export class TablePivot extends S2ChartView<PivotSheet> {
       data: newData,
       sortParams: sortParams
     }
-    // options
-    const s2Options = {
+    const s2Options: S2Options = {
       width: containerDom.offsetWidth,
       height: containerDom.offsetHeight,
-      style: this.configStyle(chart),
-      totals: tableTotal,
-      conditions: this.configConditions(chart)
+      totals: tableTotal as Totals,
+      conditions: this.configConditions(chart),
+      tooltip: {
+        getContainer: () => containerDom
+      },
+      hierarchyType: basicStyle.tableLayoutMode ?? 'grid',
+      dataSet: spreadSheet => new CustomPivotDataset(spreadSheet),
+      interaction: {
+        hoverHighlight: !(basicStyle.showHoverStyle === false)
+      },
+      dataCell: meta => {
+        return new CustomDataCell(meta, meta.spreadsheet)
+      }
     }
-
+    // options
+    s2Options.style = this.configStyle(chart, s2DataConfig)
+    s2Options.style.hierarchyCollapse = true
+    // tooltip
+    this.configTooltip(chart, s2Options)
     // 开始渲染
     const s2 = new PivotSheet(containerDom, s2DataConfig, s2Options as unknown as S2Options)
-
+    // tooltip
+    const { show } = tooltip
+    if (show) {
+      s2.on(S2Event.COL_CELL_HOVER, event => this.showTooltip(s2, event, meta))
+      s2.on(S2Event.ROW_CELL_HOVER, event => this.showTooltip(s2, event, meta))
+      s2.on(S2Event.DATA_CELL_HOVER, event => this.showTooltip(s2, event, meta))
+    }
     // click
     s2.on(S2Event.DATA_CELL_CLICK, ev => this.dataCellClickAction(chart, ev, s2, action))
     s2.on(S2Event.ROW_CELL_CLICK, ev => this.headerCellClickAction(chart, ev, s2, action))
@@ -254,45 +371,135 @@ export class TablePivot extends S2ChartView<PivotSheet> {
   protected configTheme(chart: Chart): S2Theme {
     const theme = super.configTheme(chart)
     const { basicStyle, tableHeader } = parseJson(chart.customAttr)
-    const tableHeaderBgColor = hexColorToRGBA(tableHeader.tableHeaderBgColor, basicStyle.alpha)
-    const tableBorderColor = hexColorToRGBA(basicStyle.tableBorderColor, basicStyle.alpha)
-    const tableHeaderFontColor = hexColorToRGBA(tableHeader.tableHeaderFontColor, basicStyle.alpha)
+    let tableHeaderBgColor = tableHeader.tableHeaderBgColor
+    if (!isAlphaColor(tableHeaderBgColor)) {
+      tableHeaderBgColor = hexColorToRGBA(tableHeaderBgColor, basicStyle.alpha)
+    }
+    let tableHeaderCornerBgColor =
+      tableHeader.tableHeaderCornerBgColor ?? DEFAULT_TABLE_HEADER.tableHeaderCornerBgColor
+    if (!isAlphaColor(tableHeaderCornerBgColor)) {
+      tableHeaderCornerBgColor = hexColorToRGBA(tableHeaderCornerBgColor, basicStyle.alpha)
+    }
+    let tableHeaderColBgColor =
+      tableHeader.tableHeaderColBgColor ?? DEFAULT_TABLE_HEADER.tableHeaderColBgColor
+    if (!isAlphaColor(tableHeaderColBgColor)) {
+      tableHeaderColBgColor = hexColorToRGBA(tableHeaderColBgColor, basicStyle.alpha)
+    }
+    let tableBorderColor = basicStyle.tableBorderColor
+    if (!isAlphaColor(tableBorderColor)) {
+      tableBorderColor = hexColorToRGBA(tableBorderColor, basicStyle.alpha)
+    }
+    const tableHeaderColFontColor = hexColorToRGBA(
+      tableHeader.tableHeaderColFontColor,
+      basicStyle.alpha
+    )
+    const tableHeaderCornerFontColor = hexColorToRGBA(
+      tableHeader.tableHeaderCornerFontColor,
+      basicStyle.alpha
+    )
+    const colFontStyle = tableHeader.isColItalic ? 'italic' : 'normal'
+    const cornerFontStyle = tableHeader.isCornerItalic ? 'italic' : 'normal'
+    const colFontWeight = tableHeader.isColBolder === false ? 'normal' : 'bold'
+    const cornerFontWeight = tableHeader.isCornerBolder === false ? 'normal' : 'bold'
     const pivotTheme = {
-      cornerCell: {
-        cell: {
-          verticalBorderWidth: 1
-        }
-      },
       rowCell: {
         cell: {
-          backgroundColor: tableHeaderBgColor,
+          backgroundColor: tableHeaderColBgColor,
           horizontalBorderColor: tableBorderColor,
           verticalBorderColor: tableBorderColor
         },
         text: {
-          fill: tableHeaderFontColor,
-          fontSize: tableHeader.tableTitleFontSize,
-          textAlign: tableHeader.tableHeaderAlign,
-          textBaseline: 'top'
+          fill: tableHeaderColFontColor,
+          fontSize: tableHeader.tableTitleColFontSize,
+          textAlign: tableHeader.tableHeaderColAlign,
+          textBaseline: 'top',
+          fontStyle: colFontStyle,
+          fontWeight: colFontWeight
         },
         bolderText: {
-          fill: tableHeaderFontColor,
-          fontSize: tableHeader.tableTitleFontSize,
-          textAlign: tableHeader.tableHeaderAlign
+          fill: tableHeaderColFontColor,
+          fontSize: tableHeader.tableTitleColFontSize,
+          textAlign: tableHeader.tableHeaderColAlign,
+          fontStyle: colFontStyle,
+          fontWeight: colFontWeight
         },
         measureText: {
-          fill: tableHeaderFontColor,
-          fontSize: tableHeader.tableTitleFontSize,
-          textAlign: tableHeader.tableHeaderAlign
+          fill: tableHeaderColFontColor,
+          fontSize: tableHeader.tableTitleColFontSize,
+          textAlign: tableHeader.tableHeaderColAlign,
+          fontStyle: colFontStyle,
+          fontWeight: colFontWeight
         },
         seriesText: {
-          fill: tableHeaderFontColor,
-          fontSize: tableHeader.tableTitleFontSize,
-          textAlign: tableHeader.tableHeaderAlign
+          fill: tableHeaderColFontColor,
+          fontSize: tableHeader.tableTitleColFontSize,
+          textAlign: tableHeader.tableHeaderColAlign,
+          fontStyle: colFontStyle,
+          fontWeight: colFontWeight
+        }
+      },
+      cornerCell: {
+        cell: {
+          backgroundColor: tableHeaderCornerBgColor
+        },
+        text: {
+          fill: tableHeaderCornerFontColor,
+          fontSize: tableHeader.tableTitleCornerFontSize,
+          textAlign: tableHeader.tableHeaderCornerAlign,
+          fontStyle: cornerFontStyle,
+          fontWeight: cornerFontWeight
+        },
+        bolderText: {
+          fill: tableHeaderCornerFontColor,
+          fontSize: tableHeader.tableTitleCornerFontSize,
+          textAlign: tableHeader.tableHeaderCornerAlign,
+          fontStyle: cornerFontStyle,
+          fontWeight: cornerFontWeight
+        },
+        measureText: {
+          fill: tableHeaderCornerFontColor,
+          fontSize: tableHeader.tableTitleCornerFontSize,
+          textAlign: tableHeader.tableHeaderCornerAlign,
+          fontStyle: cornerFontStyle,
+          fontWeight: cornerFontWeight
         }
       }
     }
     merge(theme, pivotTheme)
+    if (tableHeader.showHorizonBorder === false) {
+      const tmp: S2Theme = {
+        cornerCell: {
+          cell: {
+            horizontalBorderColor: tableHeaderBgColor,
+            horizontalBorderWidth: 0
+          }
+        },
+        rowCell: {
+          cell: {
+            horizontalBorderColor: tableHeaderBgColor,
+            horizontalBorderWidth: 0
+          }
+        }
+      }
+      merge(theme, tmp)
+    }
+    if (tableHeader.showVerticalBorder === false) {
+      const tmp: S2Theme = {
+        cornerCell: {
+          cell: {
+            verticalBorderColor: tableHeaderBgColor,
+            verticalBorderWidth: 0
+          }
+        },
+        rowCell: {
+          cell: {
+            verticalBorderColor: tableHeaderBgColor,
+            verticalBorderWidth: 0
+          }
+        }
+      }
+      merge(theme, tmp)
+    }
     return theme
   }
 
@@ -308,39 +515,415 @@ export class TablePivot extends S2ChartView<PivotSheet> {
     super('table-pivot', [])
   }
 }
-function customCalcFunc(query, data, totalCfgMap) {
+function customCalcFunc(query, data, status, chart, totalCfgMap, axisMap, customCalc) {
   if (!data?.length || !query[EXTRA_FIELD]) {
     return 0
   }
-  const aggregation = totalCfgMap[query[EXTRA_FIELD]].aggregation
+  const aggregation = totalCfgMap[query[EXTRA_FIELD]]?.aggregation || 'SUM'
   switch (aggregation) {
     case 'SUM': {
       return data.reduce((p, n) => {
-        return p + n[query[EXTRA_FIELD]]
+        return p + parseFloat(n[query[EXTRA_FIELD]] ?? 0)
       }, 0)
     }
     case 'AVG': {
       const sum = data.reduce((p, n) => {
-        return p + n[query[EXTRA_FIELD]]
+        return p + parseFloat(n[query[EXTRA_FIELD]] ?? 0)
       }, 0)
       return sum / data.length
     }
     case 'MIN': {
       const result = minBy(data, n => {
-        return n[query[EXTRA_FIELD]]
+        return parseFloat(n[query[EXTRA_FIELD]])
       })
       return result?.[query[EXTRA_FIELD]]
     }
     case 'MAX': {
       const result = maxBy(data, n => {
-        return n[query[EXTRA_FIELD]]
+        return parseFloat(n[query[EXTRA_FIELD]])
       })
       return result?.[query[EXTRA_FIELD]]
     }
+    case 'CUSTOM': {
+      const val = getCustomCalcResult(query, axisMap, chart, status, customCalc || {})
+      if (val === '') {
+        return val
+      }
+      return parseFloat(val)
+    }
     default: {
       return data.reduce((p, n) => {
-        return p + n[query[EXTRA_FIELD]]
+        return p + parseFloat(n[query[EXTRA_FIELD]] ?? 0)
       }, 0)
     }
   }
+}
+
+function getTreeCustomCalcResult(query, axisMap, status: TotalStatus, customCalc) {
+  const quotaField = query[EXTRA_FIELD]
+  const { row, col } = axisMap
+  // 行列交叉总计
+  if (status.isRowTotal && status.isColTotal) {
+    return customCalc.rowColTotal?.data?.[quotaField]
+  }
+  // 列总计
+  if (status.isColTotal && !status.isRowSubTotal) {
+    const { colTotal, rowSubInColTotal } = customCalc
+    const path = getTreePath(query, row)
+    let val
+    if (path.length) {
+      const subLevel = getSubLevel(query, row)
+      if (subLevel + 1 === row.length && colTotal) {
+        path.push(quotaField)
+        val = get(colTotal.data, path)
+      }
+      if (subLevel + 1 < row.length && rowSubInColTotal) {
+        const data = rowSubInColTotal?.[subLevel]?.data
+        path.push(quotaField)
+        val = get(data, path)
+      }
+    }
+    return val
+  }
+  // 列小计
+  if (status.isColSubTotal && !status.isRowTotal && !status.isRowSubTotal) {
+    const { colSubTotal } = customCalc
+    const subLevel = getSubLevel(query, col)
+    const rowPath = getTreePath(query, row)
+    const colPath = getTreePath(query, col)
+    const path = [...rowPath, ...colPath]
+    const data = colSubTotal?.[subLevel]?.data
+    let val
+    if (path.length && data) {
+      path.push(quotaField)
+      val = get(data, path)
+    }
+    return val
+  }
+  // 行总计
+  if (status.isRowTotal && !status.isColSubTotal) {
+    const { rowTotal } = customCalc
+    const path = getTreePath(query, col)
+    let val
+    if (rowTotal) {
+      if (path.length) {
+        path.push(quotaField)
+        val = get(rowTotal.data, path)
+      }
+      // 列维度为空，行维度不为空
+      if (!col.length && row.length) {
+        val = get(rowTotal.data, quotaField)
+      }
+    }
+    return val
+  }
+  // 行小计
+  if (status.isRowSubTotal) {
+    // 列维度为空，行小计直接当成列总计
+    if (
+      (!status.isColTotal && !status.isColSubTotal) ||
+      (!col.length && status.isColTotal && status.isRowSubTotal)
+    ) {
+      const { rowSubTotal } = customCalc
+      const rowLevel = getSubLevel(query, row)
+      const colPath = getTreePath(query, col)
+      const rowPath = getTreePath(query, row)
+      const path = [...colPath, ...rowPath]
+      const data = rowSubTotal?.[rowLevel]?.data
+      let val
+      if (path.length && rowSubTotal) {
+        path.push(quotaField)
+        val = get(data, path)
+      }
+      return val
+    }
+  }
+  // 行总计里面的列小计
+  if (status.isRowTotal && status.isColSubTotal) {
+    const { colSubInRowTotal } = customCalc
+    const colLevel = getSubLevel(query, col)
+    const { data } = colSubInRowTotal?.[colLevel]
+    const colPath = getTreePath(query, col)
+    let val
+    if (colPath.length && colSubInRowTotal) {
+      colPath.push(quotaField)
+      val = get(data, colPath)
+    }
+    return val
+  }
+  // 列总计里面的行小计
+  if (status.isColTotal && status.isRowSubTotal) {
+    const { rowSubInColTotal } = customCalc
+    const rowSubLevel = getSubLevel(query, row)
+    const data = rowSubInColTotal?.[rowSubLevel]?.data
+    const path = getTreePath(query, row)
+    let val
+    if (path.length && rowSubInColTotal) {
+      path.push(quotaField)
+      val = get(data, path)
+    }
+    return val
+  }
+  // 列小计里面的行小计
+  if (status.isColSubTotal && status.isRowSubTotal) {
+    const { rowSubInColSub } = customCalc
+    const rowSubLevel = getSubLevel(query, row)
+    const colSubLevel = getSubLevel(query, col)
+    const data = rowSubInColSub?.[rowSubLevel]?.[colSubLevel]?.data
+    const rowPath = getTreePath(query, row)
+    const colPath = getTreePath(query, col)
+    const path = [...rowPath, ...colPath]
+    let val
+    if (path.length && rowSubInColSub) {
+      path.push(quotaField)
+      val = get(data, path)
+    }
+    return val
+  }
+  return NaN
+}
+
+function getGridCustomCalcResult(query, axisMap, status: TotalStatus, customCalc) {
+  const quotaField = query[EXTRA_FIELD]
+  const { row, col } = axisMap
+  // 行列交叉总计
+  if (status.isRowTotal && status.isColTotal) {
+    return customCalc.rowColTotal?.data?.[quotaField]
+  }
+  // 列总计
+  if (status.isColTotal && !status.isRowSubTotal) {
+    const { colTotal } = customCalc
+    const path = getTreePath(query, row)
+    let val
+    if (path.length) {
+      if (colTotal) {
+        path.push(quotaField)
+        val = get(colTotal.data, path)
+      }
+    }
+    return val
+  }
+  // 列小计
+  if (status.isColSubTotal && !status.isRowTotal && !status.isRowSubTotal) {
+    const { colSubTotal } = customCalc
+    const subLevel = getSubLevel(query, col)
+    const rowPath = getTreePath(query, row)
+    const colPath = getTreePath(query, col)
+    const path = [...rowPath, ...colPath]
+    const data = colSubTotal?.[subLevel]?.data
+    let val
+    if (path.length && data) {
+      path.push(quotaField)
+      val = get(data, path)
+    }
+    return val
+  }
+  // 行总计
+  if (status.isRowTotal && !status.isColSubTotal) {
+    const { rowTotal } = customCalc
+    const path = getTreePath(query, col)
+    let val
+    if (rowTotal) {
+      if (path.length) {
+        path.push(quotaField)
+        val = get(rowTotal.data, path)
+      }
+      // 列维度为空，行维度不为空
+      if (!col.length && row.length) {
+        val = get(rowTotal.data, quotaField)
+      }
+    }
+    return val
+  }
+  // 行小计
+  if (status.isRowSubTotal && !status.isColTotal && !status.isColSubTotal) {
+    const { rowSubTotal } = customCalc
+    const rowLevel = getSubLevel(query, row)
+    const colPath = getTreePath(query, col)
+    const rowPath = getTreePath(query, row)
+    const path = [...colPath, ...rowPath]
+    const data = rowSubTotal?.[rowLevel]?.data
+    let val
+    if (path.length && rowSubTotal) {
+      path.push(quotaField)
+      val = get(data, path)
+    }
+    return val
+  }
+  // 行总计里面的列小计
+  if (status.isRowTotal && status.isColSubTotal) {
+    const { colSubInRowTotal } = customCalc
+    const colLevel = getSubLevel(query, col)
+    const { data } = colSubInRowTotal?.[colLevel]
+    const colPath = getTreePath(query, col)
+    let val
+    if (colPath.length && colSubInRowTotal) {
+      colPath.push(quotaField)
+      val = get(data, colPath)
+    }
+    return val
+  }
+  // 列总计里面的行小计
+  if (status.isColTotal && status.isRowSubTotal) {
+    const { rowSubInColTotal } = customCalc
+    const rowSubLevel = getSubLevel(query, row)
+    const data = rowSubInColTotal?.[rowSubLevel]?.data
+    const path = getTreePath(query, row)
+    let val
+    if (path.length && rowSubInColTotal) {
+      path.push(quotaField)
+      val = get(data, path)
+    }
+    return val
+  }
+  // 列小计里面的行小计
+  if (status.isColSubTotal && status.isRowSubTotal) {
+    const { rowSubInColSub } = customCalc
+    const rowSubLevel = getSubLevel(query, row)
+    const colSubLevel = getSubLevel(query, col)
+    const data = rowSubInColSub?.[rowSubLevel]?.[colSubLevel]?.data
+    const rowPath = getTreePath(query, row)
+    const colPath = getTreePath(query, col)
+    const path = [...rowPath, ...colPath]
+    let val
+    if (path.length && rowSubInColSub) {
+      path.push(quotaField)
+      val = get(data, path)
+    }
+    return val
+  }
+}
+function getCustomCalcResult(query, axisMap, chart: ChartObj, status: TotalStatus, customCalc) {
+  const { tableLayoutMode } = chart.customAttr.basicStyle
+  if (tableLayoutMode === 'tree') {
+    return getTreeCustomCalcResult(query, axisMap, status, customCalc)
+  }
+  return getGridCustomCalcResult(query, axisMap, status, customCalc)
+}
+
+function getSubLevel(query, axis) {
+  const fields: [] = axis.map(a => a.dataeaseName)
+  let subLevel = -1
+  const queryFields = keys(query)
+  for (let i = fields.length - 1; i >= 0; i--) {
+    const field = fields[i]
+    const index = queryFields.findIndex(f => f === field)
+    if (index !== -1) {
+      subLevel++
+    }
+  }
+  return subLevel
+}
+
+function getTreePath(query, axis) {
+  const path = []
+  const fields = keys(query)
+  axis.forEach(a => {
+    const index = fields.findIndex(f => f === a.dataeaseName)
+    if (index !== -1) {
+      path.push(query[a.dataeaseName])
+    }
+  })
+  return path
+}
+
+function getAggregationAndCalcFuncByQuery(totalsStatus, totalsOptions) {
+  const { isRowTotal, isRowSubTotal, isColTotal, isColSubTotal } = totalsStatus
+  const { row, col } = totalsOptions || {}
+  const { calcTotals: rowCalcTotals = {}, calcSubTotals: rowCalcSubTotals = {} } = row || {}
+  const { calcTotals: colCalcTotals = {}, calcSubTotals: colCalcSubTotals = {} } = col || {}
+
+  const getCalcTotals = (dimensionTotals: CalcTotals, isTotal: boolean) => {
+    if ((dimensionTotals.aggregation || dimensionTotals.calcFunc) && isTotal) {
+      return {
+        aggregation: dimensionTotals.aggregation,
+        calcFunc: dimensionTotals.calcFunc
+      }
+    }
+  }
+
+  // 优先级: 列总计/小计 > 行总计/小计
+  return (
+    getCalcTotals(colCalcTotals, isColTotal) ||
+    getCalcTotals(colCalcSubTotals, isColSubTotal) ||
+    getCalcTotals(rowCalcTotals, isRowTotal) ||
+    getCalcTotals(rowCalcSubTotals, isRowSubTotal)
+  )
+}
+
+export const isNotNumber = (value: unknown) => {
+  if (typeof value === 'number') {
+    return Number.isNaN(value)
+  }
+  if (!value) {
+    return true
+  }
+  if (typeof value === 'string') {
+    return Number.isNaN(Number(value))
+  }
+  return true
+}
+
+const processFieldValues = (data: DataItem[], field: string, filterIllegalValue = false) => {
+  if (!data?.length) {
+    return []
+  }
+
+  return data.reduce<Array<Decimal>>((resultArr, item) => {
+    const fieldValue = get(item, field)
+    const notNumber = isNotNumber(fieldValue)
+
+    if (filterIllegalValue && notNumber) {
+      // 过滤非法值
+      return resultArr
+    }
+
+    const val = notNumber ? 0 : fieldValue
+    resultArr.push(new Decimal(val))
+
+    return resultArr
+  }, [])
+}
+
+export const getDataSumByField = (data: DataItem[], field: string): number => {
+  const fieldValues = processFieldValues(data, field)
+  if (!fieldValues.length) {
+    return 0
+  }
+
+  return Decimal.sum(...fieldValues).toNumber()
+}
+
+export const getDataExtremumByField = (
+  method: 'min' | 'max',
+  data: DataItem[],
+  field: string
+): number => {
+  // 防止预处理时默认值 0 影响极值结果，处理时需过滤非法值
+  const fieldValues = processFieldValues(data, field, true)
+  if (!fieldValues?.length) {
+    return
+  }
+
+  return Decimal[method](...fieldValues).toNumber()
+}
+
+export const getDataAvgByField = (data: DataItem[], field: string): number => {
+  const fieldValues = processFieldValues(data, field)
+  if (!fieldValues?.length) {
+    return 0
+  }
+
+  return Decimal.sum(...fieldValues)
+    .dividedBy(fieldValues.length)
+    .toNumber()
+}
+
+const calcActionByType: {
+  [type in Aggregation]: (data: DataItem[], field: string) => number
+} = {
+  [Aggregation.SUM]: getDataSumByField,
+  [Aggregation.MIN]: (data, field) => getDataExtremumByField('min', data, field),
+  [Aggregation.MAX]: (data, field) => getDataExtremumByField('max', data, field),
+  [Aggregation.AVG]: getDataAvgByField
 }

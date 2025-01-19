@@ -1,9 +1,14 @@
 <script lang="ts" setup>
 import { Icon } from '@/components/icon-custom'
+import icon_more_outlined from '@/assets/svg/icon_more_outlined.svg'
 import { propTypes } from '@/utils/propTypes'
 import type { Placement } from 'element-plus-secondary'
-import { ref, PropType } from 'vue'
+import { ref, PropType, computed } from 'vue'
 import ShareHandler from '@/views/share/share/ShareHandler.vue'
+import { useShareStoreWithOut } from '@/store/modules/share'
+import { isDesktop } from '@/utils/ModelUtil'
+const shareStore = useShareStoreWithOut()
+
 export interface Menu {
   svgName?: string
   label?: string
@@ -21,7 +26,7 @@ const props = defineProps({
     type: String as () => Placement,
     default: 'bottom-end'
   },
-  iconName: propTypes.string.def('icon_more_outlined'),
+  iconName: propTypes.string.def(''),
   inTable: propTypes.bool.def(false),
   resourceType: propTypes.string.def('dashboard'),
   node: {
@@ -31,6 +36,10 @@ const props = defineProps({
     }
   },
   anyManage: propTypes.bool.def(false)
+})
+
+const shareDisable = computed(() => {
+  return shareStore.getShareDisable || isDesktop()
 })
 
 const shareComponent = ref(null)
@@ -51,8 +60,12 @@ const handleCommand = (command: string | number | object) => {
   emit('handleCommand', command)
 }
 const callBack = param => {
+  if (shareDisable.value) {
+    return
+  }
   if (props.node.leaf && props.node?.weight >= 7) {
-    menus.value.splice(2, 0, param)
+    menus.value[0]['divided'] = true
+    menus.value.splice(0, 0, param)
   }
 }
 const emit = defineEmits(['handleCommand'])
@@ -66,7 +79,7 @@ const emit = defineEmits(['handleCommand'])
     @command="handleCommand"
   >
     <el-icon class="hover-icon" :class="inTable && 'hover-icon-in-table'" @click.stop>
-      <Icon :name="iconName"></Icon>
+      <Icon><component class="svg-icon" :is="iconName || icon_more_outlined"></component></Icon>
     </el-icon>
     <template #dropdown>
       <el-dropdown-menu>
@@ -78,8 +91,8 @@ const emit = defineEmits(['handleCommand'])
           :disabled="ele.disabled"
           :class="{ 'de-hidden-drop-item': ele.hidden }"
         >
-          <el-icon class="handle-icon" v-if="ele.svgName">
-            <Icon :name="ele.svgName"></Icon>
+          <el-icon class="handle-icon" color="#646a73" size="16" v-if="ele.svgName">
+            <Icon><component class="svg-icon" :is="ele.svgName"></component></Icon>
           </el-icon>
           {{ ele.label }}
         </el-dropdown-item>
@@ -87,6 +100,7 @@ const emit = defineEmits(['handleCommand'])
     </template>
   </el-dropdown>
   <ShareHandler
+    v-if="!shareDisable"
     ref="shareComponent"
     :resource-id="props.node.id"
     :resource-type="props.resourceType"

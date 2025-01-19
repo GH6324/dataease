@@ -1,26 +1,40 @@
 <script setup lang="ts">
+import dvFolder from '@/assets/svg/dv-folder.svg'
+import icon_dataset from '@/assets/svg/icon_dataset.svg'
+import icon_done_outlined from '@/assets/svg/icon_done_outlined.svg'
 import { Tree } from '../../../../visualized/data/dataset/form/CreatDsGroup.vue'
 import { computed, ref, watch, onMounted } from 'vue'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { useAppStoreWithOut } from '@/store/modules/app'
 import _ from 'lodash'
-import { useRouter } from 'vue-router'
-import { getDatasetTree } from '@/api/dataset'
+import { getDatasetTree, getDatasourceList } from '@/api/dataset'
 import { ElFormItem, FormInstance } from 'element-plus-secondary'
+import { useEmitt } from '@/hooks/web/useEmitt'
+import { useCache } from '@/hooks/web/useCache'
+import { useUserStoreWithOut } from '@/store/modules/user'
+import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
+import treeSort from '@/utils/treeSortUtils'
 
-const { resolve } = useRouter()
+const dvMainStore = dvMainStoreWithOut()
+const { wsCache } = useCache('localStorage')
+const userStore = useUserStoreWithOut()
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{
     themes?: EditorTheme
     modelValue?: string | number
     stateObj: any
+    disabled: boolean
     viewId: string
+    sourceType: string
   }>(),
   {
     datasetTree: () => [],
-    themes: 'dark'
+    themes: 'dark',
+    sourceType: 'dataset',
+    disabled: false
   }
 )
 
@@ -28,15 +42,36 @@ const datasetSelector = ref(null)
 
 const loadingDatasetTree = ref(false)
 
+const orgCheck = ref(true)
+
 const datasetTree = ref<Tree[]>([])
-const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
-})
+
+const selectSource =
+  props.sourceType === 'datasource'
+    ? t('visualization.select_datasource')
+    : t('visualization.select_dataset')
+
+const newSource =
+  props.sourceType === 'datasource'
+    ? t('visualization.new_datasource')
+    : t('visualization.new_dataset')
+
+const sourceName = computed(() =>
+  props.sourceType === 'datasource' ? t('datasource.datasource') : t('visualization.dataset')
+)
+
+const sortTypeChange = arr => {
+  const sortType = wsCache.get('TreeSort-dataset') || 'time_desc'
+  datasetTree.value = treeSort(arr, sortType)
+}
+
 const initDataset = () => {
   loadingDatasetTree.value = true
-  getDatasetTree({})
+  const method = props.sourceType === 'datasource' ? getDatasourceList : getDatasetTree
+  const params = props.sourceType === 'datasource' ? null : {}
+  method(params)
     .then(res => {
-      datasetTree.value = (res as unknown as Tree[]) || []
+      sortTypeChange((res as unknown as Tree[]) || [])
     })
     .finally(() => {
       loadingDatasetTree.value = false
@@ -44,7 +79,12 @@ const initDataset = () => {
     })
 }
 
-const emits = defineEmits(['update:modelValue', 'update:stateObj', 'onDatasetChange'])
+const emits = defineEmits([
+  'update:modelValue',
+  'update:stateObj',
+  'onDatasetChange',
+  'addDsWindow'
+])
 
 const _modelValue = computed({
   get() {
@@ -62,10 +102,7 @@ const dsSelectProps = {
   isLeaf: node => !node.children?.length
 }
 
-const { t } = useI18n()
-
 const formRef = ref<FormInstance>()
-
 const searchStr = ref<string>()
 
 watch(searchStr, val => {
@@ -73,11 +110,17 @@ watch(searchStr, val => {
 })
 
 const showTree = computed(() => {
-  return datasetTree.value && datasetTree.value.length > 0 && !loadingDatasetTree.value
+  return (
+    datasetTree.value && datasetTree.value.length > 0 && !loadingDatasetTree.value && orgCheck.value
+  )
+})
+
+const emptyMsg = computed(() => {
+  return orgCheck.value ? '暂无' + sourceName.value : '已切换至新组织，无权访问其他组织的资源'
 })
 
 const showEmptyInfo = computed(() => {
-  return !showTree.value && !loadingDatasetTree.value
+  return !showTree.value && !loadingDatasetTree.value && !orgCheck.value
 })
 
 const computedTree = computed(() => {
@@ -108,7 +151,7 @@ const exist = computed(() => {
 
 const selectedNodeName = computed(() => {
   if (!exist.value) {
-    return '数据集不存在'
+    return sourceName.value + '不存在'
   }
   return selectedNode.value?.name
 })
@@ -151,8 +194,7 @@ const refresh = () => {
   initDataset()
 }
 const addDataset = () => {
-  const { href } = resolve('/dataset-form')
-  window.open(href, '_blank')
+  emits('addDsWindow')
 }
 
 const datasetSelectorPopover = ref()
@@ -180,11 +222,42 @@ function getNode(nodeId: number) {
   return datasetSelector?.value?.getNode(nodeId)
 }
 
+const clearShow = computed(
+  () =>
+    props.sourceType === 'dataset' &&
+    dvMainStore.curComponent &&
+    ['rich-text', 'picture-group'].includes(dvMainStore.curComponent.innerType)
+)
+
+const handleClear = e => {
+  e.preventDefault()
+  e.stopPropagation()
+  dsClick({ leaf: true, id: null } as Tree)
+  useEmitt().emitter.emit('clear-remove', ['xAxis', 'yAxis', 'drillFields'])
+}
+
+const handleFocus = () => {
+  if (
+    props.sourceType === 'dataset' &&
+    userStore.getOid &&
+    wsCache.get('user.oid') &&
+    userStore.getOid !== wsCache.get('user.oid')
+  ) {
+    orgCheck.value = false
+  } else {
+    orgCheck.value = true
+  }
+}
+
 defineExpose({ getNode })
 const appStore = useAppStoreWithOut()
-const isDataEaseBi = computed(() => appStore.getIsDataEaseBi)
+const isDataEaseBi = computed(() => appStore.getIsDataEaseBi || appStore.getIsIframe)
 onMounted(() => {
   initDataset()
+  useEmitt({
+    name: 'refresh-dataset-selector',
+    callback: () => refresh()
+  })
 })
 </script>
 
@@ -199,6 +272,7 @@ onMounted(() => {
       :show-arrow="false"
       @show="onPopoverShow"
       @hide="onPopoverHide"
+      :disabled="disabled"
       :effect="themes"
       :offset="4"
     >
@@ -209,13 +283,26 @@ onMounted(() => {
               size="middle"
               :effect="themes"
               v-model="selectedNodeName"
-              readonly
               class="data-set-dark"
-              placeholder="请选择数据集"
+              @focus="handleFocus"
+              :disabled="disabled"
+              :placeholder="selectSource"
             >
               <template #suffix>
-                <el-icon class="input-arrow-icon" :class="{ reverse: _popoverShow }">
+                <el-icon
+                  v-show="!disabled"
+                  class="input-arrow-icon"
+                  :class="{ reverse: _popoverShow }"
+                >
                   <ArrowDown />
+                </el-icon>
+                <el-icon
+                  v-show="!disabled"
+                  v-if="clearShow"
+                  class="input-custom-clear-icon"
+                  @click="handleClear"
+                >
+                  <CircleClose />
                 </el-icon>
               </template>
             </el-input>
@@ -226,7 +313,7 @@ onMounted(() => {
         <el-container :class="themes">
           <el-header>
             <div class="m-title" :class="{ dark: themes === 'dark' }">
-              <div>{{ t('dataset.datalist') }}</div>
+              <div>{{ sourceName }}</div>
               <el-button type="primary" link class="refresh-btn" @click="refresh">
                 {{ t('commons.refresh') }}
               </el-button>
@@ -243,7 +330,7 @@ onMounted(() => {
           <el-main :class="{ dark: themes === 'dark' }">
             <el-scrollbar max-height="252px" always>
               <div class="m-loading" v-if="loadingDatasetTree" v-loading="loadingDatasetTree"></div>
-              <div class="empty-info" v-if="showEmptyInfo">暂无数据集</div>
+              <div class="empty-info" v-if="showEmptyInfo">{{ emptyMsg }}</div>
               <!--          <div class="empty-info" v-if="showEmptySearchInfo">暂无相关数据</div>-->
               <el-tree
                 :class="{ dark: themes === 'dark' }"
@@ -262,28 +349,21 @@ onMounted(() => {
                 <template #default="{ node, data }">
                   <div
                     class="tree-row-item"
+                    :title="node.label"
                     :class="{ dark: themes === 'dark', active: _modelValue === data.id }"
                   >
                     <div class="m-icon">
                       <el-icon v-if="!data.leaf">
-                        <Icon name="dv-folder" />
+                        <Icon name="dv-folder"><dvFolder class="svg-icon" /></Icon>
                       </el-icon>
                       <el-icon v-if="data.leaf">
-                        <Icon name="icon_dataset" />
+                        <Icon name="icon_dataset"><icon_dataset class="svg-icon" /></Icon>
                       </el-icon>
                     </div>
-                    <el-tooltip
-                      :effect="toolTip"
-                      :show-after="1000"
-                      :content="node.label"
-                      placement="top"
-                      :enterable="false"
-                    >
-                      {{ node.label }}
-                    </el-tooltip>
+                    {{ node.label }}
 
                     <el-icon class="checked-item" v-if="_modelValue === data.id">
-                      <Icon name="icon_done_outlined" />
+                      <Icon name="icon_done_outlined"><icon_done_outlined class="svg-icon" /></Icon>
                     </el-icon>
                   </div>
                 </template>
@@ -293,7 +373,7 @@ onMounted(() => {
           <el-footer v-if="!isDataEaseBi">
             <div class="footer-container">
               <el-button type="primary" :icon="Plus" link class="add-btn" @click="addDataset">
-                新建数据集
+                {{ newSource }}
               </el-button>
             </div>
           </el-footer>
@@ -329,6 +409,9 @@ onMounted(() => {
 </style>
 
 <style lang="less">
+.input-custom-clear-icon {
+  font-size: 14px;
+}
 .input-arrow-icon {
   font-size: 16px;
   transform: rotateZ(0);
@@ -339,7 +422,7 @@ onMounted(() => {
   }
 }
 .customDatasetSelect {
-  --ed-popover-padding: 0;
+  --ed-popover-padding: 0 !important;
   max-height: 356px;
 
   .ed-container {
@@ -414,6 +497,7 @@ onMounted(() => {
         font-style: normal;
         font-weight: 400;
         line-height: 20px;
+        text-align: center;
       }
 
       .m-loading {

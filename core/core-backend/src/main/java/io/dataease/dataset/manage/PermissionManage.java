@@ -2,14 +2,18 @@ package io.dataease.dataset.manage;
 
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import io.dataease.api.chart.dto.ColumnPermissionItem;
-import io.dataease.api.chart.dto.ColumnPermissions;
 import io.dataease.api.permissions.dataset.api.ColumnPermissionsApi;
 import io.dataease.api.permissions.dataset.api.RowPermissionsApi;
 import io.dataease.api.permissions.dataset.dto.*;
 import io.dataease.api.permissions.user.vo.UserFormVO;
+import io.dataease.api.permissions.variable.dto.SysVariableValueDto;
+import io.dataease.api.permissions.variable.dto.SysVariableValueItem;
 import io.dataease.constant.ColumnPermissionConstants;
-import io.dataease.dto.dataset.DatasetTableFieldDTO;
+import io.dataease.extensions.datasource.dto.DatasetTableFieldDTO;
+import io.dataease.extensions.view.dto.ColumnPermissionItem;
+import io.dataease.extensions.view.dto.ColumnPermissions;
+import io.dataease.extensions.view.dto.DatasetRowPermissionsTreeItem;
+import io.dataease.extensions.view.dto.DatasetRowPermissionsTreeObj;
 import io.dataease.utils.AuthUtils;
 import io.dataease.utils.JsonUtil;
 import jakarta.annotation.Resource;
@@ -19,10 +23,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.lang.reflect.Array;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -188,23 +190,72 @@ public class PermissionManage {
             }
             // 替换系统变量
             if (StringUtils.equalsIgnoreCase(record.getAuthTargetType(), "sysParams")) {
-                String expressionTree = record.getExpressionTree();
-                if (StringUtils.isNotEmpty(userEntity.getAccount())) {
-                    expressionTree = expressionTree.replaceAll("\\$\\{sysParams\\.userId}", userEntity.getAccount());
+                DatasetRowPermissionsTreeObj tree = JsonUtil.parseObject(record.getExpressionTree(), DatasetRowPermissionsTreeObj.class);
+                List<DatasetRowPermissionsTreeItem> items = new ArrayList<>();
+                for (DatasetRowPermissionsTreeItem datasetRowPermissionsTreeItem : tree.getItems()) {
+                    if (StringUtils.isNotEmpty(userEntity.getAccount()) && datasetRowPermissionsTreeItem.getValue().equalsIgnoreCase("${sysParams.userId}")) {
+                        datasetRowPermissionsTreeItem.setValue(userEntity.getAccount());
+                        items.add(datasetRowPermissionsTreeItem);
+                        continue;
+                    }
+                    if (StringUtils.isNotEmpty(userEntity.getEmail()) && datasetRowPermissionsTreeItem.getValue().equalsIgnoreCase("${sysParams.userEmail}")) {
+                        datasetRowPermissionsTreeItem.setValue(userEntity.getEmail());
+                        items.add(datasetRowPermissionsTreeItem);
+                        continue;
+                    }
+                    if (StringUtils.isNotEmpty(userEntity.getName()) && datasetRowPermissionsTreeItem.getValue().equalsIgnoreCase("${sysParams.userName}")) {
+                        datasetRowPermissionsTreeItem.setValue(userEntity.getName());
+                        items.add(datasetRowPermissionsTreeItem);
+                        continue;
+                    }
+
+                    String value = handleSysVariable(userEntity, datasetRowPermissionsTreeItem);
+                    if (value == null) {
+                        continue;
+                    } else {
+                        datasetRowPermissionsTreeItem.setValue(value);
+                    }
+                    items.add(datasetRowPermissionsTreeItem);
                 }
-                if (StringUtils.isNotEmpty(userEntity.getEmail())) {
-                    expressionTree = expressionTree.replaceAll("\\$\\{sysParams\\.userEmail}", userEntity.getEmail());
-                }
-                if (StringUtils.isNotEmpty(userEntity.getName())) {
-                    expressionTree = expressionTree.replaceAll("\\$\\{sysParams\\.userName}", userEntity.getName());
-                }
-                record.setExpressionTree(expressionTree);
-                DatasetRowPermissionsTreeObj tree = JsonUtil.parseObject(expressionTree, DatasetRowPermissionsTreeObj.class);
+                tree.setItems(items);
                 record.setTree(tree);
             }
             result.add(record);
         }
         return result;
+    }
+
+    private String handleSysVariable(UserFormVO userEntity, DatasetRowPermissionsTreeItem datasetRowPermissionsTreeItem) {
+        String value = null;
+        String sysVariable = datasetRowPermissionsTreeItem.getValue();
+        if (StringUtils.isEmpty(sysVariable) && !(sysVariable.startsWith("${") && sysVariable.endsWith("}"))) {
+            return value;
+        }
+        String variableId = sysVariable.substring(2, sysVariable.length() - 1);
+        for (SysVariableValueItem variable : userEntity.getVariables()) {
+            if (!variable.isValid()) {
+                continue;
+            }
+            if (!variableId.equalsIgnoreCase(variable.getVariableId().toString())) {
+                continue;
+            }
+            if (variable.getSysVariableDto().getType().equalsIgnoreCase("text")) {
+                if (Arrays.asList("in", "not in").contains(datasetRowPermissionsTreeItem.getTerm())) {
+                    value = String.join(",", variable.getValueList().stream().filter(sysVariableValueDto -> variable.getVariableValueIds().contains(sysVariableValueDto.getId().toString())).map(SysVariableValueDto::getValue).collect(Collectors.toList()));
+                } else {
+                    for (SysVariableValueDto sysVariableValueDto : variable.getValueList()) {
+                        if (sysVariableValueDto.getId().equals(variable.getVariableValueId())) {
+                            value = sysVariableValueDto.getValue();
+                            break;
+                        }
+                    }
+                }
+            } else {
+                value = variable.getVariableValue();
+            }
+        }
+
+        return value;
     }
 
     private List<Long> intersectionForList(List<Long> list1, List<Long> list2) {

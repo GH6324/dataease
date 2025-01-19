@@ -1,11 +1,14 @@
 package io.dataease.dataset.server;
 
 import io.dataease.api.dataset.DatasetDataApi;
-import io.dataease.api.dataset.dto.DatasetTableDTO;
+import io.dataease.api.dataset.dto.BaseTreeNodeDTO;
+import io.dataease.api.dataset.dto.EnumValueRequest;
+import io.dataease.api.dataset.dto.MultFieldValuesRequest;
 import io.dataease.api.dataset.dto.PreviewSqlDTO;
 import io.dataease.api.dataset.union.DatasetGroupInfoDTO;
 import io.dataease.dataset.manage.DatasetDataManage;
-import io.dataease.dto.dataset.DatasetTableFieldDTO;
+import io.dataease.extensions.datasource.dto.DatasetTableDTO;
+import io.dataease.extensions.datasource.dto.DatasetTableFieldDTO;
 import io.dataease.utils.LogUtil;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -44,19 +47,45 @@ public class DatasetDataServer implements DatasetDataApi {
     }
 
     @Override
-    public List<String> getFieldEnum(List<Long> ids) {
-        try{
-           return datasetDataManage.getFieldEnum(ids);
-        }catch (Exception e){
+    public List<String> getFieldEnum(MultFieldValuesRequest multFieldValuesRequest) {
+        try {
+            return datasetDataManage.getFieldEnum(multFieldValuesRequest);
+        } catch (Exception e) {
             e.printStackTrace();
             LogUtil.error(e);
             return null;
         }
+    }
 
+    @Override
+    public List<Map<String, Object>> getFieldEnumObj(EnumValueRequest request) throws Exception {
+        try {
+            return datasetDataManage.getFieldEnumObj(request);
+        } catch (Exception e) {
+            e.printStackTrace();
+            LogUtil.error(e);
+            return null;
+        }
     }
 
     @Override
     public Long getDatasetCount(DatasetGroupInfoDTO datasetGroupInfoDTO) throws Exception {
         return datasetDataManage.getDatasetTotal(datasetGroupInfoDTO.getId());
+    }
+
+    @Override
+    public Long getDatasetTotal(DatasetGroupInfoDTO datasetGroupInfoDTO) throws Exception {
+        return datasetDataManage.getDatasetCountWithWhere(datasetGroupInfoDTO.getId());
+    }
+
+    @Override
+    public List<BaseTreeNodeDTO> getFieldValueTree(MultFieldValuesRequest multFieldValuesRequest) throws Exception {
+        try {
+            return datasetDataManage.getFieldValueTree(multFieldValuesRequest);
+        } catch (Exception e) {
+            e.printStackTrace();
+            LogUtil.error(e);
+            return null;
+        }
     }
 }

@@ -1,8 +1,20 @@
 <script lang="ts" setup>
-import { reactive, computed, ref, nextTick, inject, type Ref } from 'vue'
+import icon_edit_outlined from '@/assets/svg/icon_edit_outlined.svg'
+import icon_rename_outlined from '@/assets/svg/icon_rename_outlined.svg'
+import icon_deleteTrash_outlined from '@/assets/svg/icon_delete-trash_outlined.svg'
+import icon_textBox_outlined from '@/assets/svg/icon_text-box_outlined.svg'
+import icon_fullAssociation from '@/assets/svg/icon_full-association.svg'
+import icon_intersect from '@/assets/svg/icon_intersect.svg'
+import icon_leftAssociation from '@/assets/svg/icon_left-association.svg'
+import icon_rightAssociation from '@/assets/svg/icon_right-association.svg'
+import icon_sql_outlined from '@/assets/svg/icon_sql_outlined.svg'
+import referenceTable from '@/assets/svg/reference-table.svg'
+import icon_moreVertical_outlined from '@/assets/svg/icon_more-vertical_outlined.svg'
+import { reactive, computed, ref, nextTick, inject, type Ref, watch, unref } from 'vue'
 import AddSql from './AddSql.vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import zeroNodeImg from '@/assets/img/drag.png'
+import { ElMessageBox, type Action } from 'element-plus-secondary'
 import { guid } from './util'
 import { HandleMore } from '@/components/handle-more'
 import { propTypes } from '@/utils/propTypes'
@@ -16,7 +28,6 @@ import { useAppearanceStoreWithOut } from '@/store/modules/appearance'
 const appearanceStore = useAppearanceStoreWithOut()
 const state = reactive({
   nodeList: [],
-  pathList: [],
   visualNode: null,
   visualNodeParent: null,
   visualPath: null
@@ -34,9 +45,10 @@ const primaryColor = computed(() => {
 })
 
 const iconName = {
-  left: 'icon_left-association',
-  right: 'icon_right-association',
-  inner: 'icon_intersect'
+  left: icon_leftAssociation,
+  right: icon_rightAssociation,
+  inner: icon_intersect,
+  full: icon_fullAssociation
 }
 const { t } = useI18n()
 const editSqlField = ref(false)
@@ -108,9 +120,42 @@ const dfsNodeNameList = (list, arr) => {
   })
 }
 
+const dfsForDsId = (arr, datasourceId) => {
+  return arr.every(ele => {
+    if (ele.children?.length) {
+      return dfsForDsId(ele.children, datasourceId)
+    }
+    if (!ele.datasourceId) {
+      return true
+    }
+    return ele.datasourceId === datasourceId
+  })
+}
+
+const crossDatasources = computed(() => {
+  const { datasourceId, children = [] } = state.nodeList[0] || {}
+  if (datasourceId && !!children.length) {
+    return !dfsForDsId(children, datasourceId)
+  }
+  return false
+})
+
+let isUpdate = false
+
+watch(
+  () => state.nodeList,
+  () => {
+    if (isUpdate) {
+      emits('changeUpdate')
+    }
+  },
+  { deep: true }
+)
+
 const initState = nodeList => {
   Object.assign(state.nodeList, nodeList)
   nextTick(() => {
+    isUpdate = true
     emits('addComplete')
   })
 }
@@ -130,6 +175,29 @@ const delNode = (id, arr) => {
       delNode(id, ele.children)
     }
     return false
+  })
+}
+let fakeDelId = []
+
+const collectId = arr => {
+  arr.forEach(ele => {
+    fakeDelId = [...fakeDelId, ...ele.currentDsFields.map(itx => itx.id)]
+    if (ele.children?.length) {
+      collectId(ele.children)
+    }
+  })
+}
+
+const delNodeFake = (id, arr) => {
+  arr.forEach(ele => {
+    if (id === ele.id) {
+      fakeDelId = [...ele.currentDsFields.map(itx => itx.id)]
+      if (ele.children?.length) {
+        collectId(ele.children)
+      }
+    } else if (ele.children?.length) {
+      delNodeFake(id, ele.children)
+    }
   })
 }
 
@@ -164,7 +232,8 @@ const saveSqlNode = (val: SqlNode, cb) => {
         tableName,
         type: 'sql'
       }).then(res => {
-        ;((res as unknown as Field[]) || []).forEach(ele => {
+        nodeField.value = res as unknown as Field[]
+        nodeField.value.forEach(ele => {
           ele.checked = true
         })
         state.nodeList[0].currentDsFields = cloneDeep(res)
@@ -177,6 +246,7 @@ const saveSqlNode = (val: SqlNode, cb) => {
   }
   const obj = { info: JSON.stringify({ table: tableName, sql }), id, tableName, sqlVariableDetails }
   dfsNodeBack([obj], [id], state.nodeList)
+  emits('reGetName')
 }
 
 const setChangeStatus = (to, from) => {
@@ -185,6 +255,34 @@ const setChangeStatus = (to, from) => {
 }
 
 const closeSqlNode = () => {
+  if (
+    state.nodeList.length === 1 &&
+    !state.nodeList[0].children?.length &&
+    changeSqlId.value.length === 1
+  ) {
+    currentNode.value = state.nodeList[0]
+    const { datasourceId, id, info, tableName } = currentNode.value
+    getTableField({
+      datasourceId,
+      id,
+      info,
+      tableName,
+      type: 'sql'
+    }).then(res => {
+      const idOriginNameMap = allfields.value.reduce((pre, next) => {
+        pre[`${next.datasetTableId}${next.originName}`] = next.id
+        return pre
+      }, {})
+      nodeField.value = res as unknown as Field[]
+      nodeField.value.forEach(ele => {
+        ele.id = idOriginNameMap[`${id}${ele.originName}`]
+        ele.checked = true
+      })
+      state.nodeList[0].currentDsFields = cloneDeep(res)
+      editUnion.value = true
+    })
+    changeSqlId.value = []
+  }
   if (state.visualNode?.confirm) {
     nextTick(() => {
       emits('joinEditor', [
@@ -212,6 +310,14 @@ const changeNodeFields = val => {
 }
 
 const closeEditUnion = () => {
+  nodeField.value = []
+  currentNode.value = null
+  const [fir] = state.nodeList
+  if (fir.isShadow) {
+    delete fir.isShadow
+    state.nodeList = []
+    emits('addComplete')
+  }
   editUnion.value = false
 }
 let num = +new Date()
@@ -239,9 +345,77 @@ const delUpdateDsFields = (id, arr: Node[]) => {
     return false
   })
 }
+const delUpdateDsFieldsFake = (id, arr: Node[]) => {
+  arr.forEach(ele => {
+    if (id === ele.id) {
+      fakeDelId = [...ele.currentDsFields.map(itx => itx.id)]
+    }
+    if (ele.children?.length) {
+      delUpdateDsFieldsFake(id, ele.children)
+    }
+  })
+}
 
 const confirmEditUnion = () => {
+  delUpdateDsFieldsFake(currentNode.value.id, state.nodeList)
+  const currentIds = currentNode.value.currentDsFields.map(ele => ele.id)
+  let ids = fakeDelId.filter(ele => !currentIds.includes(ele))
+  fakeDelId = []
+  if (!!ids.length) {
+    const idArr = allfields.value.reduce((pre, next) => {
+      if (next.extField === 2) {
+        let idMap = next.originName.match(/\[(.+?)\]/g)
+        idMap = idMap.filter(
+          itx => !next.params?.map(element => element.id).includes(itx.slice(1, -1))
+        )
+        const result = idMap.map(itm => {
+          return itm.slice(1, -1)
+        })
+        result.forEach(ele => {
+          if (ids.includes(ele)) {
+            pre.push(ele)
+          }
+        })
+      }
+      return pre
+    }, [])
+
+    if (!!idArr.length) {
+      ElMessageBox.confirm(t('data_set.field_selection'), {
+        confirmButtonText: t('dataset.confirm'),
+        cancelButtonText: t('common.cancel'),
+        showCancelButton: true,
+        tip: `${t('data_set.field')}: ${allfields.value
+          .filter(ele => [...new Set(idArr)].includes(ele.id) && ele.extField !== 2)
+          .map(ele => ele.name)
+          .join(',')}, ${t('data_set.confirm_the_deletion')}`,
+        confirmButtonType: 'danger',
+        type: 'warning',
+        autofocus: false,
+        showClose: false,
+        callback: (action: Action) => {
+          if (action === 'confirm') {
+            delUpdateDsFields(currentNode.value.id, state.nodeList)
+            const [fir] = state.nodeList
+            if (fir.isShadow) {
+              delete fir.isShadow
+            }
+            closeEditUnion()
+            nextTick(() => {
+              emits('updateAllfields')
+            })
+          }
+        }
+      })
+      return
+    }
+  }
+
   delUpdateDsFields(currentNode.value.id, state.nodeList)
+  const [fir] = state.nodeList
+  if (fir.isShadow) {
+    delete fir.isShadow
+  }
   closeEditUnion()
   nextTick(() => {
     emits('updateAllfields')
@@ -274,6 +448,47 @@ const handleCommand = (ele, command) => {
   }
 
   if (command === 'del') {
+    delNodeFake(ele.id, state.nodeList)
+    if (!!fakeDelId.length) {
+      const idArr = allfields.value.reduce((pre, next) => {
+        if (next.extField === 2) {
+          const idMap = next.originName.match(/\[(.+?)\]/g)
+          const result = idMap.map(itm => {
+            return itm.slice(1, -1)
+          })
+          result.forEach(ele => {
+            if (fakeDelId.includes(ele)) {
+              pre.push(ele)
+            }
+          })
+        }
+        return pre
+      }, [])
+      fakeDelId = []
+      if (!!idArr.length) {
+        ElMessageBox.confirm(t('data_set.confirm_to_delete', { a: ele.tableName }), {
+          confirmButtonText: t('dataset.confirm'),
+          cancelButtonText: t('common.cancel'),
+          showCancelButton: true,
+          tip: t('data_set.also_be_deleted'),
+          confirmButtonType: 'danger',
+          type: 'warning',
+          autofocus: false,
+          showClose: false,
+          callback: (action: Action) => {
+            if (action === 'confirm') {
+              delNode(ele.id, state.nodeList)
+              nextTick(() => {
+                emits('addComplete')
+                emits('updateAllfields')
+              })
+            }
+          }
+        })
+        return
+      }
+    }
+
     delNode(ele.id, state.nodeList)
     nextTick(() => {
       emits('addComplete')
@@ -326,27 +541,31 @@ const dfsNodeFieldBack = (list, { originName, datasetTableId }) => {
   })
 }
 
+const dfsNodeFieldBackReal = ele => {
+  dfsNodeFieldBack(state.nodeList, ele)
+}
+
 const menuList = [
   {
-    svgName: 'icon_text-box_outlined',
-    label: '字段选择',
+    svgName: icon_textBox_outlined,
+    label: t('data_set.field_selection'),
     command: 'editerField'
   },
   {
-    svgName: 'icon_delete-trash_outlined',
-    label: '删除',
+    svgName: icon_deleteTrash_outlined,
+    label: t('data_set.delete'),
     command: 'del'
   }
 ]
 
 const sqlMenu = [
   {
-    svgName: 'icon_edit_outlined',
-    label: '编辑SQL',
+    svgName: icon_edit_outlined,
+    label: t('data_set.edit_sql'),
     command: 'editerSql'
   },
   {
-    svgName: 'icon_rename_outlined',
+    svgName: icon_rename_outlined,
     label: t('datasource.field_rename'),
     command: 'rename'
   }
@@ -642,12 +861,13 @@ const dragenter_handler = ev => {
 const drop_handler = ev => {
   ev.preventDefault()
   let data = ev.dataTransfer.getData('text')
-  const { tableName, type, datasourceId } = JSON.parse(data) as Table
+  const { tableName, type, datasourceId, name: noteName } = JSON.parse(data) as Table
   const extraData = {
     info: JSON.stringify({
       table: tableName,
       sql: ''
     }),
+    noteName,
     unionType: 'left',
     unionFields: [],
     currentDsFields: [],
@@ -675,6 +895,7 @@ const drop_handler = ev => {
     state.nodeList.push({
       tableName,
       type,
+      isShadow: true,
       datasourceId,
       id: guid(),
       ...extraData
@@ -688,13 +909,17 @@ const drop_handler = ev => {
       info: currentNode.value.info,
       tableName,
       type
-    }).then(res => {
-      ;((res as unknown as Field[]) || []).forEach(ele => {
-        ele.checked = true
-      })
-      state.nodeList[0].currentDsFields = cloneDeep(res)
-      confirmEditUnion()
     })
+      .then(res => {
+        nodeField.value = res as unknown as Field[]
+        nodeField.value.forEach(ele => {
+          ele.checked = true
+        })
+        state.nodeList[0].currentDsFields = cloneDeep(res)
+      })
+      .finally(() => {
+        editUnion.value = true
+      })
     nextTick(() => {
       emits('addComplete')
     })
@@ -755,7 +980,7 @@ const defaultParam = {
 }
 const dfsNodeListRename = arr => {
   arr.some(ele => {
-    if (ele.id === renameParam.id) {
+    if (ele.id === renameParam.id && ele.tableName !== renameParam.name) {
       ele.tableName = renameParam.name
       return true
     }
@@ -773,6 +998,7 @@ const confirmRename = () => {
       renameParam.name = ''
       renameParam.id = ''
       dialogRename.value = false
+      emits('reGetName')
     }
   })
 }
@@ -794,14 +1020,19 @@ const notConfirm = () => {
   confirm()
 }
 
+const getNodeList = () => {
+  return cloneDeep(unref(state.nodeList))
+}
+
 defineExpose({
   nodeNameList,
-  nodeList: state.nodeList,
+  getNodeList,
   setStateBack,
   notConfirm,
-  dfsNodeFieldBack,
+  dfsNodeFieldBackReal,
   initState,
-  setChangeStatus
+  setChangeStatus,
+  crossDatasources
 })
 
 const handleActiveNode = ele => {
@@ -809,7 +1040,13 @@ const handleActiveNode = ele => {
   handleCommand(ele, 'editerField')
 }
 
-const emits = defineEmits(['addComplete', 'joinEditor', 'updateAllfields'])
+const emits = defineEmits([
+  'addComplete',
+  'joinEditor',
+  'updateAllfields',
+  'changeUpdate',
+  'reGetName'
+])
 </script>
 
 <template>
@@ -818,7 +1055,7 @@ const emits = defineEmits(['addComplete', 'joinEditor', 'updateAllfields'])
     @dragenter="$event => dragenter_handler($event)"
     @dragover="$event => dragover_handler($event)"
     @dragleave="$event => dragleave_handler($event)"
-    class="drag-mask"
+    class="drag-mask_dataset"
     ref="dragMask"
     @click="handleClickOutside"
     :style="{ height: dragHeight + 'px' }"
@@ -860,13 +1097,18 @@ const emits = defineEmits(['addComplete', 'joinEditor', 'updateAllfields'])
           ]"
         >
           <el-icon>
-            <Icon :name="ele.type !== 'sql' ? 'reference-table' : 'icon_sql_outlined'"></Icon>
+            <Icon
+              ><component
+                class="svg-icon"
+                :is="ele.type !== 'sql' ? referenceTable : icon_sql_outlined"
+              ></component
+            ></Icon>
           </el-icon>
           <span class="tableName">{{ ele.tableName }}</span>
-          <span class="placeholder">拖拽表或自定义SQL至此处</span>
+          <span class="placeholder">{{ t('data_set.custom_sql_here') }}</span>
           <handle-more
             style="margin-left: auto"
-            iconName="icon_more-vertical_outlined"
+            :iconName="icon_moreVertical_outlined"
             :menuList="ele.type === 'sql' ? [...sqlMenu, ...menuList] : menuList"
             @handle-command="command => handleCommand(ele, command)"
           ></handle-more>
@@ -888,7 +1130,7 @@ const emits = defineEmits(['addComplete', 'joinEditor', 'updateAllfields'])
           :style="{ borderColor: ele.sqlChangeFlag ? '#F54A45' : '' }"
         >
           <el-icon>
-            <Icon :name="iconName[ele.to.unionType]"></Icon>
+            <Icon><component class="svg-icon" :is="iconName[ele.to.unionType]"></component></Icon>
           </el-icon>
         </div>
       </foreignObject>
@@ -904,15 +1146,15 @@ const emits = defineEmits(['addComplete', 'joinEditor', 'updateAllfields'])
     ></div>
     <div class="zero" v-if="!state.nodeList.length">
       <img :src="zeroNodeImg" alt="" />
-      <p>将左侧的数据表、自定义SQL</p>
-      <p>拖拽到这里创建数据集</p>
+      <p>{{ t('data_set.on_the_left') }}</p>
+      <p>{{ t('data_set.a_data_set') }}</p>
     </div>
   </div>
   <el-dialog
     v-model="dialogRename"
     :close-on-press-escape="false"
     :close-on-click-modal="false"
-    title="重命名表"
+    :title="t('data_set.rename_table')"
     width="420px"
   >
     <el-form
@@ -923,7 +1165,7 @@ const emits = defineEmits(['addComplete', 'joinEditor', 'updateAllfields'])
     >
       <el-form-item
         prop="name"
-        label="表名称"
+        :label="t('data_set.table_name')"
         :rules="[
           {
             required: true,
@@ -945,11 +1187,33 @@ const emits = defineEmits(['addComplete', 'joinEditor', 'updateAllfields'])
       </span>
     </template>
   </el-dialog>
-  <el-drawer v-model="editUnion" custom-class="union-item-drawer" size="600px" direction="rtl">
+  <el-drawer
+    :before-close="closeEditUnion"
+    v-model="editUnion"
+    custom-class="union-item-drawer"
+    size="600px"
+    direction="rtl"
+  >
     <template #header v-if="currentNode">
-      <div class="info">
-        <span class="name">{{ currentNode.tableName }}</span>
-        <span class="ds">{{ t('auth.datasource') }}:{{ getDsName(currentNode.datasourceId) }}</span>
+      <div style="width: 100%">
+        <div class="info">
+          <span :title="currentNode.tableName" class="label ellipsis">{{
+            currentNode.tableName
+          }}</span>
+        </div>
+        <div class="info" style="margin-top: 4px">
+          <span
+            :title="getDsName(currentNode.datasourceId)"
+            style="max-width: 550px"
+            class="name ellipsis"
+            >{{ t('auth.datasource') }}:{{ getDsName(currentNode.datasourceId) }}</span
+          >
+        </div>
+        <div class="info" style="margin-top: 4px">
+          <span :title="currentNode.noteName" style="max-width: 500px" class="name ellipsis"
+            >{{ t('data_set.table_remarks') }}:{{ currentNode.noteName || '-' }}</span
+          >
+        </div>
       </div>
     </template>
     <union-field-list
@@ -989,25 +1253,27 @@ const emits = defineEmits(['addComplete', 'joinEditor', 'updateAllfields'])
 
 .union-item-drawer {
   .ed-drawer__header {
-    height: 82px;
-    font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+    height: auto;
+    font-family: var(--de-custom_font, 'PingFang');
 
     .ed-drawer__close-btn {
-      top: 26px;
+      top: 40.5px;
     }
 
     .info {
+      width: 100%;
       display: flex;
-      flex-direction: column;
-      .name {
+      .label {
         font-weight: 500;
         font-size: 16px;
         color: #1f2329;
+        max-width: 500px;
       }
-      .ds {
+      .name {
         font-weight: 400;
         font-size: 14px;
         color: #646a73;
+        line-height: 22px;
       }
     }
   }
@@ -1021,7 +1287,7 @@ const emits = defineEmits(['addComplete', 'joinEditor', 'updateAllfields'])
   width: 100%;
   border: 1px solid #dee0e3;
   border-radius: 4px;
-  font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+  font-family: var(--de-custom_font, 'PingFang');
   font-size: 14px;
   font-weight: 400;
   color: #1f2329;
@@ -1099,11 +1365,12 @@ const emits = defineEmits(['addComplete', 'joinEditor', 'updateAllfields'])
   border-color: var(--ed-color-primary);
 }
 
-.drag-mask {
+.drag-mask_dataset {
   background: #f5f6f7;
   overflow: auto;
   position: relative;
   width: 100%;
+  border: none !important;
 }
 
 .mask-dataset {
@@ -1142,7 +1409,7 @@ const emits = defineEmits(['addComplete', 'joinEditor', 'updateAllfields'])
   }
 
   p {
-    font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+    font-family: var(--de-custom_font, 'PingFang');
     font-style: normal;
     font-weight: 400;
     font-size: 14px;

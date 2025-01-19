@@ -14,6 +14,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -31,12 +32,12 @@ public class MenuManage {
 
     @XpackInteract(value = "menuApi")
     public List<MenuVO> query(List<CoreMenu> coreMenus) {
-        List<MenuTreeNode> menuTreeNodes = coreMenus.stream().map(menu -> BeanUtils.copyBean(new MenuTreeNode(), menu)).toList();
+        List<MenuTreeNode> menuTreeNodes = new ArrayList<>(coreMenus.stream().map(menu -> BeanUtils.copyBean(new MenuTreeNode(), menu)).toList());
+        menuTreeNodes.sort(Comparator.comparing(MenuTreeNode::getMenuSort));
         List<MenuTreeNode> treeNodes = buildPOTree(menuTreeNodes);
         return convertTree(treeNodes);
     }
 
-    //    @Cacheable(cacheNames = CORE_MENU_CACHE, key = "'-dataease-'")
     public List<CoreMenu> coreMenus() {
         QueryWrapper<CoreMenu> wrapper = new QueryWrapper<>();
         wrapper.orderByAsc("menu_sort");
@@ -88,18 +89,25 @@ public class MenuManage {
     }
 
     private boolean isXpackMenu(CoreMenu coreMenu) {
+        if (coreMenu.getId().equals(21L)) return false;
         return coreMenu.getId().equals(7L)
                 || coreMenu.getPid().equals(7L)
                 || coreMenu.getId().equals(14L)
                 || coreMenu.getId().equals(17L)
                 || coreMenu.getId().equals(18L)
-                || coreMenu.getId().equals(21L)
                 || coreMenu.getPid().equals(21L)
                 || coreMenu.getId().equals(25L)
                 || coreMenu.getId().equals(26L)
                 || coreMenu.getId().equals(27L)
+                || coreMenu.getId().equals(28L)
                 || coreMenu.getId().equals(35L)
                 || coreMenu.getId().equals(40L)
-                || coreMenu.getId().equals(50L);
+                || coreMenu.getId().equals(50L)
+                || coreMenu.getId().equals(60L)
+                || coreMenu.getId().equals(61L)
+                || coreMenu.getId().equals(65L)
+                || coreMenu.getId().equals(80L)
+                || coreMenu.getId().equals(90L)
+                || coreMenu.getPid().equals(70L);
     }
 }

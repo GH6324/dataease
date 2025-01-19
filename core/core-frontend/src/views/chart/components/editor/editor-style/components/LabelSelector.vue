@@ -1,14 +1,17 @@
 <script lang="ts" setup>
+import icon_info_outlined from '@/assets/svg/icon_info_outlined.svg'
 import { computed, onMounted, PropType, reactive, ref, watch } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { COLOR_PANEL, DEFAULT_LABEL } from '@/views/chart/components/editor/util/chart'
-import { ElSpace } from 'element-plus-secondary'
+import { ElFormItem, ElIcon, ElInput, ElSpace } from 'element-plus-secondary'
 import { formatterType, unitType } from '../../../js/formatter'
-import { defaultsDeep, cloneDeep, intersection } from 'lodash-es'
+import { defaultsDeep, cloneDeep, intersection, union, defaultTo, map, isEmpty } from 'lodash-es'
 import { includesAny } from '../../util/StringUtils'
 import { fieldType } from '@/utils/attr'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { storeToRefs } from 'pinia'
+import Icon from '../../../../../../components/icon-custom/src/Icon.vue'
+import { iconFieldMap } from '@/components/icon-group/field-list'
 
 const { t } = useI18n()
 
@@ -17,9 +20,21 @@ const props = defineProps({
     type: Object as PropType<ChartObj>,
     required: true
   },
+  dimensionData: {
+    type: Array<any>,
+    required: false
+  },
+  quotaData: {
+    type: Array<any>,
+    required: false
+  },
   themes: {
     type: String as PropType<EditorTheme>,
     default: 'dark'
+  },
+  allFields: {
+    type: Array<any>,
+    required: false
   },
   propertyInner: {
     type: Array<string>
@@ -31,25 +46,60 @@ const toolTip = computed(() => {
 })
 const { batchOptStatus } = storeToRefs(dvMainStore)
 watch(
-  () => props.chart.customAttr.label,
+  [() => props.chart.customAttr.label, () => props.chart.customAttr.label.show],
   () => {
     init()
   },
-  { deep: true }
+  { deep: false }
 )
+const yAxis = computed(() => {
+  if (props.chart.type.includes('chart-mix') || props.chart.type.includes('bidirectional-bar')) {
+    return union(
+      defaultTo(
+        map(props.chart.yAxis, y => {
+          return { ...y, axisType: 'yAxis', seriesId: y.id + '-yAxis' }
+        }),
+        []
+      ),
+      defaultTo(
+        map(props.chart.yAxisExt, y => {
+          return { ...y, axisType: 'yAxisExt', seriesId: y.id + '-yAxisExt' }
+        }),
+        []
+      )
+    )
+  } else {
+    return defaultTo(
+      map(props.chart.yAxis, y => {
+        return { ...y, axisType: 'yAxis', seriesId: y.id + '-yAxis' }
+      }),
+      []
+    )
+  }
+})
+
+const yAxisIds = computed(() => {
+  return map(yAxis.value, y => y.seriesId)
+})
+
 watch(
-  [() => props.chart.yAxis, () => props.chart.type],
+  [() => yAxisIds.value, () => props.chart.type],
   () => {
     initSeriesLabel()
   },
   { deep: true }
 )
+
+const computedIdKey = computed(() => {
+  if (props.chart.type.includes('chart-mix')) {
+    return 'seriesId'
+  }
+  return 'id'
+})
+
 const curSeriesFormatter = ref<Partial<SeriesFormatter>>({})
 const formatterEditable = computed(() => {
-  return (
-    showProperty('seriesLabelFormatter') &&
-    (props.chart.yAxis?.length || props.chart.yAxisExt?.length)
-  )
+  return showProperty('seriesLabelFormatter') && yAxis.value?.length
 })
 const formatterSelector = ref()
 // 初始化系列标签
@@ -59,41 +109,75 @@ const initSeriesLabel = () => {
     return
   }
   const formatter = state.labelForm.seriesLabelFormatter
-  const yAxis = props.chart.yAxis
+
   const seriesAxisMap = formatter.reduce((pre, next) => {
-    pre[next.id] = next
+    const id = next.seriesId ?? next.id
+    pre[next[computedIdKey.value]] = { ...next, seriesId: id }
     return pre
   }, {})
   formatter.splice(0, formatter.length)
-  if (!yAxis.length) {
+  if (!yAxis.value.length) {
     curSeriesFormatter.value = {}
     return
   }
-  const axisMap = yAxis.reduce((pre, next) => {
+  let initFlag = false
+  const themeColor = dvMainStore.canvasStyleData.dashboard.themeColor
+  const axisMap = yAxis.value.reduce((pre, next) => {
+    const optionLabel: string = `${next.chartShowName ?? next.name}${
+      next.summary !== '' ? '(' + t('chart.' + next.summary) + ')' : ''
+    }${
+      props.chart.type.includes('chart-mix')
+        ? next.axisType === 'yAxis'
+          ? `(${t('chart.left_axis')})`
+          : `(${t('chart.right_axis')})`
+        : ''
+    }` as string
+    const optionShowName: string = `${next.chartShowName ?? next.name}${
+      next.summary !== '' ? '(' + t('chart.' + next.summary) + ')' : ''
+    }${
+      props.chart.type.includes('chart-mix')
+        ? next.axisType === 'yAxis'
+          ? `(${t('chart.left_axis')})`
+          : `(${t('chart.right_axis')})`
+        : ''
+    }` as string
     let tmp = {
       ...next,
+      optionLabel: optionLabel,
+      optionShowName: optionShowName,
       show: true,
-      color: COMPUTED_DEFAULT_LABEL.value.color,
-      fontSize: COMPUTED_DEFAULT_LABEL.value.fontSize
+      color: themeColor === 'dark' ? '#fff' : '#000',
+      fontSize: COMPUTED_DEFAULT_LABEL.value.fontSize,
+      showExtremum: false,
+      position: 'top'
     } as SeriesFormatter
-    if (seriesAxisMap[next.id]) {
+    if (seriesAxisMap[next[computedIdKey.value]]) {
       tmp = {
         ...tmp,
-        formatterCfg: seriesAxisMap[next.id].formatterCfg,
-        show: seriesAxisMap[next.id].show,
-        color: seriesAxisMap[next.id].color,
-        fontSize: seriesAxisMap[next.id].fontSize
+        formatterCfg: seriesAxisMap[next[computedIdKey.value]].formatterCfg,
+        show: seriesAxisMap[next[computedIdKey.value]].show,
+        color: seriesAxisMap[next[computedIdKey.value]].color,
+        fontSize: seriesAxisMap[next[computedIdKey.value]].fontSize,
+        showExtremum: seriesAxisMap[next[computedIdKey.value]].showExtremum,
+        position: seriesAxisMap[next[computedIdKey.value]].position
       }
+    } else {
+      initFlag = true
     }
     formatter.push(tmp)
-    pre[next.id] = tmp
+    next.seriesId = next.seriesId ?? next.id
+    pre[next[computedIdKey.value]] = tmp
     return pre
   }, {})
-  if (!curSeriesFormatter.value || !axisMap[curSeriesFormatter.value.id]) {
-    curSeriesFormatter.value = axisMap[formatter[0].id]
+  // 初始化一下序列数组，用于主题适配
+  if (initFlag) {
+    changeLabelAttr('seriesLabelFormatter', false)
+  }
+  if (!curSeriesFormatter.value || !axisMap[curSeriesFormatter.value[computedIdKey.value]]) {
+    curSeriesFormatter.value = axisMap[formatter[0][computedIdKey.value]]
     return
   }
-  curSeriesFormatter.value = axisMap[curSeriesFormatter.value.id]
+  curSeriesFormatter.value = axisMap[curSeriesFormatter.value[computedIdKey.value]]
 }
 
 const labelPositionR = [
@@ -105,11 +189,18 @@ const labelPositionH = [
   { name: t('chart.center'), value: 'middle' },
   { name: t('chart.text_pos_right'), value: 'right' }
 ]
-const labelPositionV = [
+const labelPositionVList = [
   { name: t('chart.text_pos_top'), value: 'top' },
   { name: t('chart.center'), value: 'middle' },
   { name: t('chart.text_pos_bottom'), value: 'bottom' }
 ]
+
+const labelPositionV = computed(() => {
+  if (['line', 'area-stack', 'area'].includes(chartType.value)) {
+    return labelPositionVList.filter(item => item.value !== 'middle')
+  }
+  return labelPositionVList
+})
 
 const chartType = computed(() => {
   const chart = JSON.parse(JSON.stringify(props.chart))
@@ -122,6 +213,12 @@ const fontSizeList = computed(() => {
     if (i === 10 && chartType.value === 'liquid') {
       continue
     }
+    arr.push({
+      name: i + '',
+      value: i
+    })
+  }
+  for (let i = 50; i <= 200; i = i + 10) {
     arr.push({
       name: i + '',
       value: i
@@ -140,30 +237,28 @@ const COMPUTED_DEFAULT_LABEL = computed(() => {
   return DEFAULT_LABEL
 })
 
-const state = reactive<{ labelForm: ChartLabelAttr | any }>({
+const state = reactive<{ labelForm: DeepPartial<ChartLabelAttr> }>({
   labelForm: {
     quotaLabelFormatter: DEFAULT_LABEL.quotaLabelFormatter,
     seriesLabelFormatter: [],
-    labelFormatter: DEFAULT_LABEL.labelFormatter
+    labelFormatter: DEFAULT_LABEL.labelFormatter,
+    conversionTag: DEFAULT_LABEL.conversionTag,
+    totalFormatter: DEFAULT_LABEL.totalFormatter,
+    proportionSeriesFormatter: DEFAULT_LABEL.proportionSeriesFormatter
   }
 })
 
 const emit = defineEmits(['onLabelChange'])
-
-const changeLabelAttr = prop => {
-  emit('onLabelChange', state.labelForm, prop)
+const changeLabelAttr = (prop: string, render = true) => {
+  emit('onLabelChange', { data: state.labelForm, render }, prop)
 }
 
 const init = () => {
   const chart = JSON.parse(JSON.stringify(props.chart))
   if (chart.customAttr) {
-    let customAttr = null
-    if (Object.prototype.toString.call(chart.customAttr) === '[object Object]') {
-      customAttr = JSON.parse(JSON.stringify(chart.customAttr))
-    } else {
-      customAttr = JSON.parse(chart.customAttr)
-    }
+    const customAttr = chart.customAttr
     if (customAttr.label) {
+      configCompat(customAttr.label)
       state.labelForm = defaultsDeep(customAttr.label, cloneDeep(COMPUTED_DEFAULT_LABEL.value))
       if (chartType.value === 'liquid' && state.labelForm.fontSize < fontSizeList.value[0].value) {
         state.labelForm.fontSize = fontSizeList.value[0].value
@@ -171,9 +266,19 @@ const init = () => {
       initSeriesLabel()
       formatterSelector.value?.blur()
     }
+    //初始化标签位置
+    initPosition()
+  }
+}
+const configCompat = (labelAttr: DeepPartial<ChartLabelAttr>) => {
+  if (labelAttr.showStackQuota === undefined) {
+    labelAttr.showStackQuota = labelAttr.show
   }
 }
 const checkLabelContent = contentProp => {
+  if (chartType.value === 'funnel') {
+    return false
+  }
   const propIntersection = intersection(props.propertyInner, [
     'showDimension',
     'showQuota',
@@ -203,10 +308,175 @@ const showSeriesLabelFormatter = computed(() => {
 })
 const showDivider = computed(() => {
   const DIVIDER_PROPS = ['labelFormatter', 'showDimension', 'showQuota', 'showProportion']
-  return includesAny(props.propertyInner, ...DIVIDER_PROPS)
+  return (
+    includesAny(props.propertyInner, ...DIVIDER_PROPS) &&
+    !isBarRangeTime.value &&
+    !isGroupBar.value &&
+    !isGauge.value
+  )
 })
+
+const isBarRangeTime = computed<boolean>(() => {
+  if (props.chart.type === 'bar-range') {
+    const tempYAxis = props.chart.yAxis[0]
+    const tempYAxisExt = props.chart.yAxisExt[0]
+    if (
+      (tempYAxis && tempYAxis.groupType === 'd') ||
+      (tempYAxisExt && tempYAxisExt.groupType === 'd')
+    ) {
+      return true
+    }
+  }
+  return false
+})
+const showPositionH = computed(() => {
+  if (showProperty('hPosition')) {
+    if (props.chart.type !== 'bidirectional-bar') {
+      return true
+    }
+    return props.chart.customAttr.basicStyle.layout === 'horizontal'
+  }
+  return false
+})
+const showPositionV = computed(() => {
+  if (showProperty('vPosition')) {
+    if (props.chart.type !== 'bidirectional-bar' && props.chart.type !== 'bar-group') {
+      return true
+    }
+    return props.chart.customAttr.basicStyle.layout === 'vertical'
+  }
+  return false
+})
+function initBidirectionalBarPosition() {
+  if (chartType.value === 'bidirectional-bar') {
+    const layout = props.chart.customAttr.basicStyle.layout
+    const oldPosition = state?.labelForm?.position
+    if (state?.labelForm?.position === 'inner' || state?.labelForm?.position === 'outer') {
+      state.labelForm.position = 'middle'
+    }
+    if (layout === 'horizontal') {
+      if (state?.labelForm?.position === 'top') {
+        state.labelForm.position = 'right'
+      }
+      if (state?.labelForm?.position === 'bottom') {
+        state.labelForm.position = 'left'
+      }
+    }
+    if (layout === 'vertical') {
+      if (state?.labelForm?.position === 'left') {
+        state.labelForm.position = 'bottom'
+      }
+      if (state?.labelForm?.position === 'right') {
+        state.labelForm.position = 'top'
+      }
+    }
+    if (oldPosition !== state.labelForm.position) {
+      changeLabelAttr('position')
+    }
+  }
+}
+
+function initPosition() {
+  if (chartType.value === 'bidirectional-bar') {
+    initBidirectionalBarPosition()
+  } else {
+    const oldPosition = state?.labelForm?.position
+    if (showProperty('rPosition')) {
+      if (state?.labelForm?.position !== 'inner') {
+        state.labelForm.position = 'outer'
+      }
+    } else if (showProperty('hPosition')) {
+      if (state?.labelForm?.position === 'top') {
+        state.labelForm.position = 'right'
+      } else if (state?.labelForm?.position === 'bottom') {
+        state.labelForm.position = 'left'
+      } else if (state?.labelForm?.position === 'inner' || state?.labelForm?.position === 'outer') {
+        state.labelForm.position = 'middle'
+      }
+    } else if (showProperty('vPosition')) {
+      if (state?.labelForm?.position === 'left') {
+        state.labelForm.position = 'bottom'
+      } else if (state?.labelForm?.position === 'right') {
+        state.labelForm.position = 'top'
+      } else if (state?.labelForm?.position === 'inner' || state?.labelForm?.position === 'outer') {
+        state.labelForm.position = 'middle'
+      }
+    }
+    if (oldPosition !== state.labelForm.position) {
+      changeLabelAttr('position')
+    }
+  }
+}
+
+watch(
+  () => props.chart.customAttr.basicStyle.layout,
+  () => {
+    initBidirectionalBarPosition()
+  },
+  { deep: true }
+)
+
+watch(chartType, () => {
+  initPosition()
+})
+
+const allFields = computed(() => {
+  return defaultTo(props.allFields, []).map(item => ({
+    key: item.dataeaseName,
+    name: item.name,
+    value: `${item.dataeaseName}@${item.name}`,
+    disabled: false
+  }))
+})
+
+const defaultPlaceholder = computed(() => {
+  if (state.labelForm.showFields && state.labelForm.showFields.length > 0) {
+    return state.labelForm.showFields
+      .filter(field => !isEmpty(field))
+      ?.map(field => {
+        return '${' + field.split('@')[1] + '}'
+      })
+      .join(',')
+  }
+  return ''
+})
+watch(
+  () => allFields.value,
+  () => {
+    if (!showProperty('showFields')) {
+      return
+    }
+    let result = []
+    state.labelForm.showFields?.forEach(field => {
+      if (allFields.value?.map(i => i.value).includes(field)) {
+        result.push(field)
+      }
+    })
+    state.labelForm.showFields = result
+    if (allFields.value.length > 0) {
+      changeLabelAttr('showFields')
+    }
+  }
+)
 onMounted(() => {
   init()
+})
+const isGroupBar = computed(() => {
+  return props.chart.type === 'bar-group'
+})
+const conversionPrecision = [
+  { name: t('chart.reserve_zero'), value: 0 },
+  { name: t('chart.reserve_one'), value: 1 },
+  { name: t('chart.reserve_two'), value: 2 }
+]
+const noFullDisplay = computed(() => {
+  return !['liquid', 'gauge', 'indicator'].includes(props.chart.type)
+})
+const isGauge = computed(() => {
+  return props.chart.type === 'gauge'
+})
+const isProgressBar = computed(() => {
+  return props.chart.type === 'progress-bar'
 })
 </script>
 
@@ -217,52 +487,142 @@ onMounted(() => {
     :model="state.labelForm"
     label-position="top"
   >
-    <el-row v-show="showEmpty" style="margin-bottom: 12px"> 无其他可设置的属性 </el-row>
-    <el-space>
-      <el-form-item
-        class="form-item"
-        :class="'form-item-' + themes"
-        v-if="showProperty('color')"
-        :label="t('chart.text')"
-      >
-        <el-color-picker
+    <el-row v-show="showEmpty" style="margin-bottom: 12px">
+      {{ t('chart.no_other_configurable_properties') }}</el-row
+    >
+    <div>
+      <el-form-item v-if="noFullDisplay" class="form-item" :class="'form-item-' + themes">
+        <el-checkbox
+          size="small"
           :effect="themes"
-          v-model="state.labelForm.color"
-          class="color-picker-style"
-          :predefine="COLOR_PANEL"
-          @change="changeLabelAttr('color')"
-          is-custom
+          v-model="state.labelForm.fullDisplay"
+          @change="changeLabelAttr('fullDisplay')"
+          :label="t('chart.full_display')"
         />
       </el-form-item>
       <el-form-item
+        v-if="showProperty('showStackQuota')"
         class="form-item"
         :class="'form-item-' + themes"
-        v-if="showProperty('fontSize')"
+        style="display: inline-block; margin-right: 8px"
       >
-        <template #label>&nbsp;</template>
-        <el-tooltip content="字号" :effect="toolTip" placement="top">
-          <el-select
-            size="small"
-            style="width: 108px"
-            :effect="themes"
-            v-model.number="state.labelForm.fontSize"
-            :placeholder="t('chart.text_fontsize')"
-            @change="changeLabelAttr('fontSize')"
-          >
-            <el-option
-              v-for="option in fontSizeList"
-              :key="option.value"
-              :label="option.name"
-              :value="option.value"
-            />
-          </el-select>
-        </el-tooltip>
+        <el-checkbox
+          size="small"
+          :effect="themes"
+          v-model="state.labelForm.showStackQuota"
+          @change="changeLabelAttr('showStackQuota')"
+          :label="t('chart.quota')"
+        />
       </el-form-item>
-    </el-space>
-
+      <el-form-item
+        v-if="showProperty('showTotal')"
+        class="form-item"
+        :class="'form-item-' + themes"
+        style="display: inline-block"
+      >
+        <el-checkbox
+          size="small"
+          :effect="themes"
+          v-model="state.labelForm.showTotal"
+          @change="changeLabelAttr('showTotal')"
+          :label="t('chart.total_show')"
+        />
+      </el-form-item>
+    </div>
+    <div v-if="!isGroupBar && !isGauge">
+      <el-space>
+        <el-form-item
+          class="form-item"
+          :class="'form-item-' + themes"
+          v-if="showProperty('color')"
+          :label="t('chart.text')"
+        >
+          <el-color-picker
+            :effect="themes"
+            v-model="state.labelForm.color"
+            class="color-picker-style"
+            :predefine="COLOR_PANEL"
+            @change="changeLabelAttr('color')"
+            is-custom
+          />
+        </el-form-item>
+        <el-form-item
+          class="form-item"
+          :class="'form-item-' + themes"
+          v-if="showProperty('fontSize')"
+        >
+          <template #label>&nbsp;</template>
+          <el-tooltip :content="t('chart.font_size')" :effect="toolTip" placement="top">
+            <el-select
+              size="small"
+              style="width: 108px"
+              :effect="themes"
+              v-model.number="state.labelForm.fontSize"
+              :placeholder="t('chart.text_fontsize')"
+              @change="changeLabelAttr('fontSize')"
+            >
+              <el-option
+                v-for="option in fontSizeList"
+                :key="option.value"
+                :label="option.name"
+                :value="option.value"
+              />
+            </el-select>
+          </el-tooltip>
+        </el-form-item>
+      </el-space>
+    </div>
+    <div v-if="showProperty('showFields') && !batchOptStatus">
+      <el-form-item :label="t('chart.label')" class="form-item" :class="'form-item-' + themes">
+        <el-select
+          size="small"
+          :effect="themes"
+          filterable
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          v-model="state.labelForm.showFields"
+          @change="changeLabelAttr('showFields')"
+        >
+          <el-option
+            v-for="option in allFields"
+            :key="option.key"
+            :label="option.name"
+            :value="option.value"
+            :disabled="option.disabled"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item v-if="showProperty('customContent')" :class="'form-item-' + themes">
+        <template #label>
+          <span class="data-area-label">
+            <span style="margin-right: 4px">
+              {{ t('chart.content_formatter') }}
+            </span>
+            <el-tooltip class="item" :effect="toolTip" placement="bottom">
+              <template #content>
+                <div>{{ t('chart.custom_label_content_tip') }}</div>
+              </template>
+              <el-icon class="hint-icon" :class="{ 'hint-icon--dark': themes === 'dark' }">
+                <Icon name="icon_info_outlined"><icon_info_outlined class="svg-icon" /></Icon>
+              </el-icon>
+            </el-tooltip>
+          </span>
+        </template>
+        <el-input
+          style="font-size: smaller; font-weight: normal"
+          v-model="state.labelForm.customContent"
+          :effect="themes"
+          type="textarea"
+          :autosize="{ minRows: 4, maxRows: 4 }"
+          :placeholder="defaultPlaceholder"
+          @blur="changeLabelAttr('customContent')"
+        />
+      </el-form-item>
+    </div>
     <el-form-item
       v-if="showProperty('rPosition')"
-      :label="t('chart.label_position')"
+      :label="t('chart.label')"
       class="form-item"
       :class="'form-item-' + themes"
     >
@@ -282,7 +642,7 @@ onMounted(() => {
       </el-select>
     </el-form-item>
     <el-form-item
-      v-if="showProperty('hPosition')"
+      v-if="showPositionH"
       :label="t('chart.label_position')"
       class="form-item"
       :class="'form-item-' + themes"
@@ -302,12 +662,25 @@ onMounted(() => {
         />
       </el-select>
     </el-form-item>
-    <el-form-item
-      v-if="showProperty('vPosition')"
-      :label="t('chart.label_position')"
-      class="form-item"
-      :class="'form-item-' + themes"
-    >
+    <el-form-item v-if="showPositionV" class="form-item" :class="'form-item-' + themes">
+      <template #label>
+        {{ t('chart.label_position') }}
+        <el-tooltip
+          class="item"
+          :effect="toolTip"
+          placement="top"
+          v-if="chart.type.includes('chart-mix')"
+        >
+          <template #content>
+            <span v-html="t('chart.chart_mix_label_only_left')"></span>
+          </template>
+          <span style="vertical-align: middle">
+            <el-icon style="cursor: pointer">
+              <Icon name="icon_info_outlined"><icon_info_outlined class="svg-icon" /></Icon>
+            </el-icon>
+          </span>
+        </el-tooltip>
+      </template>
       <el-select
         size="small"
         :effect="themes"
@@ -328,7 +701,7 @@ onMounted(() => {
       :class="{ 'divider-dark': themes === 'dark' }"
       v-if="showDivider"
     />
-    <template v-if="showProperty('labelFormatter')">
+    <template v-if="showProperty('labelFormatter') && !isBarRangeTime && !isGroupBar && !isGauge">
       <el-form-item
         :label="$t('chart.value_formatter_type')"
         class="form-item"
@@ -418,6 +791,140 @@ onMounted(() => {
         />
       </el-form-item>
     </template>
+    <template v-if="false && showProperty('totalFormatter')">
+      <el-divider class="m-divider" :class="{ 'divider-dark': themes === 'dark' }" />
+      <div v-show="state.labelForm.showTotal">
+        <el-space>
+          <el-form-item
+            class="form-item"
+            :class="'form-item-' + themes"
+            v-if="showProperty('totalColor')"
+            :label="t('chart.text')"
+          >
+            <el-color-picker
+              :effect="themes"
+              v-model="state.labelForm.totalColor"
+              class="color-picker-style"
+              :predefine="COLOR_PANEL"
+              @change="changeLabelAttr('totalColor')"
+              is-custom
+            />
+          </el-form-item>
+          <el-form-item
+            class="form-item"
+            :class="'form-item-' + themes"
+            v-if="showProperty('totalFontSize')"
+          >
+            <template #label>&nbsp;</template>
+            <el-tooltip :content="t('chart.font_size')" :effect="toolTip" placement="top">
+              <el-select
+                size="small"
+                style="width: 108px"
+                :effect="themes"
+                v-model.number="state.labelForm.totalFontSize"
+                :placeholder="t('chart.text_fontsize')"
+                @change="changeLabelAttr('totalFontSize')"
+              >
+                <el-option
+                  v-for="option in fontSizeList"
+                  :key="option.value"
+                  :label="option.name"
+                  :value="option.value"
+                />
+              </el-select>
+            </el-tooltip>
+          </el-form-item>
+        </el-space>
+        <el-form-item
+          :label="$t('chart.value_formatter_type')"
+          class="form-item"
+          :class="'form-item-' + themes"
+        >
+          <el-select
+            size="small"
+            :effect="themes"
+            v-model="state.labelForm.totalFormatter.type"
+            @change="changeLabelAttr('totalFormatter.type')"
+          >
+            <el-option
+              v-for="type in formatterType"
+              :key="type.value"
+              :label="$t('chart.' + type.name)"
+              :value="type.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item
+          v-if="state.labelForm.totalFormatter && state.labelForm.totalFormatter.type !== 'auto'"
+          :label="$t('chart.value_formatter_decimal_count')"
+          class="form-item"
+          :class="'form-item-' + themes"
+        >
+          <el-input-number
+            controls-position="right"
+            :effect="themes"
+            v-model="state.labelForm.totalFormatter.decimalCount"
+            :precision="0"
+            :min="0"
+            :max="10"
+            @change="changeLabelAttr('totalFormatter.decimalCount')"
+          />
+        </el-form-item>
+
+        <el-row
+          :gutter="8"
+          v-if="state.labelForm.totalFormatter && state.labelForm.totalFormatter.type !== 'percent'"
+        >
+          <el-col :span="12">
+            <el-form-item
+              :label="$t('chart.value_formatter_unit')"
+              class="form-item"
+              :class="'form-item-' + themes"
+            >
+              <el-select
+                size="small"
+                :effect="themes"
+                v-model="state.labelForm.totalFormatter.unit"
+                :placeholder="$t('chart.pls_select_field')"
+                @change="changeLabelAttr('totalFormatter.unit')"
+              >
+                <el-option
+                  v-for="item in unitType"
+                  :key="item.value"
+                  :label="$t('chart.' + item.name)"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item
+              :label="$t('chart.value_formatter_suffix')"
+              class="form-item"
+              :class="'form-item-' + themes"
+            >
+              <el-input
+                :effect="themes"
+                v-model="state.labelForm.totalFormatter.suffix"
+                clearable
+                :placeholder="$t('commons.input_content')"
+                @change="changeLabelAttr('totalFormatter.suffix')"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-form-item class="form-item" :class="'form-item-' + themes">
+          <el-checkbox
+            size="small"
+            :effect="themes"
+            v-model="state.labelForm.totalFormatter.thousandSeparator"
+            @change="changeLabelAttr('totalFormatter.thousandSeparator')"
+            :label="t('chart.value_formatter_thousand_separator')"
+          />
+        </el-form-item>
+      </div>
+    </template>
 
     <el-form-item
       class="form-item"
@@ -440,7 +947,7 @@ onMounted(() => {
         <el-checkbox
           v-model="state.labelForm.showQuota"
           :effect="themes"
-          :disabled="checkLabelContent('showQuota')"
+          :disabled="isProgressBar ? false : checkLabelContent('showQuota')"
           size="small"
           label="quota"
           @change="changeLabelAttr('showQuota')"
@@ -560,12 +1067,12 @@ onMounted(() => {
         <el-checkbox
           v-model="state.labelForm.showProportion"
           :effect="themes"
-          :disabled="checkLabelContent('showProportion')"
+          :disabled="isProgressBar ? false : checkLabelContent('showProportion')"
           size="small"
           label="proportion"
           @change="changeLabelAttr('showProportion')"
         >
-          {{ t('chart.proportion') }}
+          {{ isProgressBar ? t('chart.value_formatter_percent') : t('chart.proportion') }}
         </el-checkbox>
       </el-form-item>
       <div style="padding-left: 22px">
@@ -613,36 +1120,35 @@ onMounted(() => {
           :teleported="false"
           :disabled="!formatterEditable"
           ref="formatterSelector"
-          value-key="id"
+          :value-key="computedIdKey"
           class="series-select"
           size="small"
         >
           <template #prefix>
-            <el-icon v-if="curSeriesFormatter.id" style="font-size: 14px">
-              <Icon
-                :className="`field-icon-${fieldType[curSeriesFormatter.deType]}`"
-                :name="`field_${fieldType[curSeriesFormatter.deType]}`"
-              />
+            <el-icon v-if="curSeriesFormatter[computedIdKey]" style="font-size: 14px">
+              <Icon :className="`field-icon-${fieldType[curSeriesFormatter.deType]}`"
+                ><component
+                  :class="`field-icon-${fieldType[curSeriesFormatter.deType]}`"
+                  class="svg-icon"
+                  :is="iconFieldMap[fieldType[curSeriesFormatter.deType]]"
+                ></component
+              ></Icon>
             </el-icon>
           </template>
-          <el-option
-            class="series-select-option"
-            :key="item.id"
-            :value="item"
-            :label="`${item.chartShowName ?? item.name}${
-              item.summary !== '' ? '(' + t('chart.' + item.summary) + ')' : ''
-            }`"
-            v-for="item in state.labelForm.seriesLabelFormatter"
-          >
-            <el-icon style="margin-right: 8px">
-              <Icon
-                :className="`field-icon-${fieldType[item.deType]}`"
-                :name="`field_${fieldType[item.deType]}`"
-              />
-            </el-icon>
-            {{ item.chartShowName ?? item.name }}
-            {{ item.summary !== '' ? '(' + t('chart.' + item.summary) + ')' : '' }}
-          </el-option>
+          <template v-for="item in state.labelForm.seriesLabelFormatter" :key="item[computedIdKey]">
+            <el-option class="series-select-option" :value="item" :label="item.optionLabel">
+              <el-icon style="margin-right: 8px">
+                <Icon :className="`field-icon-${fieldType[item.deType]}`"
+                  ><component
+                    :class="`field-icon-${fieldType[item.deType]}`"
+                    class="svg-icon"
+                    :is="iconFieldMap[fieldType[item.deType]]"
+                  ></component
+                ></Icon>
+              </el-icon>
+              {{ item.optionShowName }}
+            </el-option>
+          </template>
         </el-select>
       </el-form-item>
       <template v-if="curSeriesFormatter?.id">
@@ -654,11 +1160,33 @@ onMounted(() => {
             v-model="curSeriesFormatter.show"
             label="quota"
           >
-            {{ t('chart.show') }}
+            {{ t('chart.show_label') }}
           </el-checkbox>
         </el-form-item>
 
         <div style="padding-left: 22px">
+          <el-form-item
+            v-if="showProperty('seriesLabelVPosition')"
+            class="form-item"
+            :class="'form-item-' + themes"
+            :label="t('chart.position')"
+          >
+            <el-select
+              :disabled="!curSeriesFormatter.show"
+              size="small"
+              :effect="themes"
+              v-model="curSeriesFormatter.position"
+              :placeholder="t('chart.label_position')"
+              @change="changeLabelAttr('seriesLabelFormatter')"
+            >
+              <el-option
+                v-for="option in labelPositionV"
+                :key="option.value"
+                :label="option.name"
+                :value="option.value"
+              />
+            </el-select>
+          </el-form-item>
           <el-space>
             <el-form-item class="form-item" :class="'form-item-' + themes" :label="t('chart.text')">
               <el-color-picker
@@ -674,7 +1202,7 @@ onMounted(() => {
             </el-form-item>
             <el-form-item class="form-item" :class="'form-item-' + themes">
               <template #label>&nbsp;</template>
-              <el-tooltip content="字号" :effect="toolTip" placement="top">
+              <el-tooltip :content="t('chart.font_size')" :effect="toolTip" placement="top">
                 <el-select
                   size="small"
                   :disabled="!curSeriesFormatter.show"
@@ -682,7 +1210,7 @@ onMounted(() => {
                   :effect="themes"
                   v-model.number="curSeriesFormatter.fontSize"
                   :placeholder="t('chart.text_fontsize')"
-                  @change="changeLabelAttr('fontSize')"
+                  @change="changeLabelAttr('seriesLabelFormatter')"
                 >
                   <el-option
                     v-for="option in fontSizeList"
@@ -707,7 +1235,7 @@ onMounted(() => {
               style="width: 100%"
               :effect="props.themes"
               v-model="curSeriesFormatter.formatterCfg.type"
-              @change="changeLabelAttr('quotaLabelFormatter')"
+              @change="changeLabelAttr('seriesLabelFormatter')"
             >
               <el-option
                 v-for="type in formatterType"
@@ -735,7 +1263,7 @@ onMounted(() => {
               :min="0"
               :max="10"
               size="small"
-              @change="changeLabelAttr('quotaLabelFormatter')"
+              @change="changeLabelAttr('seriesLabelFormatter')"
             />
           </el-form-item>
 
@@ -759,7 +1287,7 @@ onMounted(() => {
                   v-model="curSeriesFormatter.formatterCfg.unit"
                   :placeholder="t('chart.pls_select_field')"
                   size="small"
-                  @change="changeLabelAttr('quotaLabelFormatter')"
+                  @change="changeLabelAttr('seriesLabelFormatter')"
                 >
                   <el-option
                     v-for="item in unitType"
@@ -783,7 +1311,7 @@ onMounted(() => {
                   size="small"
                   clearable
                   :placeholder="t('commons.input_content')"
-                  @change="changeLabelAttr('quotaLabelFormatter')"
+                  @change="changeLabelAttr('seriesLabelFormatter')"
                 />
               </el-form-item>
             </el-col>
@@ -795,13 +1323,524 @@ onMounted(() => {
               size="small"
               :effect="props.themes"
               v-model="curSeriesFormatter.formatterCfg.thousandSeparator"
-              @change="changeLabelAttr('quotaLabelFormatter')"
+              @change="changeLabelAttr('seriesLabelFormatter')"
               :label="t('chart.value_formatter_thousand_separator')"
             />
           </el-form-item>
         </div>
+        <el-form-item
+          class="form-item form-item-checkbox"
+          :class="'form-item-' + themes"
+          v-if="showProperty('showExtremum')"
+        >
+          <el-checkbox
+            :effect="themes"
+            size="small"
+            @change="changeLabelAttr('seriesLabelFormatter')"
+            v-model="curSeriesFormatter.showExtremum"
+            label="quota"
+          >
+            {{ t('chart.show_extremum') }}
+          </el-checkbox>
+        </el-form-item>
       </template>
     </div>
+    <template v-if="isGroupBar">
+      <el-form-item class="form-item form-item-checkbox" :class="'form-item-' + themes">
+        <el-checkbox
+          :effect="themes"
+          size="small"
+          @change="changeLabelAttr('childrenShow')"
+          v-model="state.labelForm.childrenShow"
+          label="quota"
+        >
+          {{ t('chart.show_label') }}
+        </el-checkbox>
+      </el-form-item>
+      <div style="padding-left: 22px">
+        <el-space>
+          <el-form-item
+            class="form-item"
+            :class="'form-item-' + themes"
+            v-if="showProperty('color')"
+            :label="t('chart.text')"
+          >
+            <el-color-picker
+              :disabled="!state.labelForm.childrenShow"
+              :effect="themes"
+              v-model="state.labelForm.color"
+              class="color-picker-style"
+              :predefine="COLOR_PANEL"
+              @change="changeLabelAttr('color')"
+              is-custom
+            />
+          </el-form-item>
+          <el-form-item
+            class="form-item"
+            :class="'form-item-' + themes"
+            v-if="showProperty('fontSize')"
+          >
+            <template #label>&nbsp;</template>
+            <el-tooltip :content="t('chart.font_size')" :effect="toolTip" placement="top">
+              <el-select
+                :disabled="!state.labelForm.childrenShow"
+                size="small"
+                style="width: 108px"
+                :effect="themes"
+                v-model.number="state.labelForm.fontSize"
+                :placeholder="t('chart.text_fontsize')"
+                @change="changeLabelAttr('fontSize')"
+              >
+                <el-option
+                  v-for="option in fontSizeList"
+                  :key="option.value"
+                  :label="option.name"
+                  :value="option.value"
+                />
+              </el-select>
+            </el-tooltip>
+          </el-form-item>
+        </el-space>
+        <el-form-item
+          v-if="showProperty('vPosition')"
+          class="form-item"
+          :class="'form-item-' + themes"
+        >
+          <template #label>
+            {{ t('chart.label_position') }}
+            <el-tooltip
+              class="item"
+              :effect="toolTip"
+              placement="top"
+              v-if="chart.type.includes('chart-mix')"
+            >
+              <template #content>
+                <span v-html="t('chart.chart_mix_label_only_left')"></span>
+              </template>
+              <span style="vertical-align: middle">
+                <el-icon style="cursor: pointer">
+                  <Icon name="icon_info_outlined"><icon_info_outlined class="svg-icon" /></Icon>
+                </el-icon>
+              </span>
+            </el-tooltip>
+          </template>
+          <el-select
+            :disabled="!state.labelForm.childrenShow"
+            size="small"
+            :effect="themes"
+            v-model="state.labelForm.position"
+            :placeholder="t('chart.label_position')"
+            @change="changeLabelAttr('position')"
+          >
+            <el-option
+              v-for="option in labelPositionV"
+              :key="option.value"
+              :label="option.name"
+              :value="option.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item
+          :label="$t('chart.value_formatter_type')"
+          class="form-item"
+          :class="'form-item-' + themes"
+        >
+          <el-select
+            :disabled="!state.labelForm.childrenShow"
+            size="small"
+            :effect="themes"
+            v-model="state.labelForm.labelFormatter.type"
+            @change="changeLabelAttr('labelFormatter.type')"
+          >
+            <el-option
+              v-for="type in formatterType"
+              :key="type.value"
+              :label="$t('chart.' + type.name)"
+              :value="type.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item
+          v-if="state.labelForm.labelFormatter && state.labelForm.labelFormatter.type !== 'auto'"
+          :label="$t('chart.value_formatter_decimal_count')"
+          class="form-item"
+          :class="'form-item-' + themes"
+        >
+          <el-input-number
+            :disabled="!state.labelForm.childrenShow"
+            controls-position="right"
+            :effect="themes"
+            v-model="state.labelForm.labelFormatter.decimalCount"
+            :precision="0"
+            :min="0"
+            :max="10"
+            @change="changeLabelAttr('labelFormatter.decimalCount')"
+          />
+        </el-form-item>
+
+        <el-row
+          :gutter="8"
+          v-if="state.labelForm.labelFormatter && state.labelForm.labelFormatter.type !== 'percent'"
+        >
+          <el-col :span="12">
+            <el-form-item
+              :label="$t('chart.value_formatter_unit')"
+              class="form-item"
+              :class="'form-item-' + themes"
+            >
+              <el-select
+                :disabled="!state.labelForm.childrenShow"
+                size="small"
+                :effect="themes"
+                v-model="state.labelForm.labelFormatter.unit"
+                :placeholder="$t('chart.pls_select_field')"
+                @change="changeLabelAttr('labelFormatter.unit')"
+              >
+                <el-option
+                  v-for="item in unitType"
+                  :key="item.value"
+                  :label="$t('chart.' + item.name)"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item
+              :label="$t('chart.value_formatter_suffix')"
+              class="form-item"
+              :class="'form-item-' + themes"
+            >
+              <el-input
+                :disabled="!state.labelForm.childrenShow"
+                :effect="themes"
+                v-model="state.labelForm.labelFormatter.suffix"
+                clearable
+                :placeholder="$t('commons.input_content')"
+                @change="changeLabelAttr('labelFormatter.suffix')"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-form-item class="form-item" :class="'form-item-' + themes">
+          <el-checkbox
+            size="small"
+            :effect="themes"
+            v-model="state.labelForm.labelFormatter.thousandSeparator"
+            @change="changeLabelAttr('labelFormatter.thousandSeparator')"
+            :label="t('chart.value_formatter_thousand_separator')"
+            :disabled="!state.labelForm.childrenShow"
+          />
+        </el-form-item>
+      </div>
+    </template>
+    <el-form-item
+      class="form-item form-item-checkbox"
+      :class="'form-item-' + themes"
+      v-if="showProperty('showExtremum') && !showSeriesLabelFormatter"
+    >
+      <el-checkbox
+        :effect="themes"
+        size="small"
+        @change="changeLabelAttr('showExtremum')"
+        v-model="state.labelForm.showExtremum"
+        label="quota"
+      >
+        {{ t('chart.show_extremum') }}
+      </el-checkbox>
+    </el-form-item>
+    <el-form-item class="form-item" :class="'form-item-' + themes" v-show="showProperty('showGap')">
+      <el-checkbox
+        :effect="themes"
+        size="small"
+        @change="changeLabelAttr('showGap')"
+        v-model="state.labelForm.showGap"
+      >
+        {{ t('chart.show_gap') }}
+      </el-checkbox>
+    </el-form-item>
+    <el-form-item
+      class="form-item"
+      :class="'form-item-' + themes"
+      v-if="showProperty('conversionTag')"
+    >
+      <el-checkbox
+        :effect="themes"
+        size="small"
+        @change="changeLabelAttr('conversionTag')"
+        v-model="state.labelForm.conversionTag.show"
+      >
+        {{ t('chart.conversion_rate') }}
+      </el-checkbox>
+    </el-form-item>
+    <div style="padding-left: 22px" v-if="showProperty('conversionTag')">
+      <el-row :gutter="8">
+        <el-col :span="12">
+          <el-form-item
+            :label="t('chart.label_reserve_decimal_count')"
+            class="form-item"
+            :class="'form-item-' + themes"
+          >
+            <el-select
+              size="small"
+              style="width: 108px"
+              :effect="themes"
+              :disabled="!state.labelForm.conversionTag.show"
+              v-model.number="state.labelForm.conversionTag.precision"
+              @change="changeLabelAttr('conversionTag')"
+            >
+              <el-option
+                v-for="option in conversionPrecision"
+                :key="option.value"
+                :label="option.name"
+                :value="option.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item
+            :label="t('chart.conversion_rate') + t('chart.name')"
+            class="form-item"
+            :class="'form-item-' + themes"
+          >
+            <el-input
+              :effect="themes"
+              v-model="state.labelForm.conversionTag.text"
+              size="small"
+              maxlength="100"
+              :disabled="!state.labelForm.conversionTag.show"
+              @blur="changeLabelAttr('conversionTag')"
+            />
+          </el-form-item>
+        </el-col>
+      </el-row>
+    </div>
+    <template v-if="isGauge">
+      <el-form-item class="form-item form-item-checkbox" :class="'form-item-' + themes">
+        <el-checkbox
+          :effect="themes"
+          size="small"
+          @change="changeLabelAttr('childrenShow')"
+          v-model="state.labelForm.childrenShow"
+          label="quota"
+        >
+          {{ t('chart.quota') }}
+        </el-checkbox>
+      </el-form-item>
+      <div style="padding-left: 22px">
+        <el-space>
+          <el-form-item
+            class="form-item"
+            :class="'form-item-' + themes"
+            v-if="showProperty('color')"
+            :label="t('chart.text')"
+          >
+            <el-color-picker
+              :disabled="!state.labelForm.childrenShow"
+              :effect="themes"
+              v-model="state.labelForm.color"
+              class="color-picker-style"
+              :predefine="COLOR_PANEL"
+              @change="changeLabelAttr('color')"
+              is-custom
+            />
+          </el-form-item>
+          <el-form-item
+            class="form-item"
+            :class="'form-item-' + themes"
+            v-if="showProperty('fontSize')"
+          >
+            <template #label>&nbsp;</template>
+            <el-tooltip :content="t('chart.font_size')" :effect="toolTip" placement="top">
+              <el-select
+                :disabled="!state.labelForm.childrenShow"
+                size="small"
+                style="width: 108px"
+                :effect="themes"
+                v-model.number="state.labelForm.fontSize"
+                :placeholder="t('chart.text_fontsize')"
+                @change="changeLabelAttr('fontSize')"
+              >
+                <el-option
+                  v-for="option in fontSizeList"
+                  :key="option.value"
+                  :label="option.name"
+                  :value="option.value"
+                />
+              </el-select>
+            </el-tooltip>
+          </el-form-item>
+        </el-space>
+        <el-form-item
+          :label="$t('chart.value_formatter_type')"
+          class="form-item"
+          :class="'form-item-' + themes"
+        >
+          <el-select
+            :disabled="!state.labelForm.childrenShow"
+            size="small"
+            :effect="themes"
+            v-model="state.labelForm.labelFormatter.type"
+            @change="changeLabelAttr('labelFormatter.type')"
+          >
+            <el-option
+              v-for="type in formatterType"
+              :key="type.value"
+              :label="$t('chart.' + type.name)"
+              :value="type.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item
+          v-if="state.labelForm.labelFormatter && state.labelForm.labelFormatter.type !== 'auto'"
+          :label="$t('chart.value_formatter_decimal_count')"
+          class="form-item"
+          :class="'form-item-' + themes"
+        >
+          <el-input-number
+            :disabled="!state.labelForm.childrenShow"
+            controls-position="right"
+            :effect="themes"
+            v-model="state.labelForm.labelFormatter.decimalCount"
+            :precision="0"
+            :min="0"
+            :max="10"
+            @change="changeLabelAttr('labelFormatter.decimalCount')"
+          />
+        </el-form-item>
+
+        <el-row
+          :gutter="8"
+          v-if="state.labelForm.labelFormatter && state.labelForm.labelFormatter.type !== 'percent'"
+        >
+          <el-col :span="12">
+            <el-form-item
+              :label="$t('chart.value_formatter_unit')"
+              class="form-item"
+              :class="'form-item-' + themes"
+            >
+              <el-select
+                :disabled="!state.labelForm.childrenShow"
+                size="small"
+                :effect="themes"
+                v-model="state.labelForm.labelFormatter.unit"
+                :placeholder="$t('chart.pls_select_field')"
+                @change="changeLabelAttr('labelFormatter.unit')"
+              >
+                <el-option
+                  v-for="item in unitType"
+                  :key="item.value"
+                  :label="$t('chart.' + item.name)"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item
+              :label="$t('chart.value_formatter_suffix')"
+              class="form-item"
+              :class="'form-item-' + themes"
+            >
+              <el-input
+                :disabled="!state.labelForm.childrenShow"
+                :effect="themes"
+                v-model="state.labelForm.labelFormatter.suffix"
+                clearable
+                :placeholder="$t('commons.input_content')"
+                @change="changeLabelAttr('labelFormatter.suffix')"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-form-item class="form-item" :class="'form-item-' + themes">
+          <el-checkbox
+            size="small"
+            :effect="themes"
+            v-model="state.labelForm.labelFormatter.thousandSeparator"
+            @change="changeLabelAttr('labelFormatter.thousandSeparator')"
+            :label="t('chart.value_formatter_thousand_separator')"
+            :disabled="!state.labelForm.childrenShow"
+          />
+        </el-form-item>
+      </div>
+      <el-form-item class="form-item form-item-checkbox" :class="'form-item-' + themes">
+        <el-checkbox
+          :effect="themes"
+          size="small"
+          @change="changeLabelAttr('proportionSeriesFormatter')"
+          v-model="state.labelForm.proportionSeriesFormatter.show"
+          label="quota"
+        >
+          {{ t('chart.proportion') }}
+        </el-checkbox>
+      </el-form-item>
+      <div style="padding-left: 22px">
+        <el-space>
+          <el-form-item
+            class="form-item"
+            :class="'form-item-' + themes"
+            v-if="showProperty('color')"
+            :label="t('chart.text')"
+          >
+            <el-color-picker
+              :disabled="!state.labelForm.proportionSeriesFormatter.show"
+              :effect="themes"
+              v-model="state.labelForm.proportionSeriesFormatter.color"
+              class="color-picker-style"
+              :predefine="COLOR_PANEL"
+              @change="changeLabelAttr('proportionSeriesFormatter.color')"
+              is-custom
+            />
+          </el-form-item>
+          <el-form-item
+            class="form-item"
+            :class="'form-item-' + themes"
+            v-if="showProperty('fontSize')"
+          >
+            <template #label>&nbsp;</template>
+            <el-tooltip :content="t('chart.font_size')" :effect="toolTip" placement="top">
+              <el-select
+                :disabled="!state.labelForm.proportionSeriesFormatter.show"
+                size="small"
+                style="width: 108px"
+                :effect="themes"
+                v-model.number="state.labelForm.proportionSeriesFormatter.fontSize"
+                :placeholder="t('chart.text_fontsize')"
+                @change="changeLabelAttr('proportionSeriesFormatter.fontSize')"
+              >
+                <el-option
+                  v-for="option in fontSizeList"
+                  :key="option.value"
+                  :label="option.name"
+                  :value="option.value"
+                />
+              </el-select>
+            </el-tooltip>
+          </el-form-item>
+        </el-space>
+        <el-form-item
+          :label="t('chart.label_reserve_decimal_count')"
+          class="form-item"
+          :class="'form-item-' + themes"
+        >
+          <el-select
+            size="small"
+            :effect="themes"
+            :disabled="!state.labelForm.proportionSeriesFormatter.show"
+            v-model="state.labelForm.proportionSeriesFormatter.formatterCfg.decimalCount"
+            @change="changeLabelAttr('proportionSeriesFormatter')"
+          >
+            <el-option :label="t('chart.reserve_zero')" :value="0" />
+            <el-option :label="t('chart.reserve_one')" :value="1" />
+            <el-option :label="t('chart.reserve_two')" :value="2" />
+          </el-select>
+        </el-form-item>
+      </div>
+    </template>
   </el-form>
 </template>
 
@@ -809,22 +1848,26 @@ onMounted(() => {
 .form-item-checkbox {
   margin-bottom: 8px !important;
 }
+
 .series-select {
   :deep(.ed-select__prefix--light) {
     padding-right: unset;
     border-right: unset;
   }
+
   :deep(.ed-select__prefix--dark) {
     padding-right: unset;
     border-right: unset;
   }
 }
+
 .series-select-option {
   display: flex;
   align-items: center;
   justify-content: flex-start;
   padding: 0 11px;
 }
+
 .m-divider {
   margin: 0 0 16px;
   border-color: rgba(31, 35, 41, 0.15);
@@ -832,5 +1875,13 @@ onMounted(() => {
   &.divider-dark {
     border-color: rgba(255, 255, 255, 0.15);
   }
+}
+.data-area-label {
+  text-align: left;
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
 }
 </style>

@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import icon_searchOutline_outlined from '@/assets/svg/icon_search-outline_outlined.svg'
+import icon_deleteTrash_outlined from '@/assets/svg/icon_delete-trash_outlined.svg'
 import { ref, inject, computed, watch, onBeforeMount, toRefs } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { multFieldValuesForPermissions } from '@/api/dataset'
@@ -10,6 +12,7 @@ import {
   sysParamsIlns,
   fieldEnums
 } from '../options.js'
+import { iconFieldMap } from '@/components/icon-group/field-list.js'
 export interface Item {
   term: string
   fieldId: string
@@ -102,7 +105,7 @@ const dimensions = computed(() => {
   return computedFiledList.value.filter(ele => ele.name.includes(keywords.value))
 })
 const computedFiledList = computed(() => {
-  return filedList.value || []
+  return Object.values(filedList.value || {})
 })
 
 watch(checkResult, () => {
@@ -112,7 +115,7 @@ watch(checkResult, () => {
 const authTargetType = ref('')
 
 watch(
-  () => getAuthTargetType.authTargetType,
+  () => getAuthTargetType?.authTargetType,
   value => {
     if (authTargetType.value === value || !value) return
     authTargetType.value = value
@@ -227,7 +230,7 @@ const addFields = () => {
     return pre
   }, new Set([]))
   if (list.size) {
-    checklist.value = [...checklist.value, ...Array.from(list)]
+    checklist.value = [...new Set([...checklist.value, ...Array.from(list)])]
   }
   showTextArea.value = false
 }
@@ -263,10 +266,17 @@ const emits = defineEmits(['update:item', 'del'])
         </el-input>
         <template #dropdown>
           <el-dropdown-menu class="de-el-dropdown-menu">
-            <el-input :placeholder="t('auth.enter_keywords')" size="small" v-model="keywords">
+            <el-input
+              @keydown.stop
+              :placeholder="t('auth.enter_keywords')"
+              size="small"
+              v-model="keywords"
+            >
               <template #prefix>
                 <el-icon>
-                  <Icon name="icon_search-outline_outlined"></Icon>
+                  <Icon name="icon_search-outline_outlined"
+                    ><icon_searchOutline_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </template>
             </el-input>
@@ -281,8 +291,11 @@ const emits = defineEmits(['update:item', 'del'])
               >
                 <el-icon>
                   <Icon
-                    :name="`field_${fieldEnums[ele.deType]}`"
-                    :className="`field-icon-${fieldEnums[ele.deType]}`"
+                    ><component
+                      class="svg-icon"
+                      :class="`field-icon-${fieldEnums[ele.deType]}`"
+                      :is="iconFieldMap[fieldEnums[ele.deType]]"
+                    ></component
                   ></Icon>
                 </el-icon>
                 <span>{{ ele.name }}</span>
@@ -390,9 +403,9 @@ const emits = defineEmits(['update:item', 'del'])
                   <span>+</span>
                 </li>
               </ul>
-              <button class="select-all" @click="selectAll">
+              <el-button style="width: 100%" type="primary" @click="selectAll">
                 {{ t('auth.select_all') }}
-              </button>
+              </el-button>
             </div>
             <div class="mod-left right-de">
               <div class="right-top clearfix">
@@ -434,19 +447,19 @@ const emits = defineEmits(['update:item', 'del'])
                   >
                     <label>{{ i }}</label>
                   </el-tooltip>
-                  <el-icon @click="delChecks(idx)" style="opacity: 1">
-                    <Icon name="icon_delete-trash_outlined"></Icon>
+                  <el-icon @click="delChecks(idx)" style="color: #646a73">
+                    <Icon><icon_deleteTrash_outlined class="svg-icon" /></Icon>
                   </el-icon>
                 </li>
               </ul>
               <div class="right-menu-foot">
                 <div class="footer-left">&nbsp;</div>
-                <div class="confirm-btn" @click="confirm">
+                <el-button type="primary" @click="confirm">
                   {{ t('auth.sure') }}
-                </div>
+                </el-button>
                 <div class="footer-right">
-                  <el-icon @click="clearAll">
-                    <Icon name="icon_delete-trash_outlined"></Icon>
+                  <el-icon style="color: #646a73" @click="clearAll">
+                    <Icon><icon_deleteTrash_outlined class="svg-icon" /></Icon>
                   </el-icon>
                 </div>
               </div>
@@ -455,7 +468,9 @@ const emits = defineEmits(['update:item', 'del'])
         </el-popover>
       </div>
       <el-icon v-if="showDel" class="font12" @click="emits('del')">
-        <Icon name="icon_delete-trash_outlined"></Icon>
+        <Icon name="icon_delete-trash_outlined"
+          ><icon_deleteTrash_outlined class="svg-icon"
+        /></Icon>
       </el-icon>
     </div>
   </div>
@@ -553,7 +568,7 @@ const emits = defineEmits(['update:item', 'del'])
   }
 
   .bottom-line {
-    font-family: '阿里巴巴普惠体 3.0 55 Regular L3', Hiragino Sans GB, Microsoft YaHei, sans-serif;
+    font-family: var(--de-custom_font, 'PingFang');
     font-variant: tabular-nums;
     font-feature-settings: 'tnum';
     word-wrap: break-word;
@@ -601,7 +616,7 @@ const emits = defineEmits(['update:item', 'del'])
     border-radius: 0;
     box-shadow: none;
     height: 26px;
-    font-family: '阿里巴巴普惠体 3.0 55 Regular L3', Hiragino Sans GB, Microsoft YaHei, sans-serif;
+    font-family: var(--de-custom_font, 'PingFang');
     word-wrap: break-word;
     text-align: left;
     color: rgba(0, 0, 0, 0.65);
@@ -714,8 +729,7 @@ const emits = defineEmits(['update:item', 'del'])
   }
 
   .ed-input {
-    font-family: Alibaba-PuHuiTi-Regular, Helvetica Neue, Helvetica, Arial,
-      '阿里巴巴普惠体 3.0 55 Regular L3', Hiragino Sans GB, Microsoft YaHei, sans-serif;
+    font-family: var(--de-custom_font, 'PingFang');
     box-sizing: border-box;
     margin: 0;
     color: rgba(0, 0, 0, 0.65);
@@ -748,7 +762,7 @@ const emits = defineEmits(['update:item', 'del'])
     box-shadow: none;
     border: 1px solid rgba(0, 0, 0, 0.05);
     .mod-left {
-      font-family: '阿里巴巴普惠体 3.0 55 Regular L3', Hiragino Sans GB, Microsoft YaHei, sans-serif;
+      font-family: var(--de-custom_font, 'PingFang');
       color: rgba(0, 0, 0, 0.65);
       font-size: 12px;
       vertical-align: top;
@@ -794,7 +808,7 @@ const emits = defineEmits(['update:item', 'del'])
       border-left: 1px solid hsla(0, 0%, 59%, 0.1);
     }
     .autochecker-list {
-      font-family: '阿里巴巴普惠体 3.0 55 Regular L3', Hiragino Sans GB, Microsoft YaHei, sans-serif;
+      font-family: var(--de-custom_font, 'PingFang');
       color: rgba(0, 0, 0, 0.65);
       box-sizing: border-box;
       width: 100%;
@@ -835,12 +849,10 @@ const emits = defineEmits(['update:item', 'del'])
           line-height: 28px;
           height: 28px;
           display: inline-block;
-          opacity: 0;
         }
 
         label {
-          font-family: '阿里巴巴普惠体 3.0 55 Regular L3', Hiragino Sans GB, Microsoft YaHei,
-            sans-serif;
+          font-family: var(--de-custom_font, 'PingFang');
           font-size: 12px;
           direction: ltr;
           color: #333;
@@ -873,44 +885,6 @@ const emits = defineEmits(['update:item', 'del'])
           text-align: center;
           border-radius: 999px;
         }
-      }
-    }
-
-    .select-all {
-      box-sizing: border-box;
-      margin: 0;
-      overflow: visible;
-      position: relative;
-      font-weight: 400;
-      white-space: nowrap;
-      border: 1px solid transparent;
-      transition: all 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
-      user-select: none;
-      touch-action: manipulation;
-      padding: 0 15px;
-      font-size: 12px;
-      outline: 0;
-      color: #fff;
-      border-color: #2e74ff;
-      text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.12);
-      box-shadow: 0 2px 0 rgba(0, 0, 0, 0.045);
-      align-items: center;
-      justify-content: center;
-      line-height: 1;
-      -webkit-appearance: button;
-      cursor: pointer;
-      border-radius: 0;
-      background: #2153d4;
-      padding-left: 5px;
-      text-align: center;
-      display: inline-block;
-      width: 100%;
-      height: 25px;
-
-      &:hover {
-        border: 1px solid transparent;
-        background: #4794ff;
-        color: #fff;
       }
     }
 
@@ -951,7 +925,7 @@ const emits = defineEmits(['update:item', 'del'])
       height: 30px;
       text-align: right;
       line-height: 30px;
-      margin-top: 5px;
+      margin-top: 9px;
       border-top: 1px solid hsla(0, 0%, 59%, 0.1);
 
       .footer-left {
@@ -962,35 +936,6 @@ const emits = defineEmits(['update:item', 'del'])
       .footer-right {
         float: right;
         padding-left: 10px;
-        cursor: pointer;
-      }
-
-      .confirm-btn {
-        box-sizing: border-box;
-        position: relative;
-        font-weight: 400;
-        white-space: nowrap;
-        text-align: center;
-        background-image: none;
-        border: 1px solid transparent;
-        transition: all 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
-        user-select: none;
-        touch-action: manipulation;
-        height: 28px;
-        padding: 0 15px;
-        font-size: 12px;
-        border-radius: 2px;
-        outline: 0;
-        color: #fff;
-        background-color: #2e74ff;
-        border-color: #2e74ff;
-        text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.12);
-        box-shadow: 0 2px 0 rgba(0, 0, 0, 0.045);
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        line-height: 1;
-        -webkit-appearance: button;
         cursor: pointer;
       }
     }

@@ -17,13 +17,15 @@ const { start, done } = useNProgress()
 const interactiveStore = interactiveStoreWithOut()
 
 const { loadStart, loadDone } = usePageLoading()
-const whiteList = ['/login'] // 不重定向白名单
+const whiteList = ['/login', '/panel', '/DashboardEmpty', '/preview'] // 不重定向白名单
 
 router.beforeEach(async (to, _, next) => {
   start()
   loadStart()
   await appearanceStore.setAppearance()
-  if (wsCache.get('user.token')) {
+  if (to.name === 'link') {
+    next()
+  } else if (wsCache.get('user.token')) {
     if (!userStore.getUid) {
       await userStore.setUser()
     }
@@ -39,7 +41,7 @@ router.beforeEach(async (to, _, next) => {
       next()
     }
   } else {
-    if (whiteList.includes(to.path) || to.path.includes('/de-link')) {
+    if (whiteList.includes(to.path) || to.name === 'link') {
       next()
     } else {
       next('/login') // 否则全部重定向到登录页

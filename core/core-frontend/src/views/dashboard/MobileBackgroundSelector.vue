@@ -4,7 +4,7 @@
       id="input"
       ref="files"
       type="file"
-      accept=".jpeg,.jpg,.png,.gif"
+      accept=".jpeg,.jpg,.png,.gif,.svg"
       hidden
       @click="
         e => {
@@ -94,7 +94,7 @@
                 class="image-hint"
                 :class="`image-hint_${themes}`"
               >
-                支持JPG、PNG、GIF，大小不超过 1M
+                {{ t('visualization.pic_import_tips', ['1M']) }}
               </span>
               <el-button
                 size="small"
@@ -104,7 +104,7 @@
                 @click="goFile"
                 :disabled="!canvasStyleData.mobileSetting.backgroundImageEnable"
               >
-                重新上传
+                {{ t('visualization.re_upload') }}
               </el-button>
             </el-row>
           </div>
@@ -159,13 +159,14 @@ const goFile = () => {
 }
 
 const sizeMessage = () => {
-  ElMessage.success('图片大小不符合')
+  ElMessage.success(t('visualization.pic_size_error'))
 }
 
 const reUpload = e => {
   const file = e.target.files[0]
   if (file.size > maxImageSize) {
     sizeMessage()
+    return
   }
   uploadFileResult(file, fileUrl => {
     canvasStyleData.value.mobileSetting.background = fileUrl
@@ -210,7 +211,7 @@ const commitStyle = () => {
     type: 'setCanvasStyle',
     value: JSON.parse(JSON.stringify(unref(canvasStyleDataCopy)))
   })
-  snapshotStore.recordSnapshotCache()
+  snapshotStore.recordSnapshotCache('commitStyle')
 }
 
 onMounted(() => {
@@ -227,6 +228,7 @@ watch(
 
 <style scoped lang="less">
 .mobile-background-selector {
+  padding-left: 16px;
   :deep(.ed-form-item) {
     display: block;
     margin-bottom: 8px;
@@ -382,7 +384,7 @@ watch(
 
   .image-hint {
     color: #8f959e;
-    size: 14px;
+    font-size: 12px;
     line-height: 22px;
     font-weight: 400;
     margin-top: -6px;

@@ -34,7 +34,9 @@ const { icon, name, label, dragInfo, themes } = toRefs(props)
   <div class="drag-component" :class="'drag-' + themes">
     <div draggable="true" :data-id="dragInfo" class="icon-content">
       <span v-if="name" class="label-content">{{ name }}</span>
-      <Icon v-if="icon" class="drag-icon" :name="icon" />
+      <Icon v-if="icon" class="drag-icon"
+        ><component class="svg-icon drag-icon" :is="icon"></component
+      ></Icon>
     </div>
     <div class="label-content">
       <span>{{ label }}</span>
@@ -54,6 +56,7 @@ const { icon, name, label, dragInfo, themes } = toRefs(props)
 .drag-component {
   border-radius: 4px;
   width: 88px !important;
+  margin-right: 12px;
   .icon-content {
     width: 88px !important;
     height: 64px !important;
@@ -72,6 +75,7 @@ const { icon, name, label, dragInfo, themes } = toRefs(props)
     .drag-icon {
       height: 40px;
       width: 40px;
+      color: #3370ff;
     }
   }
   .label-content {

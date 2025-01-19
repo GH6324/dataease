@@ -1,10 +1,14 @@
 declare type EditorProperty =
   | 'background-overall-component'
+  | 'border-style'
   | 'basic-style-selector'
+  | 'symbolic-style-selector'
+  | 'dual-basic-style-selector'
   | 'label-selector'
   | 'tooltip-selector'
   | 'x-axis-selector'
   | 'y-axis-selector'
+  | 'dual-y-axis-selector'
   | 'title-selector'
   | 'legend-selector'
   | 'table-header-selector'
@@ -22,10 +26,20 @@ declare type EditorProperty =
   | 'linkage'
   | 'indicator-value-selector'
   | 'indicator-name-selector'
+  | 'quadrant-selector'
+  | 'map-symbolic-selector'
+  | 'flow-map-line-selector'
+  | 'flow-map-point-selector'
+  | 'bubble-animate'
 declare type EditorPropertyInner = {
   [key in EditorProperty]?: string[]
 }
 
+declare type EditorSelectorSpec = {
+  [key in EditorProperty]?: {
+    title: string
+  }
+}
 /**
  * 轴类型
  */
@@ -33,6 +47,7 @@ declare type AxisType =
   | 'xAxis'
   | 'yAxis'
   | 'xAxisExt'
+  | 'xAxisExtRight'
   | 'yAxisExt'
   | 'extBubble'
   | 'drill'
@@ -41,6 +56,10 @@ declare type AxisType =
   | 'extLabel'
   | 'extTooltip'
   | 'area'
+  | 'flowMapStartName'
+  | 'flowMapEndName'
+  | 'extColor'
+  | 'drillFields'
 /**
  * 轴配置
  */
@@ -71,6 +90,10 @@ declare type AxisSpec = {
    * 轴提示
    */
   tooltip?: string
+  /**
+   * 允许为空
+   */
+  allowEmpty?: boolean
 }
 /**
  * 图表编辑表单

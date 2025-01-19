@@ -5,11 +5,11 @@ import java.io.Serializable;
 
 /**
  * <p>
- * 
+ * 可视化大屏信息表
  * </p>
  *
  * @author fit2cloud
- * @since 2023-05-11
+ * @since 2024-11-22
  */
 @TableName("data_visualization_info")
 public class DataVisualizationInfo implements Serializable {
@@ -59,7 +59,7 @@ public class DataVisualizationInfo implements Serializable {
     private String componentData;
 
     /**
-     * 移动端布局
+     * 移动端布局0-关闭 1-开启
      */
     private Boolean mobileLayout;
 
@@ -122,6 +122,25 @@ public class DataVisualizationInfo implements Serializable {
      * 删除人
      */
     private String deleteBy;
+
+    /**
+     * 可视化资源版本
+     */
+    private Integer version;
+
+    /**
+     * 内容标识
+     */
+    private String contentId;
+
+    /**
+     * 内容检查标识
+     */
+    private String checkVersion;
+
+    public void setContentId(String contentId) {
+        this.contentId = contentId;
+    }
 
     public Long getId() {
         return id;
@@ -299,6 +318,26 @@ public class DataVisualizationInfo implements Serializable {
         this.deleteBy = deleteBy;
     }
 
+    public Integer getVersion() {
+        return version;
+    }
+
+    public void setVersion(Integer version) {
+        this.version = version;
+    }
+
+    public String getContentId() {
+        return contentId;
+    }
+
+    public String getCheckVersion() {
+        return checkVersion;
+    }
+
+    public void setCheckVersion(String checkVersion) {
+        this.checkVersion = checkVersion;
+    }
+
     @Override
     public String toString() {
         return "DataVisualizationInfo{" +
@@ -324,6 +363,9 @@ public class DataVisualizationInfo implements Serializable {
         ", deleteFlag = " + deleteFlag +
         ", deleteTime = " + deleteTime +
         ", deleteBy = " + deleteBy +
+        ", version = " + version +
+        ", contentId = " + contentId +
+        ", checkVersion = " + checkVersion +
         "}";
     }
 }

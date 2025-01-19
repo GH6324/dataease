@@ -3,12 +3,12 @@
     <el-empty
       v-if="!templateListComputed.length && state.templateFilterText === ''"
       :image="NoneImage"
-      :description="'当前无分类'"
+      :description="t('template_manage.no_catalog')"
     />
     <el-empty
       v-if="!templateListComputed.length && state.templateFilterText !== ''"
       :image="NothingImage"
-      :description="'没有找到相关内容'"
+      :description="t('template_manage.relevant_content_found')"
     />
     <ul>
       <li
@@ -19,7 +19,7 @@
       >
         <span class="text-template-overflow" :title="ele.name">{{ ele.name }}</span>
         <span class="more" @click.stop>
-          <el-dropdown trigger="click" size="small" @command="type => clickMore(type, ele)">
+          <el-dropdown trigger="click" @command="type => clickMore(type, ele)">
             <el-icon class="el-icon-more"><MoreFilled /></el-icon>
             <template #dropdown>
               <el-dropdown-menu class="de-template-dropdown">
@@ -99,8 +99,8 @@ const nodeClick = ({ id, name }) => {
 }
 
 const categoryDelete = template => {
-  ElMessageBox.confirm('确定删除该分类吗？', {
-    tip: '删除后不可恢复，是否继续？',
+  ElMessageBox.confirm(t('template_manage.delete_catalog_hint'), {
+    tip: t('template_manage.delete_catalog_tip'),
     confirmButtonType: 'danger',
     confirmButtonText: t('common.delete'),
     type: 'warning',
@@ -144,7 +144,7 @@ defineExpose({
     align-items: center;
     border-radius: 4px;
     color: var(--deTextPrimary, #1f2329);
-    font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+    font-family: var(--de-custom_font, 'PingFang');
     font-style: normal;
     font-weight: 500;
     font-size: 14px;
@@ -205,8 +205,8 @@ defineExpose({
   }
 
   li.select {
-    background: var(--deWhiteHover, #e0eaff) !important;
-    color: var(--TextActive, #3370ff) !important;
+    background: var(--ed-color-primary-1a, #e0eaff) !important;
+    color: var(--ed-color-primary, #3370ff) !important;
   }
 
   .de-btn-fix {

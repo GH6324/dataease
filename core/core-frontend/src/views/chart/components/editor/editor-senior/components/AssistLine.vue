@@ -1,4 +1,6 @@
 <script lang="tsx" setup>
+import icon_edit_outlined from '@/assets/svg/icon_edit_outlined.svg'
+import icon_info_outlined from '@/assets/svg/icon_info_outlined.svg'
 import { onMounted, reactive, watch, computed, PropType } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { ElIcon, ElMessage } from 'element-plus-secondary'
@@ -19,6 +21,10 @@ const props = defineProps({
     type: Array,
     required: true
   },
+  quotaExtData: {
+    type: Array,
+    required: true
+  },
   themes: {
     type: String as PropType<EditorTheme>,
     default: 'dark'
@@ -30,6 +36,14 @@ const props = defineProps({
 
 const quotaFields = computed<Array<any>>(() => {
   return props.quotaData.filter(ele => ele.summary !== '' && ele.id !== '-1')
+})
+
+const quotaExtFields = computed<Array<any>>(() => {
+  return props.quotaExtData.filter(ele => ele.summary !== '' && ele.id !== '-1')
+})
+
+const useQuotaExt = computed<boolean>(() => {
+  return props.chart.type.includes('chart-mix')
 })
 
 const state = reactive({
@@ -100,7 +114,14 @@ const changeLine = () => {
 }
 
 function existField(line) {
-  return !!find(quotaFields.value, d => d.id === line.id)
+  if (useQuotaExt.value) {
+    return (
+      !!find(quotaFields.value, d => d.id === line.id) ||
+      !!find(quotaExtFields.value, d => d.id === line.id)
+    )
+  } else {
+    return !!find(quotaFields.value, d => d.id === line.id)
+  }
 }
 
 const init = () => {
@@ -128,38 +149,40 @@ onMounted(() => {
 <template>
   <div @keydown.stop @keyup.stop class="assist-line-container">
     <div class="inner-container">
-      <span class="label" :class="'label-' + props.themes">辅助线设置</span>
+      <span class="label" :class="'label-' + props.themes">{{
+        t('chart.assist_line_settings')
+      }}</span>
       <span class="right-btns">
         <span
           class="set-text-info"
           :class="{ 'set-text-info-dark': themes === 'dark' }"
           v-if="state.assistLineCfg.assistLine.length > 0"
         >
-          已设置
+          {{ t('visualization.already_setting') }}
         </span>
-        <el-button
+        <button
           :class="'label-' + props.themes"
-          :style="{ width: '24px', marginLeft: '6px' }"
+          :style="{ marginLeft: '6px' }"
           :disabled="!state.assistLineCfg.enable"
-          class="circle-button font14"
-          text
-          size="small"
+          class="circle-button_icon"
           @click="editLine"
         >
-          <template #icon>
-            <el-icon size="14px">
-              <Icon name="icon_edit_outlined" />
-            </el-icon>
-          </template>
-        </el-button>
+          <el-icon>
+            <Icon
+              ><icon_edit_outlined
+                :class="state.assistLineCfg.enable && 'primary-color'"
+                class="svg-icon"
+            /></Icon>
+          </el-icon>
+        </button>
       </span>
     </div>
 
     <el-row v-for="(item, index) in state.assistLineCfg.assistLine" :key="index" class="line-style">
-      <el-col :span="8">
+      <el-col :span="8" class="line-style">
         <span :title="item.name">{{ item.name }}</span>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="6" class="line-style">
         <span v-if="item.field === '0'" :title="t('chart.field_fixed')">{{
           t('chart.field_fixed')
         }}</span>
@@ -167,17 +190,17 @@ onMounted(() => {
           t('chart.field_dynamic')
         }}</span>
       </el-col>
-      <el-col v-if="item.field === '0'" :span="10">
+      <el-col v-if="item.field === '0'" :span="10" class="line-style">
         <span :title="item.value">{{ item.value }}</span>
       </el-col>
-      <el-col v-else-if="item.field === '1'" :span="10">
+      <el-col v-else-if="item.field === '1'" :span="10" class="line-style">
         <template v-if="existField(item.curField)">
           <span :title="item.curField.name + '(' + t('chart.' + item.summary) + ')'">
             {{ item.curField.name + '(' + t('chart.' + item.summary) + ')' }}
           </span>
         </template>
         <template v-else>
-          <span style="color: red">无效字段</span>
+          <span style="color: red">{{ t('chart.invalid_field') }}</span>
         </template>
       </el-col>
     </el-row>
@@ -186,16 +209,31 @@ onMounted(() => {
     <el-dialog
       v-if="state.editLineDialog"
       v-model="state.editLineDialog"
-      :title="t('chart.assist_line')"
       :visible="state.editLineDialog"
       width="1000px"
       class="dialog-css"
     >
       <assist-line-edit
+        :chart="props.chart"
         :line="state.assistLineCfg.assistLine"
         :quota-fields="quotaFields"
+        :quota-ext-fields="quotaExtFields"
+        :use-quota-ext="useQuotaExt"
         @onAssistLineChange="lineChange"
       />
+      <template #header>
+        <div class="assist-line-cfg-header">
+          <span class="ed-dialog__title">{{ t('chart.assist_line') }}</span>
+          <el-tooltip class="item" effect="ndark" placement="top">
+            <template #content>
+              <span> {{ t('chart.assist_line_tip') }}</span>
+            </template>
+            <el-icon class="hint-icon" :class="{ 'hint-icon--dark': themes === 'dark' }">
+              <Icon name="icon_info_outlined"><icon_info_outlined class="svg-icon" /></Icon>
+            </el-icon>
+          </el-tooltip>
+        </div>
+      </template>
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="closeEditLine">{{ t('chart.cancel') }}</el-button>
@@ -251,6 +289,16 @@ onMounted(() => {
       }
     }
   }
+  .assist-line-cfg-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    .ed-dialog__title {
+      margin-right: 4px;
+      font-size: 16px;
+    }
+  }
 }
 
 .shape-item {
@@ -291,7 +339,6 @@ span {
 .line-style {
   width: 100%;
   font-weight: 400;
-  padding: 4px 8px;
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -318,11 +365,11 @@ span {
 }
 
 .label-dark {
-  font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+  font-family: var(--de-custom_font, 'PingFang');
   font-style: normal;
   font-weight: 400;
   line-height: 20px;
-  color: #a6a6a6 !important;
+  color: #a6a6a6;
   &.ed-button {
     color: var(--ed-color-primary) !important;
   }
@@ -334,6 +381,15 @@ span {
 .font14 {
   :deep(.ed-icon) {
     font-size: 14px;
+  }
+}
+.hint-icon {
+  cursor: pointer;
+  font-size: 14px;
+  color: #646a73;
+
+  &.hint-icon--dark {
+    color: #a6a6a6;
   }
 }
 </style>

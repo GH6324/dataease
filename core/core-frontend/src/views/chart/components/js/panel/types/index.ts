@@ -11,12 +11,18 @@ export enum ChartRenderType {
 export enum ChartLibraryType {
   G2_PLOT = 'g2plot',
   L7_PLOT = 'l7plot',
+  L7 = 'l7',
   ECHARTS = 'echarts',
   S2 = 's2',
   RICH_TEXT = 'rich-text',
+  PICTURE_GROUP = 'picture-group',
   INDICATOR = 'indicator'
 }
-
+export abstract class ChartWrapper<O> {
+  chartInstance: O
+  abstract render: () => any
+  abstract destroy: () => any
+}
 export abstract class AbstractChartView {
   render: ChartRenderType
   library: ChartLibraryType
@@ -26,6 +32,7 @@ export abstract class AbstractChartView {
   abstract propertyInner: EditorPropertyInner
   abstract axis: AxisType[]
   abstract axisConfig: AxisConfig
+  abstract selectorSpec: EditorSelectorSpec
   /**
    * 在新建和切换图表的时候处理默认值
    * @param chart 数据库图表对象
@@ -73,22 +80,37 @@ export abstract class AntVAbstractChartView extends AbstractChartView {
   axisConfig: AxisConfig = {
     xAxis: {
       name: `${t('chart.drag_block_type_axis')} / ${t('chart.dimension')}`,
-      type: 'd'
+      type: 'd',
+      allowEmpty: true
     },
     xAxisExt: {
       name: `${t('chart.chart_group')} / ${t('chart.dimension')}`,
       type: 'd',
-      limit: 1
+      limit: 1,
+      allowEmpty: true
     },
     extStack: {
       name: `${t('chart.stack_item')} / ${t('chart.dimension')}`,
       type: 'd',
-      limit: 1
+      limit: 1,
+      allowEmpty: true
     },
     yAxis: {
       name: `${t('chart.drag_block_value_axis')} / ${t('chart.quota')}`,
       type: 'q',
-      limit: 1
+      limit: 1,
+      allowEmpty: true
+    }
+  }
+  selectorSpec: EditorSelectorSpec = {
+    'misc-style-selector': {
+      title: `${t('chart.size')}`
+    },
+    'dual-y-axis-selector': {
+      title: `${t('chart.yAxis')}`
+    },
+    'x-axis-selector': {
+      title: `${t('chart.xAxis')}`
     }
   }
   protected constructor(library: ChartLibraryType, name: string, defaultData?: any[]) {

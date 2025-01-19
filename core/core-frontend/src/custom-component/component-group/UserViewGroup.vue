@@ -1,10 +1,13 @@
 <script setup lang="tsx">
+import { iconChartMap } from '@/components/icon-group/chart-list'
 import { reactive, ref, toRefs } from 'vue'
 import eventBus from '@/utils/eventBus'
 import { CHART_TYPE_CONFIGS } from '@/views/chart/components/editor/util/chart'
 import Icon from '@/components/icon-custom/src/Icon.vue'
 import { commonHandleDragEnd, commonHandleDragStart } from '@/utils/canvasUtils'
 import { ElScrollbar } from 'element-plus-secondary'
+import { XpackComponent } from '@/components/plugin'
+import { iconChartDarkMap } from '@/components/icon-group/chart-dark-list'
 
 const props = defineProps({
   propValue: {
@@ -47,8 +50,8 @@ const anchorPosition = anchor => {
   scrollTo(element.offsetTop)
 }
 
-const newComponent = innerType => {
-  eventBus.emit('handleNew', { componentName: 'UserView', innerType: innerType })
+const newComponent = (innerType, staticMap) => {
+  eventBus.emit('handleNew', { componentName: 'UserView', innerType: innerType, staticMap })
 }
 
 const handleDragStart = e => {
@@ -62,6 +65,40 @@ const handleDragEnd = e => {
 const groupActiveChange = category => {
   state.curCategory = category
   anchorPosition('#' + category)
+}
+const loadPluginCategory = data => {
+  data.forEach(item => {
+    const { category, title, render, chartValue, chartTitle, icon, staticMap } = item
+    const node = {
+      render,
+      category,
+      icon,
+      value: chartValue,
+      title: chartTitle,
+      isPlugin: true,
+      staticMap
+    }
+    const stack = [...state.chartGroupList]
+    let findParent = false
+    while (stack?.length) {
+      const parent = stack.pop()
+      if (parent.category === category) {
+        const chart = parent.details.find(chart => chart.value === node.value)
+        if (!chart) {
+          parent.details.push(node)
+        }
+        findParent = true
+      }
+    }
+    if (!findParent) {
+      state.chartGroupList.push({
+        category,
+        title,
+        display: 'show',
+        details: [node]
+      })
+    }
+  })
 }
 </script>
 
@@ -97,17 +134,29 @@ const groupActiveChange = category => {
             :key="chartInfo.title"
           >
             <div
-              v-on:click="newComponent(chartInfo.value)"
+              v-on:click="newComponent(chartInfo.value, chartInfo['staticMap'])"
               class="item-top"
               draggable="true"
               :data-id="'UserView&' + chartInfo.value"
+              :title="chartInfo.title"
             >
               <Icon
                 class-name="item-top-icon"
-                :name="chartInfo.icon + (props.themes === 'dark' ? '-dark' : '')"
+                v-if="chartInfo['isPlugin']"
+                :static-content="chartInfo.icon"
               />
+              <Icon v-else class-name="item-top-icon"
+                ><component
+                  class="svg-icon item-top-icon"
+                  :is="
+                    props.themes === 'dark'
+                      ? iconChartDarkMap[`${chartInfo.icon}-dark`]
+                      : iconChartMap[chartInfo.icon]
+                  "
+                ></component
+              ></Icon>
             </div>
-            <div class="item-bottom">
+            <div :title="chartInfo.title" class="item-bottom">
               <span>{{ chartInfo.title }}</span>
             </div>
           </el-col>
@@ -115,6 +164,10 @@ const groupActiveChange = category => {
       </el-row>
     </el-scrollbar>
   </el-row>
+  <XpackComponent
+    jsname="L2NvbXBvbmVudC9wbHVnaW5zLWhhbmRsZXIvVmlld0NhdGVnb3J5SGFuZGxlcg=="
+    @load-plugin-category="loadPluginCategory"
+  />
 </template>
 
 <style lang="less" scoped>
@@ -238,6 +291,10 @@ const groupActiveChange = category => {
     font-size: 12px;
     text-align: center;
     margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 88px;
   }
 }
 

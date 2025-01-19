@@ -2,11 +2,14 @@ package io.dataease.api.permissions.user.api;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.github.xiaoymin.knife4j.annotations.ApiSupport;
+import io.dataease.api.permissions.login.dto.MfaLoginDTO;
+import io.dataease.api.permissions.login.vo.MfaQrVO;
 import io.dataease.api.permissions.role.dto.UserRequest;
 import io.dataease.api.permissions.user.dto.*;
 import io.dataease.api.permissions.user.vo.*;
 import io.dataease.auth.DeApiPath;
 import io.dataease.auth.DePermit;
+import io.dataease.auth.vo.InvalidPwdVO;
 import io.dataease.auth.vo.TokenVO;
 import io.dataease.model.KeywordRequest;
 import io.dataease.request.BaseGridRequest;
@@ -20,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 import static io.dataease.constant.AuthResourceEnum.USER;
 
@@ -50,6 +54,10 @@ public interface UserApi {
     @GetMapping("/personInfo")
     UserFormVO personInfo();
 
+    @Operation(summary = "查询客户端IP信息")
+    @GetMapping("/ipInfo")
+    CurIpVO ipInfo();
+
     @Operation(summary = "创建")
     @DePermit("m:read")
     @PostMapping("/create")
@@ -78,6 +86,10 @@ public interface UserApi {
     @Operation(summary = "角色可绑用户")
     @PostMapping("/role/option")
     List<UserItemVO> optionForRole(@RequestBody UserRequest request);
+
+    @Operation(summary = "组织内用户")
+    @GetMapping("/org/option")
+    List<UserItemVO> optionForOrg();
 
     @Operation(summary = "角色已绑用户")
     @Parameters({
@@ -172,4 +184,44 @@ public interface UserApi {
     @Operation(summary = "绑定状态")
     @GetMapping("/bindStatus")
     List<Integer> bindStatus();
+
+    @Hidden
+    @GetMapping("/getRecipient")
+    List<Map<String, Object>> getRecipient(@RequestBody UserReciRequest request);
+
+    @Hidden
+    @GetMapping("/orgAdmin")
+    boolean orgAdmin();
+
+    @Hidden
+    @GetMapping("/defaultOrgAdmin")
+    boolean defaultOrgAdmin();
+
+    @Hidden
+    @PostMapping("/subOrgUser")
+    List<UserItem> subOrgUser(@RequestBody List<Long> oidList);
+
+    List<Long> getRecipientUserIds(UserReciRequest request);
+
+    List<Long> getUserIdByAccount(String account);
+
+    List<Long> getUserIdByName(String name);
+
+    List<Map<String, Object>> listUserInfosByIds(List<Long> ids);
+
+    @GetMapping("/mfaQr")
+    MfaQrVO mfaQr();
+
+    @GetMapping("/mfabound")
+    Boolean mfaBound();
+
+    @PostMapping("/mfaBind")
+    void mfaBind(@RequestBody MfaLoginDTO dto);
+
+    @PostMapping("/mfaUnbind/{code}")
+    String mfaUnbind(@PathVariable("code") String code);
+
+    @PostMapping("/mfaRest/{id}")
+    void resetBind(@PathVariable("id") Long id);
+
 }

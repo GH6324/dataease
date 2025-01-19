@@ -2,9 +2,9 @@ package io.dataease.api.ds;
 
 
 import com.github.xiaoymin.knife4j.annotations.ApiSupport;
-import io.dataease.api.ds.vo.DatasourceDTO;
 import io.dataease.api.ds.vo.DriveDTO;
 import io.dataease.api.ds.vo.DriveJarDTO;
+import io.dataease.extensions.datasource.dto.DatasourceDTO;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -33,13 +33,13 @@ public interface DatasourceDriverApi {
     @PostMapping("/update")
     DriveDTO update(@RequestBody DriveDTO datasourceDrive);
 
-    @DeleteMapping("/delete/{driverId}")
+    @PostMapping("/delete/{driverId}")
     void delete(@PathVariable("driverId") String driverId);
 
     @GetMapping("/listDriverJar/{driverId}")
     List<DriveJarDTO> listDriverJar(@PathVariable("driverId") String driverId);
 
-    @DeleteMapping("/deleteDriverJar/{jarId}")
+    @PostMapping("/deleteDriverJar/{jarId}")
     void deleteDriverJar(@PathVariable("jarId") String jarId);
 
     @PostMapping("/uploadJar")

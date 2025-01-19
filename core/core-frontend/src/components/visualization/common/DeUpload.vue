@@ -20,7 +20,7 @@
       id="input"
       ref="files"
       type="file"
-      accept=".jpeg,.jpg,.png,.gif"
+      accept=".jpeg,.jpg,.png,.gif,.svg"
       hidden
       @click="
         e => {
@@ -87,7 +87,7 @@ const handlePictureCardPreview = file => {
 }
 const upload = file => {
   uploadFileResult(file.file, fileUrl => {
-    snapshotStore.recordSnapshotCache()
+    snapshotStore.recordSnapshotCache('deUpload')
     imgUrlInner.value = fileUrl
     emits('onImgChange', fileUrl)
   })
@@ -97,9 +97,10 @@ const reUpload = e => {
   const file = e.target.files[0]
   if (file.size > maxImageSize) {
     sizeMessage()
+    return
   }
   uploadFileResult(file, fileUrl => {
-    snapshotStore.recordSnapshotCache()
+    snapshotStore.recordSnapshotCache('uploadFileResult')
     imgUrlInner.value = fileUrl
     emits('onImgChange', fileUrl)
   })

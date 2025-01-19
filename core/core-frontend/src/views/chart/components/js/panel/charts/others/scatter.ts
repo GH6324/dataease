@@ -2,12 +2,18 @@ import {
   G2PlotChartView,
   G2PlotDrawOptions
 } from '@/views/chart/components/js/panel/types/impl/g2plot'
-import { ScatterOptions, Scatter as G2Scatter } from '@antv/g2plot/esm/plots/scatter'
+import type { ScatterOptions, Scatter as G2Scatter } from '@antv/g2plot/esm/plots/scatter'
 import { flow, parseJson } from '../../../util'
 import { valueFormatter } from '../../../formatter'
-import { getPadding } from '../../common/common_antv'
+import {
+  configPlotTooltipEvent,
+  getPadding,
+  getTooltipContainer,
+  TOOLTIP_TPL
+} from '../../common/common_antv'
 import { useI18n } from '@/hooks/web/useI18n'
-import { isEmpty } from 'lodash-es'
+import { defaults, isEmpty } from 'lodash-es'
+import { DEFAULT_LEGEND_STYLE } from '@/views/chart/components/editor/util/chart'
 
 const { t } = useI18n()
 /**
@@ -16,6 +22,7 @@ const { t } = useI18n()
 export class Scatter extends G2PlotChartView<ScatterOptions, G2Scatter> {
   properties: EditorProperty[] = [
     'background-overall-component',
+    'border-style',
     'basic-style-selector',
     'x-axis-selector',
     'y-axis-selector',
@@ -27,9 +34,15 @@ export class Scatter extends G2PlotChartView<ScatterOptions, G2Scatter> {
     'linkage'
   ]
   propertyInner: EditorPropertyInner = {
-    'basic-style-selector': ['colors', 'alpha', 'scatterSymbol', 'scatterSymbolSize'],
+    'basic-style-selector': [
+      'colors',
+      'alpha',
+      'scatterSymbol',
+      'scatterSymbolSize',
+      'seriesColor'
+    ],
     'label-selector': ['fontSize', 'color', 'labelFormatter'],
-    'tooltip-selector': ['fontSize', 'color', 'backgroundColor', 'seriesTooltipFormatter'],
+    'tooltip-selector': ['fontSize', 'color', 'backgroundColor', 'seriesTooltipFormatter', 'show'],
     'x-axis-selector': [
       'position',
       'name',
@@ -68,14 +81,23 @@ export class Scatter extends G2PlotChartView<ScatterOptions, G2Scatter> {
   }
   axis: AxisType[] = ['xAxis', 'yAxis', 'extBubble', 'filter', 'drill', 'extLabel', 'extTooltip']
   axisConfig: AxisConfig = {
-    ...this['axisConfig'],
+    xAxis: {
+      name: `${t('chart.drag_block_type_axis')} / ${t('chart.dimension')}`,
+      type: 'd'
+    },
+    yAxis: {
+      ...this['axisConfig'].yAxis,
+      limit: undefined,
+      allowEmpty: false
+    },
     extBubble: {
       name: `${t('chart.bubble_size')} / ${t('chart.quota')}`,
       type: 'q',
-      limit: 1
+      limit: 1,
+      allowEmpty: true
     }
   }
-  public drawChart(drawOptions: G2PlotDrawOptions<G2Scatter>) {
+  async drawChart(drawOptions: G2PlotDrawOptions<G2Scatter>): Promise<G2Scatter> {
     const { chart, container, action } = drawOptions
     if (!chart.data?.data) {
       return
@@ -86,6 +108,11 @@ export class Scatter extends G2PlotChartView<ScatterOptions, G2Scatter> {
       xField: 'field',
       yField: 'value',
       colorField: 'category',
+      meta: {
+        field: {
+          type: 'cat'
+        }
+      },
       appendPadding: getPadding(chart),
       interactions: [
         {
@@ -110,19 +137,14 @@ export class Scatter extends G2PlotChartView<ScatterOptions, G2Scatter> {
               }
             ]
           }
-        },
-        {
-          type: 'tooltip',
-          cfg: {
-            start: [{ trigger: 'point:mousemove', action: 'tooltip:show' }],
-            end: [{ trigger: 'point:mouseleave', action: 'tooltip:hide' }]
-          }
         }
       ]
     }
     const options = this.setupOptions(chart, baseOptions)
+    const { Scatter: G2Scatter } = await import('@antv/g2plot/esm/plots/scatter')
     const newChart = new G2Scatter(container, options)
     newChart.on('point:click', action)
+    configPlotTooltipEvent(chart, newChart)
     return newChart
   }
 
@@ -223,7 +245,10 @@ export class Scatter extends G2PlotChartView<ScatterOptions, G2Scatter> {
           }
         })
         return result
-      }
+      },
+      container: getTooltipContainer(`tooltip-${chart.id}`),
+      itemTpl: TOOLTIP_TPL,
+      enterable: true
     }
     return {
       ...options,
@@ -231,9 +256,31 @@ export class Scatter extends G2PlotChartView<ScatterOptions, G2Scatter> {
     }
   }
 
+  protected configLegend(chart: Chart, options: ScatterOptions): ScatterOptions {
+    const optionTmp = super.configLegend(chart, options)
+    if (!optionTmp.legend) {
+      return optionTmp
+    }
+    const customStyle = parseJson(chart.customStyle)
+    let size
+    if (customStyle && customStyle.legend) {
+      size = defaults(JSON.parse(JSON.stringify(customStyle.legend)), DEFAULT_LEGEND_STYLE).size
+    } else {
+      size = DEFAULT_LEGEND_STYLE.size
+    }
+    optionTmp.legend.marker.style = style => {
+      return {
+        r: size,
+        fill: style.fill
+      }
+    }
+    return optionTmp
+  }
+
   protected setupOptions(chart: Chart, options: ScatterOptions) {
     return flow(
       this.configTheme,
+      this.configColor,
       this.configLabel,
       this.configTooltip,
       this.configLegend,

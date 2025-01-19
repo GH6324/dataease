@@ -25,6 +25,18 @@ import DeTimeClock from '@/custom-component/de-time-clock/Component.vue'
 import DeTimeClockAttr from '@/custom-component/de-time-clock/Attr.vue'
 import GroupArea from '@/custom-component/group-area/Component.vue'
 import GroupAreaAttr from '@/custom-component/group-area/Attr.vue'
+import DeFrame from '@/custom-component/de-frame/ComponentFrame.vue'
+import DeFrameAttr from '@/custom-component/de-frame/Attr.vue'
+import DeVideo from '@/custom-component/de-video/Component.vue'
+import DeVideoAttr from '@/custom-component/de-video/Attr.vue'
+import DeStreamMedia from '@/custom-component/de-stream-media/Component.vue'
+import DeStreamMediaAttr from '@/custom-component/de-stream-media/Attr.vue'
+import ScrollText from '@/custom-component/scroll-text/Component.vue'
+import ScrollTextAttr from '@/custom-component/scroll-text/Attr.vue'
+import PopArea from '@/custom-component/pop-area/Component.vue'
+import PopAreaAttr from '@/custom-component/pop-area/Attr.vue'
+import PictureGroup from '@/custom-component/picture-group/Component.vue'
+import PictureGroupAttr from '@/custom-component/picture-group/Attr.vue'
 export const componentsMap = {
   VText: VText,
   VQuery,
@@ -52,9 +64,29 @@ export const componentsMap = {
   DeTimeClock: DeTimeClock,
   DeTimeClockAttr: DeTimeClockAttr,
   GroupArea: GroupArea,
-  GroupAreaAttr: GroupAreaAttr
+  GroupAreaAttr: GroupAreaAttr,
+  DeFrame: DeFrame,
+  DeFrameAttr: DeFrameAttr,
+  DeVideo: DeVideo,
+  DeVideoAttr: DeVideoAttr,
+  DeStreamMedia: DeStreamMedia,
+  DeStreamMediaAttr: DeStreamMediaAttr,
+  ScrollText: ScrollText,
+  ScrollTextAttr: ScrollTextAttr,
+  PopArea: PopArea,
+  PopAreaAttr: PopAreaAttr,
+  PictureGroup: PictureGroup,
+  PictureGroupAttr: PictureGroupAttr
 }
 
 export default function findComponent(key) {
+  return componentsMap[key]
+}
+
+export function findComponentAttr(component) {
+  const key =
+    component.component === 'UserView' && component.innerType === 'picture-group'
+      ? 'PictureGroupAttr'
+      : component.component + 'Attr'
   return componentsMap[key]
 }

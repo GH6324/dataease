@@ -4,6 +4,7 @@ import com.github.xiaoymin.knife4j.annotations.ApiSupport;
 import io.dataease.api.lark.dto.LarkEnableEditor;
 import io.dataease.api.lark.dto.LarkSettingCreator;
 import io.dataease.api.lark.dto.LarkTokenRequest;
+import io.dataease.api.lark.vo.LarkGroupVO;
 import io.dataease.api.lark.vo.LarkInfoVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,6 +19,10 @@ public interface LarksuiteApi {
     @Operation(summary = "查询国际飞书信息")
     @GetMapping("/info")
     LarkInfoVO info();
+
+    @Operation(summary = "查询国际飞书二维码信息")
+    @GetMapping("/qrinfo")
+    LarkInfoVO qrinfo();
 
     @Operation(summary = "保存")
     @PostMapping("/create")
@@ -38,4 +43,8 @@ public interface LarksuiteApi {
     @Operation(summary = "国际飞书绑定", hidden = true)
     @PostMapping("/bind")
     void bind(@RequestBody LarkTokenRequest request);
+
+    @Operation(summary = "获取群组", hidden = true)
+    @GetMapping("/getGroup")
+    LarkGroupVO getGroup();
 }

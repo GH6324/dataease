@@ -1,27 +1,35 @@
 <template>
   <div class="template-head">
-    <p class="router-title">模板管理</p>
-    <el-button style="float: right" type="primary" @click="templateImport(state.currentTemplateId)">
-      {{ t('visualization.import') }}
-    </el-button>
-    <el-button
-      style="float: right; margin-right: 12px"
-      @click="showTemplateEditDialog('new', null)"
-    >
-      添加分类
-    </el-button>
-    <el-input
-      v-model="state.templateFilterText"
-      :placeholder="'搜索关键字'"
-      class="template-search-class"
-      clearable
-    >
-      <template #prefix>
-        <el-icon>
-          <Icon name="de-search" />
-        </el-icon>
-      </template>
-    </el-input>
+    <p class="router-title">{{ t('template_manage.name') }}</p>
+    <div style="display: flex">
+      <el-input
+        v-model="state.templateFilterText"
+        :placeholder="t('template_manage.keywords')"
+        class="template-search-class"
+        clearable
+      >
+        <template #prefix>
+          <el-icon>
+            <Icon name="de-search">
+              <deSearch class="svg-icon" />
+            </Icon>
+          </el-icon>
+        </template>
+      </el-input>
+      <el-button
+        style="float: right; margin-left: 12px"
+        @click="showTemplateEditDialog('new', null)"
+      >
+        {{ t('template_manage.add_catalog') }}
+      </el-button>
+      <el-button
+        style="float: right"
+        type="primary"
+        @click="templateImport(state.currentTemplateId)"
+      >
+        {{ t('visualization.import') }}
+      </el-button>
+    </div>
   </div>
   <div class="sys-setting-p">
     <div class="container-sys-param" v-show="state.templateCategories.length">
@@ -48,7 +56,11 @@
                 >
                 <span v-show="state.templateFilterText">
                   <span style="color: #3370ff">{{ state.templateFilterText }}&nbsp;&nbsp;</span>
-                  <span>的搜索结果&nbsp;{{ currentTemplateShowListComputed.length }}&nbsp;个</span>
+                  <span
+                    >{{ t('template_manage.search_result') }}&nbsp;{{
+                      currentTemplateShowListComputed.length
+                    }}&nbsp;{{ t('template_manage.search_result_unit') }}</span
+                  >
                 </span>
               </div>
               <el-row
@@ -56,8 +68,12 @@
                 v-if="!state.currentTemplateShowList.length && !state.templateFilterText"
                 class="custom-position"
               >
-                <Icon style="width: 125px; height: 125px" name="dv-empty" />
-                <span style="margin-top: 8px; font-size: 14px"> 暂无模板 </span>
+                <Icon name="dv-empty">
+                  <dvEmpty style="width: 125px; height: 125px" class="svg-icon" />
+                </Icon>
+                <span style="margin-top: 8px; font-size: 14px">
+                  {{ t('template_manage.no_template') }}
+                </span>
               </el-row>
 
               <el-row
@@ -65,8 +81,12 @@
                 v-if="!currentTemplateShowListComputed.length && state.templateFilterText"
                 class="custom-position"
               >
-                <Icon style="width: 125px; height: 125px" name="dv-nothing" />
-                <span style="margin-top: 8px; font-size: 14px"> 没有找到相关模板 </span>
+                <Icon name="dv-nothing">
+                  <dvNothing style="width: 125px; height: 125px" class="svg-icon" />
+                </Icon>
+                <span style="margin-top: 8px; font-size: 14px">
+                  {{ t('template_manage.not_found') }}
+                </span>
               </el-row>
 
               <div v-show="state.currentTemplateId !== ''" id="template-box" class="template-box">
@@ -80,15 +100,25 @@
                 />
               </div>
               <div v-show="batchState" class="batch-opt-area">
-                <el-button @click="batchUpdate" type="danger" plain style="margin-left: 24px"
-                  >修改分类</el-button
+                <el-button @click="batchUpdate" plain style="margin-left: 24px"
+                  >{{ t('template_manage.edit_catalog') }}
+                </el-button>
+                <el-button
+                  @click="batchPreDelete"
+                  type="danger"
+                  plain
+                  class="template-custom-danger"
+                  >{{ t('user.batch_del') }}</el-button
                 >
-                <el-button @click="batchPreDelete" type="danger" plain>批量删除</el-button>
-                <span style="margin-left: 24px; font-size: 14px">已选 {{ batchState }} 项</span>
-                <el-button @click="batchFullSelect" style="margin-left: 16px" text
-                  >全选 {{ currentTemplateShowListComputed.length }} 项</el-button
-                >
-                <el-button @click="batchClear" text>清空</el-button>
+                <span class="delete-tips">
+                  {{ t('template_manage.selected_count', [batchState]) }}
+                </span>
+                <el-button @click="batchFullSelect" style="margin-left: 16px" text>
+                  {{
+                    t('template_manage.select_all_count', [currentTemplateShowListComputed.length])
+                  }}
+                </el-button>
+                <el-button @click="batchClear" text>{{ t('commons.clear') }}</el-button>
               </div>
             </div>
           </div>
@@ -97,7 +127,9 @@
     </div>
     <div class="container-sys-param" v-show="!state.templateCategories.length">
       <el-row style="height: 100%" class="custom-position">
-        <Icon style="width: 125px; height: 125px" name="dv-empty" />
+        <Icon name="dv-empty">
+          <dvEmpty style="width: 125px; height: 125px" class="svg-icon" />
+        </Icon>
         <span style="margin-top: 8px; font-size: 14px">
           <el-button
             style="float: right"
@@ -110,7 +142,7 @@
             style="float: right; margin-right: 12px"
             @click="showTemplateEditDialog('new', null)"
           >
-            添加分类
+            {{ t('template_manage.add_catalog') }}
           </el-button>
         </span>
       </el-row>
@@ -130,14 +162,17 @@
         :rules="state.templateEditFormRules"
       >
         <el-form-item :label="state.dialogTitleLabel" prop="name">
-          <el-input :placeholder="'请输入分类名称'" v-model="state.templateEditForm.name" />
+          <el-input
+            :placeholder="t('template_manage.catalog_name')"
+            v-model="state.templateEditForm.name"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
         <div class="dialog-footer">
           <el-button secondary @click="close()">{{ t('commons.cancel') }}</el-button>
-          <el-button type="primary" @click="saveTemplateEdit(state.templateEditForm)"
-            >{{ t('commons.confirm') }}
+          <el-button type="primary" @click="saveTemplateEdit(state.templateEditForm)">
+            {{ t('commons.confirm') }}
           </el-button>
         </div>
       </template>
@@ -164,7 +199,7 @@
 
     <!--导入templateDialog-->
     <el-dialog
-      :title="'修改分类'"
+      :title="t('template_manage.edit_catalog')"
       v-model="state.batchOptDialogShow"
       :show-close="true"
       :destroy-on-close="true"
@@ -177,12 +212,15 @@
         :template-categories="state.templateCategories"
         @refresh="showCurrentTemplate(state.currentTemplateId, state.currentTemplateLabel)"
         @closeBatchEditTemplateDialog="closeBatchOptDialog"
-      ></de-category-change>
+      />
     </el-dialog>
   </div>
 </template>
 
 <script lang="ts" setup>
+import deSearch from '@/assets/svg/de-search.svg'
+import dvEmpty from '@/assets/svg/dv-empty.svg'
+import dvNothing from '@/assets/svg/dv-nothing.svg'
 import {
   save,
   templateDelete,
@@ -196,6 +234,7 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { ElMessage, ElMessageBox } from 'element-plus-secondary'
 import DeTemplateList from '@/views/template/component/DeTemplateList.vue'
+
 const { t } = useI18n()
 const templateEditFormRef = ref(null)
 const templateListRef = ref(null)
@@ -270,7 +309,7 @@ const batchUpdate = () => {
 }
 
 const batchPreDelete = () => {
-  ElMessageBox.confirm(`确定删除${batchState.value}个模板吗？`, {
+  ElMessageBox.confirm(t('template_manage.delete_batch_hint', [batchState.value]), {
     confirmButtonType: 'danger',
     type: 'warning',
     autofocus: false,
@@ -360,7 +399,7 @@ const templateDeleteConfirm = template => {
 
 const importRefresh = params => {
   if (params.optType === 'refresh') {
-    templateListRef.value.nodeClick({ id: params.refreshPid, name: params.refreshPid })
+    templateListRef.value.nodeClick({ id: params.refreshPid, name: params.refreshPName })
   } else {
     showTemplateEditDialog('new', null)
   }
@@ -387,9 +426,9 @@ const categoryDelete = id => {
         })
         getTree()
       } else {
-        ElMessageBox.confirm('无法删除分类', {
-          tip: '请先移除该分类下所有模板再进行删除分类操作',
-          confirmButtonText: '知道了',
+        ElMessageBox.confirm(t('template_manage.delete_failed_hint'), {
+          tip: t('template_manage.delete_failed_tip'),
+          confirmButtonText: t('template_manage.delete_failed_confirm'),
           confirmButtonType: 'default',
           showCancelButton: false,
           type: 'warning',
@@ -402,7 +441,7 @@ const categoryDelete = id => {
 }
 const templateDeleteInfo = id => {
   if (id) {
-    ElMessageBox.confirm('确定删除该模板吗？', {
+    ElMessageBox.confirm(t('template_manage.delete_hint'), {
       tip: '',
       confirmButtonType: 'danger',
       type: 'warning',
@@ -427,7 +466,10 @@ const showTemplateEditDialog = (type, templateInfo) => {
   state.formType = type
   if (type === 'edit') {
     state.templateEditForm = JSON.parse(JSON.stringify(templateInfo))
-    state.dialogTitle = state.templateEditForm['nodeType'] === 'folder' ? '重命名' : '编辑模板'
+    state.dialogTitle =
+      state.templateEditForm['nodeType'] === 'folder'
+        ? t('template_manage.rename')
+        : t('template_manage.edit_template')
     state.originName = state.templateEditForm['label']
   } else {
     state.dialogTitle = t('visualization.add_category')
@@ -438,7 +480,10 @@ const showTemplateEditDialog = (type, templateInfo) => {
       level: 0
     }
   }
-  state.dialogTitleLabel = state.templateEditForm['nodeType'] === 'folder' ? '分类名称' : '模板名称'
+  state.dialogTitleLabel =
+    state.templateEditForm['nodeType'] === 'folder'
+      ? t('template_manage.catalog_name')
+      : t('template_manage.template_name')
   state.editTemplate = true
 }
 
@@ -448,15 +493,15 @@ const categoryEdit = templateInfo => {
 
 const templateEdit = templateInfo => {
   state.templateDialog.visible = true
-  state.templateDialog.title = '编辑模板'
+  state.templateDialog.title = t('template_manage.edit_template')
   state.templateDialog.optType = 'update'
   state.templateDialog.templateId = templateInfo.id
 }
 
 const saveTemplateEdit = templateEditForm => {
-  if (templateEditForm.name === '最近使用') {
+  if (templateEditForm.name === t('work_branch.recently_used')) {
     ElMessage({
-      message: '不合法命名，请更换！',
+      message: t('template_manage.illegal_name_hint'),
       type: 'error',
       showClose: true
     })
@@ -466,7 +511,7 @@ const saveTemplateEdit = templateEditForm => {
     if (valid) {
       save({ ...templateEditForm }).then(() => {
         ElMessage({
-          message: '添加成功',
+          message: t('template_manage.add_success'),
           type: 'success',
           showClose: true
         })
@@ -526,7 +571,7 @@ const closeEditTemplateDialog = () => {
 
 const templateImport = pid => {
   state.templateDialog.visible = true
-  state.templateDialog.title = '导入模板'
+  state.templateDialog.title = t('template_manage.import_template')
   state.templateDialog.templateId = null
   state.templateDialog.optType = 'insert'
   state.templateDialog.pid = pid
@@ -550,6 +595,7 @@ onMounted(() => {
 <style lang="less" scoped>
 .de-template {
   height: 100%;
+
   .tabs-container {
     height: 100%;
     overflow-x: auto;
@@ -572,6 +618,7 @@ onMounted(() => {
     overflow: hidden;
     background: rgba(239, 240, 241, 1);
     position: relative;
+
     .template-box {
       display: flex;
       flex-wrap: wrap;
@@ -586,7 +633,7 @@ onMounted(() => {
     .active-template {
       height: 56px;
       padding: 0px 24px;
-      font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+      font-family: var(--de-custom_font, 'PingFang');
       font-style: normal;
       font-weight: 500;
       font-size: 16px;
@@ -597,6 +644,7 @@ onMounted(() => {
       background: #fff;
       border-bottom: 1px solid rgba(31, 35, 41, 0.15);
     }
+
     .batch-opt-area {
       background-color: #ffffff;
       position: absolute;
@@ -612,20 +660,25 @@ onMounted(() => {
 .router-title {
   color: #1f2329;
   font-feature-settings: 'clig' off, 'liga' off;
-  font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+  font-family: var(--de-custom_font, 'PingFang');
   font-size: 20px;
   font-style: normal;
   font-weight: 500;
   line-height: 28px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   float: left;
+  flex: 1;
 }
+
 .sys-setting-p {
   width: 100%;
   background: #ffffff;
-  height: calc(100vh - 136px);
+  height: calc(100vh - 140px);
   box-sizing: border-box;
-  margin-top: 12px;
+  margin-top: 16px;
 }
+
 .setting-auto-h {
   height: auto !important;
 }
@@ -637,10 +690,12 @@ onMounted(() => {
 
 .template-head {
   height: 32px;
+  display: flex;
 }
+
 .template-search-class {
   float: right;
-  width: 320px;
+  width: 220px;
 }
 
 .custom-position {
@@ -652,6 +707,7 @@ onMounted(() => {
   flex-flow: row nowrap;
   color: #9ea6b2;
   flex-direction: column;
+
   span {
     line-height: 22px;
     color: #646a73;
@@ -660,5 +716,20 @@ onMounted(() => {
 
 .ed-empty__image img {
   width: 126px;
+}
+.delete-tips {
+  margin-left: 24px;
+  font-size: 14px;
+  color: rgb(100, 106, 115);
+}
+.template-custom-danger {
+  color: rgba(245, 74, 69, 1);
+  border-color: rgba(245, 74, 69, 1);
+  &:hover {
+    background-color: rgba(245, 74, 69, 0.3);
+  }
+  &:focus {
+    background-color: rgba(245, 74, 69, 0.3);
+  }
 }
 </style>

@@ -8,11 +8,13 @@ import eventBus from '@/utils/eventBus'
 import { adaptCurThemeCommonStyle } from '@/utils/canvasStyle'
 import { composeStoreWithOut } from '@/store/modules/data-visualization/compose'
 import { snapshotStoreWithOut } from '@/store/modules/data-visualization/snapshot'
+import { maxYComponentCount } from '@/utils/canvasUtils'
 
 const dvMainStore = dvMainStoreWithOut()
 const composeStore = composeStoreWithOut()
 const contextmenuStore = contextmenuStoreWithOut()
 const {
+  multiplexingStyleAdapt,
   curComponent,
   curComponentIndex,
   curMultiplexingComponents,
@@ -42,6 +44,7 @@ export const copyStore = defineStore('copy', {
     ) {
       // eslint-disable-next-line @typescript-eslint/no-this-alias
       const _this = this
+      const { width, height, scale } = canvasStyleData.value
       Object.keys(outerMultiplexingComponents).forEach(function (componentId, index) {
         const newComponent = deepCopy(outerMultiplexingComponents[componentId])
         newComponent.canvasId = 'canvas-main'
@@ -51,15 +54,19 @@ export const copyStore = defineStore('copy', {
           // dashboard 平铺2个
           const xPositionOffset = index % 2
           const yPositionOffset = index % 2
-          newComponent.sizeX = pcMatrixCount.value.x / 2
-          newComponent.sizeY = 7
-          newComponent.x = newComponent.sizeX * xPositionOffset + 1
-          newComponent.y = 200
+          if (!(copyFrom === 'multiplexing' && !multiplexingStyleAdapt.value)) {
+            newComponent.sizeX = pcMatrixCount.value.x / 2
+            newComponent.sizeY = 14
+            // dataV 数据大屏
+            newComponent.style.width = ((canvasStyleData.value.width / 3) * scale) / 100
+            newComponent.style.height = ((canvasStyleData.value.height / 3) * scale) / 100
+          }
           // dataV 数据大屏
-          newComponent.style.width = canvasStyleData.value.width / 3
-          newComponent.style.height = canvasStyleData.value.height / 3
-          newComponent.style.left = newComponent.style.width * xPositionOffset
-          newComponent.style.top = newComponent.style.height * yPositionOffset
+          newComponent.x = newComponent.sizeX * xPositionOffset + 1
+          newComponent.y = maxYComponentCount() + 10
+          // dataV 数据大屏
+          newComponent.style.left = 0
+          newComponent.style.top = 0
         }
         _this.copyData = {
           data: [newComponent],
@@ -71,7 +78,7 @@ export const copyStore = defineStore('copy', {
       })
     },
     copy() {
-      if (curComponent.value) {
+      if (curComponent.value && curComponent.value.component !== 'GroupArea') {
         this.copyDataInfo([curComponent.value])
       } else if (composeStore.areaData.components.length) {
         this.copyDataInfo(composeStore.areaData.components)
@@ -84,7 +91,6 @@ export const copyStore = defineStore('copy', {
         return
       }
       const dataArray = this.copyData.data
-
       let i = 0
       const copyDataTemp = this.copyData
       const moveTime = dataArray.length > 1 ? 300 : 10
@@ -108,14 +114,15 @@ export const copyStore = defineStore('copy', {
           // 旧-新ID映射关系
           const idMap = {}
           const newComponent = deepCopyHelper(data, idMap)
+          newComponent['category'] = 'base'
           if (newComponent.canvasId.includes('Group')) {
             newComponent.canvasId = 'canvas-main'
           }
           dvMainStore.addCopyComponent(newComponent, idMap, copyDataTemp.copyCanvasViewInfo)
+          if (dvMainStore.multiplexingStyleAdapt && copyDataTemp.copyFrom === 'multiplexing') {
+            adaptCurThemeCommonStyle(newComponent)
+          }
           if (dvInfo.value.type === 'dashboard') {
-            if (dvMainStore.multiplexingStyleAdapt && copyDataTemp.copyFrom === 'multiplexing') {
-              adaptCurThemeCommonStyle(newComponent)
-            }
             eventBus.emit('addDashboardItem-' + newComponent.canvasId, newComponent)
           }
           if (i === dataArray.length - 1) {
@@ -127,10 +134,10 @@ export const copyStore = defineStore('copy', {
           i++
         }
       }, moveTime)
-      snapshotStore.recordSnapshotCache()
+      snapshotStore.recordSnapshotCache('paste')
     },
     cut(curComponentData = componentData.value) {
-      if (curComponent.value) {
+      if (curComponent.value && curComponent.value.component !== 'GroupArea') {
         this.copyDataInfo([curComponent.value])
         dvMainStore.deleteComponentById(curComponent.value.id, curComponentData)
       } else if (composeStore.areaData.components.length) {
@@ -148,7 +155,7 @@ export const copyStore = defineStore('copy', {
           components: []
         })
       }
-      snapshotStore.recordSnapshotCache()
+      snapshotStore.recordSnapshotCache('cut')
       this.isCut = true
     },
 
@@ -178,12 +185,27 @@ export const copyStore = defineStore('copy', {
   }
 })
 
+export function deepCopyTabItemHelper(newCanvasId, tabComponentData, idMap) {
+  const resultComponentData = []
+  tabComponentData.forEach(item => {
+    const newItem = deepCopyHelper(item, idMap)
+    newItem.canvasId = newCanvasId
+    resultComponentData.push(newItem)
+  })
+  return resultComponentData
+}
+
 function deepCopyHelper(data, idMap) {
   const result = deepCopy(data)
   const newComponentId = generateID()
   idMap[data.id] = newComponentId
   result.id = newComponentId
+  // 复制清理移动端样式
   result.inMobile = false
+  delete result.mStyle
+  delete result.mEvents
+  delete result.mPropValue
+  delete result.mCommonBackground
   if (result.component === 'Group') {
     result.propValue.forEach((component, i) => {
       result.propValue[i] = deepCopyHelper(component, idMap)

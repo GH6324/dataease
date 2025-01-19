@@ -1,16 +1,40 @@
 <script lang="ts" setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, PropType } from 'vue'
 import { ElMessage, ElLoading } from 'element-plus-secondary'
 import { useI18n } from '@/hooks/web/useI18n'
 import type { FormInstance, FormRules } from 'element-plus-secondary'
 import request from '@/config/axios'
+import dvInfo from '@/assets/svg/dv-info.svg'
 const { t } = useI18n()
+
+const props = defineProps({
+  labelTooltips: {
+    type: Array as PropType<any[]>,
+    default: () => []
+  }
+})
+
 const dialogVisible = ref(false)
 const loadingInstance = ref(null)
 const basicForm = ref<FormInstance>()
 const options = [
-  { value: 'minute', label: '分钟（执行时间：0秒）' },
-  { value: 'hour', label: '小时（执行时间：0分0秒）' }
+  { value: 'minute', label: t('system.time_0_seconds') },
+  { value: 'hour', label: t('system.and_0_seconds_de') }
+]
+const pvpOptions = [
+  { value: '0', label: t('commons.date.permanent') },
+  { value: '1', label: t('commons.date.one_year') },
+  { value: '2', label: t('commons.date.six_months') },
+  { value: '3', label: t('commons.date.three_months') },
+  { value: '4', label: t('commons.date.one_month') }
+]
+const requireKeys = [
+  'logLiveTime',
+  'thresholdLogLiveTime',
+  'exportFileLiveTime',
+  'frontTimeOut',
+  'loginLimitTime',
+  'loginLimitRate'
 ]
 const state = reactive({
   form: reactive({
@@ -20,8 +44,33 @@ const state = reactive({
   }),
   settingList: [],
   orgOptions: [],
-  roleOptions: []
+  roleOptions: [],
+  loginOptions: [
+    { value: '0', label: t('system.normal_login') },
+    { value: '1', label: 'LDAP' },
+    { value: '2', label: 'OIDC' },
+    { value: '3', label: 'CAS' },
+    { value: '9', label: 'OAuth2' }
+  ],
+  sortOptions: [
+    { value: '0', label: t('resource_sort.time_asc') },
+    { value: '1', label: t('resource_sort.time_desc') },
+    { value: '2', label: t('resource_sort.name_asc') },
+    { value: '3', label: t('resource_sort.name_desc') }
+  ],
+  openOptions: [
+    { value: '0', label: t('open_opt.new_page') },
+    { value: '1', label: t('open_opt.local_page') }
+  ]
 })
+
+const tooltipItem = ref({})
+const formatLabel = () => {
+  props.labelTooltips?.length &&
+    props.labelTooltips.forEach(tooltip => {
+      tooltipItem.value[tooltip.key] = tooltip.val
+    })
+}
 
 const rule = reactive<FormRules>({
   dsIntervalTime: [
@@ -54,14 +103,14 @@ const submitForm = async (formEl: FormInstance | undefined) => {
         state.form.dsExecuteTime === 'minute' &&
         (Number(state.form.dsIntervalTime) < 1 || Number(state.form.dsIntervalTime) > 59)
       ) {
-        ElMessage.error('分钟超出范围【1-59】')
+        ElMessage.error(t('commons.date.of_range_1_59'))
         return
       }
       if (
         state.form.dsExecuteTime === 'hour' &&
         (Number(state.form.dsIntervalTime) < 1 || Number(state.form.dsIntervalTime) > 23)
       ) {
-        ElMessage.error('小时超出范围【1-23】')
+        ElMessage.error(t('commons.date.of_range_1_23'))
         return
       }
       const param = buildSettingList()
@@ -88,6 +137,7 @@ const submitForm = async (formEl: FormInstance | undefined) => {
 
 const resetForm = (formEl: FormInstance | undefined) => {
   state.settingList = []
+  settingList.value = []
   if (!formEl) return
   formEl.resetFields()
   dialogVisible.value = false
@@ -103,13 +153,27 @@ const showLoading = () => {
 const closeLoading = () => {
   loadingInstance.value?.close()
 }
-
-const edit = (list, orgOptions, roleOptions) => {
+const title = ref()
+const settingList = ref([])
+const edit = (
+  list,
+  orgOptions,
+  roleOptions,
+  loginOptions,
+  sortOptions,
+  openOptions,
+  titleVal,
+  settingListVal
+) => {
+  title.value = titleVal
   state.orgOptions = orgOptions || []
   state.roleOptions = roleOptions || []
+  state.loginOptions = loginOptions || []
+  state.sortOptions = sortOptions || []
+  state.openOptions = openOptions || []
   state.settingList = list.map(item => {
     const pkey = item.pkey
-    if (pkey === 'basic.logLiveTime') {
+    if (requireKeys.some(requireKey => `basic.${requireKey}` === pkey)) {
       rule[pkey.split('.')[1]] = [
         {
           required: true,
@@ -118,6 +182,7 @@ const edit = (list, orgOptions, roleOptions) => {
         }
       ]
     }
+
     item['label'] = `setting_${pkey}`
     item['pkey'] = pkey.split('.')[1]
     let pval = item.pval
@@ -147,6 +212,8 @@ const edit = (list, orgOptions, roleOptions) => {
     state.form[item['pkey']] = pval || state.form[item['pkey']]
     return item
   })
+
+  settingList.value = state.settingList.filter(ele => settingListVal.includes(ele.pkey))
   dialogVisible.value = true
 }
 const loadRoleOptions = async () => {
@@ -177,6 +244,7 @@ const oidChange = () => {
   state.form['platformRid'] = []
   loadRoleOptions()
 }
+formatLabel()
 defineExpose({
   edit
 })
@@ -184,7 +252,7 @@ defineExpose({
 
 <template>
   <el-drawer
-    title="基础设置"
+    :title="title"
     v-model="dialogVisible"
     custom-class="basic-param-drawer"
     size="600px"
@@ -199,21 +267,42 @@ defineExpose({
       label-position="top"
     >
       <el-form-item
-        v-for="item in state.settingList"
+        v-for="item in settingList"
         :key="item.pkey"
         :prop="item.pkey"
         :class="{ 'setting-hidden-item': item.pkey === 'dsExecuteTime' }"
-        :label="t(item.label)"
       >
+        <template v-slot:label>
+          <div class="basic-form-info-tips">
+            <span class="custom-form-item__label">{{ t(item.label) }}</span>
+            <el-tooltip
+              v-if="tooltipItem[`setting_basic.${item.pkey}`]"
+              effect="dark"
+              :content="tooltipItem[`setting_basic.${item.pkey}`]"
+              placement="top"
+            >
+              <el-icon
+                ><Icon name="dv-info"><dvInfo class="svg-icon" /></Icon
+              ></el-icon>
+            </el-tooltip>
+          </div>
+        </template>
         <el-switch
           class="de-basic-switch"
-          v-if="item.pkey === 'autoCreateUser'"
+          v-if="
+            item.pkey === 'autoCreateUser' ||
+            item.pkey === 'pwdStrategy' ||
+            item.pkey === 'dip' ||
+            item.pkey === 'shareDisable' ||
+            item.pkey === 'sharePeRequire' ||
+            item.pkey === 'loginLimit'
+          "
           active-value="true"
           inactive-value="false"
           v-model="state.form[item.pkey]"
         />
         <div v-else-if="item.pkey === 'dsIntervalTime'" class="ds-task-form-inline">
-          <span>每</span>
+          <span>{{ t('cron.every') }}</span>
           <el-input-number
             v-model="state.form.dsIntervalTime"
             autocomplete="off"
@@ -232,7 +321,7 @@ defineExpose({
               :value="item.value"
             />
           </el-select>
-          <span class="ds-span">执行一次</span>
+          <span class="ds-span">{{ t('cron.every_exec') }}</span>
         </div>
         <div v-else-if="item.pkey === 'frontTimeOut'">
           <el-input-number
@@ -246,7 +335,14 @@ defineExpose({
             type="number"
           />
         </div>
-        <div v-else-if="item.pkey === 'logLiveTime'">
+        <div
+          v-else-if="
+            item.pkey === 'logLiveTime' ||
+            item.pkey === 'thresholdLogLiveTime' ||
+            item.pkey === 'loginLimitRate' ||
+            item.pkey === 'loginLimitTime'
+          "
+        >
           <el-input-number
             v-model="state.form[item.pkey]"
             autocomplete="off"
@@ -282,6 +378,50 @@ defineExpose({
             check-on-click-node
           />
         </div>
+        <div v-else-if="item.pkey === 'pvp'">
+          <el-select v-model="state.form[item.pkey]" class="edit-all-line">
+            <el-option
+              v-for="item in pvpOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </div>
+        <div v-else-if="item.pkey === 'exportFileLiveTime'">
+          <el-input-number
+            v-model="state.form[item.pkey]"
+            autocomplete="off"
+            step-strictly
+            class="text-left edit-all-line"
+            :min="1"
+            :max="4000"
+            :placeholder="t('common.inputText')"
+            controls-position="right"
+            type="number"
+          />
+        </div>
+        <div v-else-if="item.pkey === 'defaultLogin'">
+          <el-radio-group v-model="state.form[item.pkey]">
+            <el-radio v-for="item in state.loginOptions" :key="item.value" :label="item.value">
+              {{ item.label }}
+            </el-radio>
+          </el-radio-group>
+        </div>
+        <div v-else-if="item.pkey === 'defaultSort'">
+          <el-radio-group v-model="state.form[item.pkey]">
+            <el-radio v-for="item in state.sortOptions" :key="item.value" :label="item.value">
+              {{ item.label }}
+            </el-radio>
+          </el-radio-group>
+        </div>
+        <div v-else-if="item.pkey === 'defaultOpen'">
+          <el-radio-group v-model="state.form[item.pkey]">
+            <el-radio v-for="item in state.openOptions" :key="item.value" :label="item.value">
+              {{ item.label }}
+            </el-radio>
+          </el-radio-group>
+        </div>
         <v-else />
       </el-form-item>
     </el-form>
@@ -309,6 +449,35 @@ defineExpose({
   .ed-form-item__label {
     line-height: 22px !important;
     height: 22px !important;
+
+    .basic-form-info-tips {
+      width: fit-content;
+      display: inline-flex;
+      align-items: center;
+      column-gap: 4px;
+    }
+  }
+
+  .ed-form-item {
+    &.is-required.asterisk-right {
+      .ed-form-item__label:after {
+        display: none;
+      }
+      .basic-form-info-tips {
+        .custom-form-item__label:after {
+          content: '*';
+          color: var(--ed-color-danger);
+          margin-left: 2px;
+          font-family: var(--de-custom_font, 'PingFang');
+          font-size: 14px;
+          font-style: normal;
+          font-weight: 400;
+        }
+      }
+    }
+  }
+  .ed-radio__label {
+    font-weight: 400;
   }
 }
 </style>

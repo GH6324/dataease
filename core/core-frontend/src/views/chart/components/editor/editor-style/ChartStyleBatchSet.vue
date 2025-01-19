@@ -1,9 +1,9 @@
 <template>
-  <div class="batch-opt-main view-panel-row">
+  <div class="batch-opt-main view-panel-row tab-header">
     <chart-style
       v-if="mixProperties && batchOptComponentInfo && batchOptComponentType === 'UserView'"
       class="chart-style-main"
-      themes="light"
+      :themes="themes"
       :param="param"
       :common-background-pop="batchOptComponentInfo.commonBackground"
       :view="batchOptComponentInfo"
@@ -17,6 +17,7 @@
       @onTooltipChange="onTooltipChange"
       @onChangeXAxisForm="onChangeXAxisForm"
       @onChangeYAxisForm="onChangeYAxisForm"
+      @onChangeYAxisExtForm="onChangeYAxisExtForm"
       @onTextChange="onTextChange"
       @onLegendChange="onLegendChange"
       @onBackgroundChange="onBackgroundChange"
@@ -33,10 +34,10 @@
       :element="batchOptComponentInfo"
       :show-style="mixProperties.includes('common-style')"
       @onAttrChange="onStyleAttrChange"
-      themes="light"
+      :themes="themes"
     ></common-attr>
     <el-row v-else class="view-selected-message-class">
-      <span class="select-view">请选择组件...</span>
+      <span class="select-view">{{ t('visualization.component_select_tips') }}</span>
     </el-row>
   </div>
 </template>
@@ -50,7 +51,8 @@ import { snapshotStoreWithOut } from '@/store/modules/data-visualization/snapsho
 import CommonAttr from '@/custom-component/common/CommonAttr.vue'
 const dvMainStore = dvMainStoreWithOut()
 const snapshotStore = snapshotStoreWithOut()
-
+import { useI18n } from '@/hooks/web/useI18n'
+const { t } = useI18n()
 const { batchOptComponentInfo, batchOptComponentType, mixProperties, mixPropertiesInner } =
   storeToRefs(dvMainStore)
 const param = { id: 'mixId', optType: 'edit' }
@@ -60,12 +62,21 @@ const state = reactive({
   quotaData: []
 })
 
+const props = withDefaults(
+  defineProps<{
+    themes?: EditorTheme
+  }>(),
+  {
+    themes: 'light'
+  }
+)
+
 const onMiscChange = (val, prop) => {
   batchOptChange('customAttr', 'misc', val.data, prop)
 }
 
 const onLabelChange = (val, prop) => {
-  batchOptChange('customAttr', 'label', val, prop)
+  batchOptChange('customAttr', 'label', val.data, prop)
 }
 const onTooltipChange = (val, prop) => {
   batchOptChange('customAttr', 'tooltip', val.data, prop)
@@ -78,13 +89,16 @@ const onChangeXAxisForm = (val, prop) => {
 const onChangeYAxisForm = (val, prop) => {
   batchOptChange('customStyle', 'yAxis', val, prop)
 }
+const onChangeYAxisExtForm = (val, prop) => {
+  batchOptChange('customStyle', 'yAxisExt', val, prop)
+}
 
 const onIndicatorChange = (val, prop) => {
-  batchOptChange('customAttr', 'indicator', val, prop)
+  batchOptChange('customAttr', 'indicator', val.indicatorValue, prop)
 }
 
 const onIndicatorNameChange = (val, prop) => {
-  batchOptChange('customAttr', 'indicatorName', val, prop)
+  batchOptChange('customAttr', 'indicatorName', val.indicatorName, prop)
 }
 
 const onChangeMiscStyleForm = (val, prop) => {
@@ -99,7 +113,7 @@ const onLegendChange = (val, prop) => {
 
 const onBackgroundChange = val => {
   dvMainStore.setBatchChangeBackground(val)
-  snapshotStore.recordSnapshotCache()
+  snapshotStore.recordSnapshotCache('onBackgroundChange')
 }
 const onBasicStyleChange = (val, prop) => {
   //基础样式差异化处理
@@ -121,6 +135,7 @@ const batchOptChange = (custom, property, value, subProp?) => {
     value: value,
     subProp: subProp
   })
+  snapshotStore.recordSnapshotCache('renderChart')
 }
 
 const onStyleAttrChange = params => {
@@ -282,6 +297,48 @@ const onStyleAttrChange = params => {
         color: #a6a6a6;
       }
     }
+  }
+}
+.tab-header {
+  --ed-tabs-header-height: 34px;
+  --custom-tab-color: #646a73;
+
+  :deep(.ed-tabs__nav-wrap::after) {
+    background-color: unset;
+  }
+
+  &.dark {
+    --custom-tab-color: #a6a6a6;
+  }
+
+  height: 100%;
+  :deep(.ed-tabs__header) {
+    border-top: solid 1px @side-outline-border-color;
+  }
+  :deep(.ed-tabs__item) {
+    font-weight: 400;
+    font-size: 12px;
+    padding: 0 8px !important;
+    margin-right: 12px;
+    color: var(--custom-tab-color);
+  }
+  :deep(.is-active) {
+    font-weight: 500;
+    color: var(--ed-color-primary, #3370ff);
+  }
+
+  :deep(.ed-tabs__nav-scroll) {
+    padding-left: 0 !important;
+  }
+
+  :deep(.ed-tabs__header) {
+    margin: 0 !important;
+  }
+
+  :deep(.ed-tabs__content) {
+    height: calc(100% - 35px);
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 }
 </style>

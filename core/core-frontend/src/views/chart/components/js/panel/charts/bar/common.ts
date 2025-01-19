@@ -1,5 +1,6 @@
 export const BAR_EDITOR_PROPERTY: EditorProperty[] = [
   'background-overall-component',
+  'border-style',
   'basic-style-selector',
   'label-selector',
   'tooltip-selector',
@@ -10,14 +11,31 @@ export const BAR_EDITOR_PROPERTY: EditorProperty[] = [
   'function-cfg',
   'assist-line',
   'jump-set',
-  'linkage'
+  'linkage',
+  'threshold'
+]
+export const BAR_RANGE_EDITOR_PROPERTY: EditorProperty[] = [
+  'background-overall-component',
+  'border-style',
+  'basic-style-selector',
+  'label-selector',
+  'tooltip-selector',
+  'x-axis-selector',
+  'y-axis-selector',
+  'title-selector',
+  'legend-selector',
+  'function-cfg',
+  'jump-set',
+  'linkage',
+  'threshold'
 ]
 
 export const BAR_EDITOR_PROPERTY_INNER: EditorPropertyInner = {
   'background-overall-component': ['all'],
-  'basic-style-selector': ['colors', 'alpha', 'gradient'],
+  'border-style': ['all'],
+  'basic-style-selector': ['colors', 'alpha', 'gradient', 'radiusColumnBar', 'columnWidthRatio'],
   'label-selector': ['fontSize', 'color', 'labelFormatter'],
-  'tooltip-selector': ['fontSize', 'color', 'tooltipFormatter'],
+  'tooltip-selector': ['fontSize', 'color', 'tooltipFormatter', 'show'],
   'x-axis-selector': [
     'name',
     'color',
@@ -52,7 +70,8 @@ export const BAR_EDITOR_PROPERTY_INNER: EditorPropertyInner = {
     'fontShadow'
   ],
   'legend-selector': ['icon', 'orient', 'fontSize', 'color', 'hPosition', 'vPosition'],
-  'function-cfg': ['slider', 'emptyDataStrategy']
+  'function-cfg': ['slider', 'emptyDataStrategy'],
+  threshold: ['lineThreshold']
 }
 
 export const BAR_AXIS_TYPE: AxisType[] = [

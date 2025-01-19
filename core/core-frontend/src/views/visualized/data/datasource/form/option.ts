@@ -43,6 +43,12 @@ export const dsTypes = [
       'characterEncoding=UTF-8&connectTimeout=5000&useSSL=false&allowPublicKeyRetrieval=true'
   },
   {
+    type: 'es',
+    name: 'Elasticsearch',
+    catalog: 'OLAP',
+    extraParams: ''
+  },
+  {
     type: 'StarRocks',
     name: 'StarRocks',
     catalog: 'OLAP',
@@ -116,12 +122,14 @@ export const nameMap = {
   OLTP: 'OLTP',
   OLAP: 'OLAP',
   DL: t('datasource.dl'),
-  OTHER: 'API数据',
+  OTHER: t('data_source.api_data'),
   LOCAL: t('datasource.local_file')
 }
 
 export interface Configuration {
   dataBase: string
+  jdbcUrl: string
+  urlType: string
   connectionType: string
   schema: string
   extraParams: string
@@ -134,13 +142,21 @@ export interface Configuration {
   minPoolSize: string
   maxPoolSize: string
   queryTimeout: string
+  useSSH: boolean
+  sshHost: string
+  sshPort: string
+  sshUserName: string
+  sshType: string
+  sshPassword: string
 }
 
 export interface ApiConfiguration {
   id: string
   name: string
+  type: string
   deTableName: string
   method: string
+  copy: boolean
   url: string
   status: string
   useJsonPath: boolean
@@ -163,6 +179,7 @@ export interface Node {
   name: string
   createBy: string
   creator: string
+  copy: boolean
   createTime: string
   id: number | string
   size: number
@@ -174,6 +191,7 @@ export interface Node {
   editType?: number
   configuration?: Configuration
   apiConfiguration?: ApiConfiguration[]
+  paramsConfiguration?: ApiConfiguration[]
   weight?: number
   lastSyncTime?: number | string
 }

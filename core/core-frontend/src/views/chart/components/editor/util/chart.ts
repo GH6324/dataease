@@ -24,18 +24,29 @@ export const DEFAULT_COLOR_CASE: DeepPartial<ChartAttr> = {
     areaBorderColor: '#303133',
     gaugeStyle: 'default',
     tableBorderColor: '#E6E7E4',
-    tableScrollBarColor: 'rgba(0, 0, 0, 0.15)'
+    tableScrollBarColor: 'rgba(0, 0, 0, 0.15)',
+    zoomButtonColor: '#aaa',
+    zoomBackground: '#fff'
   },
   misc: {
-    mapLineGradient: false,
-    mapLineSourceColor: '#146C94',
-    mapLineTargetColor: '#576CBC',
+    flowMapConfig: {
+      lineConfig: {
+        mapLineAnimate: true,
+        mapLineGradient: false,
+        mapLineSourceColor: '#1E90FF',
+        mapLineTargetColor: '#90EE90'
+      }
+    },
     nameFontColor: '#000000',
     valueFontColor: '#5470c6'
   },
   tableHeader: {
-    tableHeaderBgColor: '#6D9A49',
-    tableHeaderFontColor: '#000000'
+    tableHeaderBgColor: '#1E90FF',
+    tableHeaderCornerBgColor: '#1E90FF',
+    tableHeaderColBgColor: '#1E90FF',
+    tableHeaderFontColor: '#000000',
+    tableHeaderCornerFontColor: '#000000',
+    tableHeaderColFontColor: '#000000'
   },
   tableCell: {
     tableItemBgColor: '#FFFFFF',
@@ -65,18 +76,29 @@ export const DEFAULT_COLOR_CASE_LIGHT: DeepPartial<ChartAttr> = {
     areaBorderColor: '#303133',
     gaugeStyle: 'default',
     tableBorderColor: '#E6E7E4',
-    tableScrollBarColor: 'rgba(0, 0, 0, 0.15)'
+    tableScrollBarColor: 'rgba(0, 0, 0, 0.15)',
+    zoomButtonColor: '#aaa',
+    zoomBackground: '#fff'
   },
   misc: {
-    mapLineGradient: false,
-    mapLineSourceColor: '#146C94',
-    mapLineTargetColor: '#576CBC',
+    flowMapConfig: {
+      lineConfig: {
+        mapLineAnimate: true,
+        mapLineGradient: false,
+        mapLineSourceColor: '#146C94',
+        mapLineTargetColor: '#576CBC'
+      }
+    },
     nameFontColor: '#000000',
     valueFontColor: '#5470c6'
   },
   tableHeader: {
     tableHeaderBgColor: '#1E90FF',
-    tableHeaderFontColor: '#000000'
+    tableHeaderCornerBgColor: '#1E90FF',
+    tableHeaderColBgColor: '#1E90FF',
+    tableHeaderFontColor: '#000000',
+    tableHeaderCornerFontColor: '#000000',
+    tableHeaderColFontColor: '#000000'
   },
   tableCell: {
     tableItemBgColor: '#FFFFFF',
@@ -102,22 +124,32 @@ export const DEFAULT_COLOR_CASE_DARK: DeepPartial<ChartAttr> = {
     alpha: 100,
     gradient: false,
     mapStyle: 'darkblue',
-    areaBaseColor: '5470C6',
+    areaBaseColor: '#5470C6',
     areaBorderColor: '#EBEEF5',
     gaugeStyle: 'default',
     tableBorderColor: '#CCCCCC',
-    tableScrollBarColor: 'rgba(255, 255, 255, 0.5)'
+    tableScrollBarColor: 'rgba(255, 255, 255, 0.5)',
+    zoomButtonColor: '#fff',
+    zoomBackground: '#000'
   },
   misc: {
-    mapLineGradient: false,
-    mapLineSourceColor: '#2F58CD',
-    mapLineTargetColor: '#3795BD',
+    flowMapConfig: {
+      lineConfig: {
+        mapLineGradient: false,
+        mapLineSourceColor: '#146C94',
+        mapLineTargetColor: '#576CBC'
+      }
+    },
     nameFontColor: '#ffffff',
     valueFontColor: '#5470c6'
   },
   tableHeader: {
     tableHeaderBgColor: '#1E90FF',
-    tableHeaderFontColor: '#FFFFFF'
+    tableHeaderCornerBgColor: '#1E90FF',
+    tableHeaderColBgColor: '#1E90FF',
+    tableHeaderFontColor: '#FFFFFF',
+    tableHeaderCornerFontColor: '#FFFFFF',
+    tableHeaderColFontColor: '#FFFFFF'
   },
   tableCell: {
     tableItemBgColor: '#131E42',
@@ -142,6 +174,18 @@ export const TAB_COMMON_STYLE_DARK = {
   headFontActiveColor: '#ffffff',
   headBorderColor: '#000000',
   headBorderActiveColor: '#000000'
+}
+
+export const SENIOR_STYLE_SETTING_LIGHT = {
+  linkageIconColor: '#a6a6a6',
+  drillLayerColor: '#a6a6a6',
+  pagerColor: '#a6a6a6'
+}
+
+export const SENIOR_STYLE_SETTING_DARK = {
+  linkageIconColor: '#ffffff',
+  drillLayerColor: '#ffffff',
+  pagerColor: '#ffffff'
 }
 
 export const FILTER_COMMON_STYLE_BASE = {
@@ -200,12 +244,12 @@ export const DEFAULT_MISC: ChartMiscAttr = {
     summary: ''
   },
   gaugeMin: 0,
-  gaugeMaxType: 'fix',
+  gaugeMaxType: 'dynamic',
   gaugeMaxField: {
     id: '',
     summary: ''
   },
-  gaugeMax: 100,
+  gaugeMax: undefined,
   gaugeStartAngle: 225,
   gaugeEndAngle: -45,
   nameFontSize: 18,
@@ -226,8 +270,8 @@ export const DEFAULT_MISC: ChartMiscAttr = {
   nameFontShadow: false,
   treemapWidth: 80,
   treemapHeight: 80,
-  liquidMax: 100,
-  liquidMaxType: 'fix',
+  liquidMax: undefined,
+  liquidMaxType: 'dynamic',
   liquidMaxField: {
     id: '',
     summary: ''
@@ -237,15 +281,44 @@ export const DEFAULT_MISC: ChartMiscAttr = {
   hPosition: 'center',
   vPosition: 'center',
   mapPitch: 0,
-  mapLineType: 'arc',
-  mapLineWidth: 1,
-  mapLineAnimateDuration: 3,
-  mapLineGradient: false,
-  mapLineSourceColor: '#146C94',
-  mapLineTargetColor: '#576CBC'
-}
-export const DEFAULT_SUSPENSION = {
-  show: true
+  wordSizeRange: [8, 32],
+  wordSpacing: 6,
+  mapAutoLegend: true,
+  mapLegendMax: 0,
+  mapLegendMin: 0,
+  mapLegendNumber: 9,
+  mapLegendRangeType: 'quantize',
+  mapLegendCustomRange: [],
+  flowMapConfig: {
+    lineConfig: {
+      mapLineAnimate: true,
+      mapLineType: 'arc',
+      mapLineWidth: 1,
+      mapLineAnimateDuration: 3,
+      mapLineGradient: false,
+      mapLineSourceColor: '#1E90FF',
+      mapLineTargetColor: '#90EE90',
+      alpha: 100
+    },
+    pointConfig: {
+      text: {
+        color: '#146C94',
+        fontSize: 10
+      },
+      point: {
+        color: '#146C94',
+        size: 4,
+        animate: false,
+        speed: 0.01
+      }
+    }
+  },
+  wordCloudAxisValueRange: {
+    auto: true,
+    min: 0,
+    max: 0,
+    fieldId: undefined
+  }
 }
 
 export const DEFAULT_MARK = {
@@ -254,9 +327,10 @@ export const DEFAULT_MARK = {
 }
 export const DEFAULT_LABEL: ChartLabelAttr = {
   show: false,
+  childrenShow: true,
   position: 'top',
   color: '#909399',
-  fontSize: 10,
+  fontSize: 12,
   formatter: '',
   labelLine: {
     show: true
@@ -270,7 +344,26 @@ export const DEFAULT_LABEL: ChartLabelAttr = {
   showDimension: true,
   showQuota: false,
   showProportion: true,
-  seriesLabelFormatter: []
+  seriesLabelFormatter: [],
+  conversionTag: {
+    show: false,
+    precision: 2,
+    text: t('chart.conversion_rate')
+  },
+  showTotal: false,
+  totalFontSize: 12,
+  totalColor: '#FFF',
+  totalFormatter: formatterItem,
+  showStackQuota: false,
+  fullDisplay: false,
+  proportionSeriesFormatter: {
+    show: false,
+    color: '#000',
+    fontSize: 12,
+    formatterCfg: {
+      decimalCount: 2
+    }
+  }
 }
 export const DEFAULT_TOOLTIP: ChartTooltipAttr = {
   show: true,
@@ -280,7 +373,12 @@ export const DEFAULT_TOOLTIP: ChartTooltipAttr = {
   color: '#909399',
   tooltipFormatter: formatterItem,
   backgroundColor: '#ffffff',
-  seriesTooltipFormatter: []
+  seriesTooltipFormatter: [],
+  carousel: {
+    enable: false,
+    stayTime: 3,
+    intervalTime: 0
+  }
 }
 export const DEFAULT_TABLE_TOTAL: ChartTableTotalAttr = {
   row: {
@@ -288,9 +386,10 @@ export const DEFAULT_TABLE_TOTAL: ChartTableTotalAttr = {
     showSubTotals: true,
     reverseLayout: false,
     reverseSubLayout: false,
-    label: '总计',
-    subLabel: '小计',
+    label: t('chart.total_show'),
+    subLabel: t('chart.sub_total_show'),
     subTotalsDimensions: [],
+    subTotalsDimensionsNew: true,
     calcTotals: {
       aggregation: 'SUM',
       cfg: []
@@ -307,8 +406,8 @@ export const DEFAULT_TABLE_TOTAL: ChartTableTotalAttr = {
     showSubTotals: true,
     reverseLayout: false,
     reverseSubLayout: false,
-    label: '总计',
-    subLabel: '小计',
+    label: t('chart.total_show'),
+    subLabel: t('chart.sub_total_show'),
     subTotalsDimensions: [],
     calcTotals: {
       aggregation: 'SUM',
@@ -323,13 +422,33 @@ export const DEFAULT_TABLE_TOTAL: ChartTableTotalAttr = {
   }
 }
 export const DEFAULT_TABLE_HEADER: ChartTableHeaderAttr = {
-  indexLabel: '序号',
+  indexLabel: t('relation.index'),
   showIndex: false,
   tableHeaderAlign: 'left',
-  tableHeaderBgColor: '#6D9A49',
+  tableHeaderCornerAlign: 'left',
+  tableHeaderColAlign: 'left',
+  tableHeaderBgColor: '#1E90FF',
+  tableHeaderCornerBgColor: '#1E90FF',
+  tableHeaderColBgColor: '#1E90FF',
   tableHeaderFontColor: '#000000',
+  tableHeaderCornerFontColor: '#000000',
+  tableHeaderColFontColor: '#000000',
   tableTitleFontSize: 12,
-  tableTitleHeight: 36
+  tableTitleCornerFontSize: 12,
+  tableTitleColFontSize: 12,
+  tableTitleHeight: 36,
+  tableHeaderSort: false,
+  showColTooltip: false,
+  showRowTooltip: false,
+  showTableHeader: true,
+  showHorizonBorder: true,
+  showVerticalBorder: true,
+  isItalic: false,
+  isCornerItalic: false,
+  isColItalic: false,
+  isBolder: true,
+  isCornerBolder: true,
+  isColBolder: true
 }
 export const DEFAULT_TABLE_CELL: ChartTableCellAttr = {
   tableFontColor: '#000000',
@@ -338,7 +457,16 @@ export const DEFAULT_TABLE_CELL: ChartTableCellAttr = {
   tableItemFontSize: 12,
   tableItemHeight: 36,
   enableTableCrossBG: false,
-  tableItemSubBgColor: '#EEEEEE'
+  tableItemSubBgColor: '#EEEEEE',
+  showTooltip: false,
+  showHorizonBorder: true,
+  showVerticalBorder: true,
+  isItalic: false,
+  isBolder: false,
+  tableFreeze: false,
+  tableColumnFreezeHead: 0,
+  tableRowFreezeHead: 0,
+  mergeCells: true
 }
 export const DEFAULT_TITLE_STYLE: ChartTextStyle = {
   show: true,
@@ -351,42 +479,44 @@ export const DEFAULT_TITLE_STYLE: ChartTextStyle = {
   remarkShow: false,
   remark: '',
   remarkBackgroundColor: '#ffffff',
-  fontFamily: 'Microsoft YaHei',
+  fontFamily: '',
   letterSpace: '0',
   fontShadow: false
 }
 
 export const DEFAULT_INDICATOR_STYLE: ChartIndicatorStyle = {
   show: true,
-  fontSize: '20',
+  fontSize: 20,
   color: '#5470C6ff',
   hPosition: 'center',
   vPosition: 'center',
   isItalic: false,
   isBolder: true,
   fontFamily: 'Microsoft YaHei',
-  letterSpace: '0',
+  letterSpace: 0,
   fontShadow: false,
+  backgroundColor: '',
 
   suffixEnable: true,
   suffix: '',
-  suffixFontSize: '14',
+  suffixFontSize: 14,
   suffixColor: '#5470C6ff',
   suffixIsItalic: false,
   suffixIsBolder: true,
   suffixFontFamily: 'Microsoft YaHei',
-  suffixLetterSpace: '0',
+  suffixLetterSpace: 0,
   suffixFontShadow: false
 }
 export const DEFAULT_INDICATOR_NAME_STYLE: ChartIndicatorNameStyle = {
   show: true,
-  fontSize: '18',
+  fontSize: 18,
   color: '#ffffffff',
   isItalic: false,
   isBolder: true,
   fontFamily: 'Microsoft YaHei',
-  letterSpace: '0',
-  fontShadow: false
+  letterSpace: 0,
+  fontShadow: false,
+  nameValueSpacing: 0
 }
 
 export const DEFAULT_TITLE_STYLE_BASE: ChartTextStyle = {
@@ -398,7 +528,7 @@ export const DEFAULT_TITLE_STYLE_BASE: ChartTextStyle = {
   isBolder: true,
   remarkShow: false,
   remark: '',
-  fontFamily: 'Microsoft YaHei',
+  fontFamily: '',
   letterSpace: '0',
   fontShadow: false,
   color: '',
@@ -424,7 +554,8 @@ export const DEFAULT_LEGEND_STYLE: ChartLegendStyle = {
   orient: 'horizontal',
   icon: 'circle',
   color: '#333333',
-  fontSize: 12
+  fontSize: 12,
+  size: 4
 }
 
 export const DEFAULT_LEGEND_STYLE_BASE: ChartLegendStyle = {
@@ -434,7 +565,8 @@ export const DEFAULT_LEGEND_STYLE_BASE: ChartLegendStyle = {
   orient: 'horizontal',
   icon: 'circle',
   color: '#333333',
-  fontSize: 12
+  fontSize: 12,
+  size: 4
 }
 
 export const DEFAULT_LEGEND_STYLE_LIGHT: ChartLegendStyle = {
@@ -468,7 +600,8 @@ export const DEFAULT_XAXIS_STYLE: ChartAxisStyle = {
     color: '#333333',
     fontSize: 12,
     rotate: 0,
-    formatter: '{value}'
+    formatter: '{value}',
+    lengthLimit: 10
   },
   axisLine: {
     show: true,
@@ -512,7 +645,8 @@ export const DEFAULT_YAXIS_STYLE: ChartAxisStyle = {
     color: '#333333',
     fontSize: 12,
     rotate: 0,
-    formatter: '{value}'
+    formatter: '{value}',
+    lengthLimit: 10
   },
   axisLine: {
     show: false,
@@ -567,7 +701,7 @@ export const DEFAULT_YAXIS_EXT_STYLE: ChartAxisStyle = {
     }
   },
   splitLine: {
-    show: true,
+    show: false,
     lineStyle: {
       color: '#cccccc',
       width: 1,
@@ -576,10 +710,10 @@ export const DEFAULT_YAXIS_EXT_STYLE: ChartAxisStyle = {
   },
   axisValue: {
     auto: true,
-    min: null,
-    max: null,
-    split: null,
-    splitCount: null
+    min: 10,
+    max: 100,
+    split: 10,
+    splitCount: 10
   },
   axisLabelFormatter: {
     type: 'auto',
@@ -635,6 +769,13 @@ export const DEFAULT_MISC_STYLE: ChartMiscStyle = {
   },
   splitArea: {
     show: true
+  },
+  axisValue: {
+    auto: true,
+    min: 10,
+    max: 100,
+    split: 10,
+    splitCount: 10
   }
 }
 export const DEFAULT_FUNCTION_CFG: ChartFunctionCfg = {
@@ -644,6 +785,7 @@ export const DEFAULT_FUNCTION_CFG: ChartFunctionCfg = {
   sliderFillBg: '#BCD6F1',
   sliderTextColor: '#999999',
   emptyDataStrategy: 'breakLine',
+  emptyDataCustomValue: '',
   emptyDataFieldCtrl: []
 }
 export const DEFAULT_ASSIST_LINE_CFG: ChartAssistLineCfg = {
@@ -653,15 +795,84 @@ export const DEFAULT_ASSIST_LINE_CFG: ChartAssistLineCfg = {
 export const DEFAULT_THRESHOLD: ChartThreshold = {
   enable: false,
   gaugeThreshold: '',
+  liquidThreshold: '',
   labelThreshold: [],
   tableThreshold: [],
-  textLabelThreshold: []
+  textLabelThreshold: [],
+  lineLabelThreshold: []
 }
 export const DEFAULT_SCROLL: ScrollCfg = {
   open: false,
   row: 1,
   interval: 2000,
   step: 50
+}
+
+export const DEFAULT_BUBBLE_ANIMATE: BubbleCfg = {
+  enable: false,
+  speed: 1,
+  rings: 1,
+  type: 'wave'
+}
+
+export const DEFAULT_QUADRANT_STYLE: QuadrantAttr = {
+  lineStyle: {
+    stroke: '#aaa',
+    lineWidth: 1,
+    opacity: 0.5
+  },
+  regionStyle: [
+    {
+      fill: '#fdfcfc',
+      fillOpacity: 0
+    },
+    {
+      fill: '#fafdfa',
+      fillOpacity: 0
+    },
+    {
+      fill: '#fdfcfc',
+      fillOpacity: 0
+    },
+    {
+      fill: '#fafdfa',
+      fillOpacity: 0
+    }
+  ],
+  labels: [
+    {
+      content: '',
+      style: {
+        fill: '#000000',
+        fillOpacity: 0.5,
+        fontSize: 14
+      }
+    },
+    {
+      content: '',
+      style: {
+        fill: '#000000',
+        fillOpacity: 0.5,
+        fontSize: 14
+      }
+    },
+    {
+      content: '',
+      style: {
+        fill: '#000000',
+        fillOpacity: 0.5,
+        fontSize: 14
+      }
+    },
+    {
+      content: '',
+      style: {
+        fill: '#000000',
+        fillOpacity: 0.5,
+        fontSize: 14
+      }
+    }
+  ]
 }
 
 export const COLOR_PANEL = [
@@ -926,14 +1137,28 @@ export const BASE_ECHARTS_SELECT = {
   }
 }
 
-export const CHART_FONT_FAMILY = [
-  { name: '微软雅黑', value: 'Microsoft YaHei' },
-  { name: '宋体', value: 'SimSun' },
-  { name: '黑体', value: 'SimHei' },
-  { name: '楷体', value: 'KaiTi' }
+export const CHART_FONT_FAMILY_ORIGIN = [
+  { name: t('chart.font_family_ya_hei'), value: 'Microsoft YaHei' },
+  { name: t('chart.font_family_song_ti'), value: 'SimSun, "Songti SC", STSong' },
+  { name: t('chart.font_family_hei_ti'), value: 'SimHei, Helvetica' },
+  { name: t('chart.font_family_kai_ti'), value: 'KaiTi, "Kaiti SC", STKaiti' }
 ]
 
-export const CHART_CONT_FAMILY_MAP = {
+export const CHART_FONT_FAMILY_MAP_TRANS = {
+  'Microsoft YaHei': 'Microsoft YaHei',
+  'SimSun, "Songti SC", STSong': 'SimSun',
+  'SimHei, Helvetica': 'SimHei',
+  'KaiTi, "Kaiti SC", STKaiti': 'KaiTi'
+}
+
+export const CHART_FONT_FAMILY = [
+  { name: t('chart.font_family_ya_hei'), value: 'Microsoft YaHei' },
+  { name: t('chart.font_family_song_ti'), value: 'SimSun' },
+  { name: t('chart.font_family_hei_ti'), value: 'SimHei' },
+  { name: t('chart.font_family_kai_ti'), value: 'KaiTi' }
+]
+
+export const CHART_FONT_FAMILY_MAP = {
   'Microsoft YaHei': 'Microsoft YaHei',
   SimSun: 'SimSun, "Songti SC", STSong',
   SimHei: 'SimHei, Helvetica',
@@ -1030,6 +1255,13 @@ export const CHART_TYPE_CONFIGS = [
         value: 'table-pivot',
         title: t('chart.chart_table_pivot'),
         icon: 'table-pivot'
+      },
+      {
+        render: 'antv',
+        category: 'table',
+        value: 't-heatmap',
+        title: t('chart.chart_table_heatmap'),
+        icon: 't-heatmap'
       }
     ]
   },
@@ -1128,6 +1360,34 @@ export const CHART_TYPE_CONFIGS = [
         value: 'percentage-bar-stack-horizontal',
         title: t('chart.chart_percentage_bar_stack_horizontal'),
         icon: 'percentage-bar-stack-horizontal'
+      },
+      {
+        render: 'antv',
+        category: 'compare',
+        value: 'bar-range',
+        title: t('chart.chart_bar_range'),
+        icon: 'bar-range'
+      },
+      {
+        render: 'antv',
+        category: 'compare',
+        value: 'bidirectional-bar',
+        title: t('chart.chart_bidirectional_bar'),
+        icon: 'bidirectional-bar'
+      },
+      {
+        render: 'antv',
+        category: 'compare',
+        value: 'progress-bar',
+        title: t('chart.chart_progress_bar'),
+        icon: 'progress-bar'
+      },
+      {
+        render: 'antv',
+        category: 'trend',
+        value: 'stock-line',
+        title: t('chart.chart_stock_line'),
+        icon: 'stock-line'
       }
     ]
   },
@@ -1205,6 +1465,27 @@ export const CHART_TYPE_CONFIGS = [
         value: 'bubble-map',
         title: t('chart.chart_bubble_map'),
         icon: 'bubble-map'
+      },
+      {
+        render: 'antv',
+        category: 'map',
+        value: 'flow-map',
+        title: t('chart.chart_flow_map'),
+        icon: 'flow-map'
+      },
+      {
+        render: 'antv',
+        category: 'map',
+        value: 'heat-map',
+        title: t('chart.chart_heat_map'),
+        icon: 'heat-map'
+      },
+      {
+        render: 'antv',
+        category: 'map',
+        value: 'symbolic-map',
+        title: t('chart.chart_symbolic_map'),
+        icon: 'symbolic-map'
       }
     ]
   },
@@ -1223,23 +1504,86 @@ export const CHART_TYPE_CONFIGS = [
       {
         render: 'antv',
         category: 'distribute',
+        value: 'quadrant',
+        title: t('chart.chart_quadrant'),
+        icon: 'quadrant'
+      },
+      {
+        render: 'antv',
+        category: 'distribute',
         value: 'funnel',
         title: t('chart.chart_funnel'),
         icon: 'funnel'
+      },
+      {
+        render: 'antv',
+        category: 'relation',
+        value: 'sankey',
+        title: t('chart.chart_sankey'),
+        icon: 'sankey'
+      },
+      {
+        render: 'antv',
+        category: 'distribute',
+        value: 'circle-packing',
+        title: t('chart.chart_circle_packing'),
+        icon: 'circle-packing'
+      }
+    ]
+  },
+  {
+    category: 'dual_axes',
+    title: t('chart.chart_type_dual_axes'),
+    display: 'show',
+    details: [
+      {
+        render: 'antv',
+        category: 'dual_axes',
+        value: 'chart-mix',
+        title: t('chart.chart_mix'),
+        icon: 'chart-mix'
+      },
+      {
+        render: 'antv',
+        category: 'dual_axes',
+        value: 'chart-mix-group',
+        title: t('chart.chart_mix_group_column'),
+        icon: 'chart-mix-group'
+      },
+      {
+        render: 'antv',
+        category: 'dual_axes',
+        value: 'chart-mix-stack',
+        title: t('chart.chart_mix_stack_column'),
+        icon: 'chart-mix-stack'
+      },
+      {
+        render: 'antv',
+        category: 'dual_axes',
+        value: 'chart-mix-dual-line',
+        title: t('chart.chart_mix_dual_line'),
+        icon: 'chart-mix-dual-line'
       }
     ]
   },
   {
     category: 'other',
-    title: '富文本',
+    title: t('datasource.other'),
     display: 'hidden',
     details: [
       {
         render: 'custom',
         category: 'quota',
         value: 'rich-text',
-        title: '富文本',
+        title: t('visualization.rich_text'),
         icon: 'rich-text'
+      },
+      {
+        render: 'custom',
+        category: 'quota',
+        value: 'picture-group',
+        title: t('visualization.picture_group'),
+        icon: 'picture-group'
       }
     ]
   }
@@ -1248,11 +1592,12 @@ export const CHART_TYPE_CONFIGS = [
 export const DEFAULT_BASIC_STYLE: ChartBasicStyle = {
   alpha: 100,
   tableBorderColor: '#CCCCCC',
-  tableScrollBarColor: 'rgba(0, 0, 0, 0.15)',
+  tableScrollBarColor: '#1f23294d',
   tableColumnMode: 'adapt',
   tableColumnWidth: 100,
   tableFieldWidth: [],
   tablePageMode: 'page',
+  tablePageStyle: 'simple',
   tablePageSize: 20,
   gaugeStyle: 'default',
   colorScheme: 'default',
@@ -1274,6 +1619,9 @@ export const DEFAULT_BASIC_STYLE: ChartBasicStyle = {
   lineSymbolSize: 4,
   lineSmooth: true,
   barDefault: true,
+  radiusColumnBar: 'rightAngle',
+  columnBarRightAngleRadius: 20,
+  columnWidthRatio: 60,
   barWidth: 40,
   barGap: 0.4,
   lineType: 'solid',
@@ -1281,26 +1629,58 @@ export const DEFAULT_BASIC_STYLE: ChartBasicStyle = {
   scatterSymbolSize: 8,
   radarShape: 'polygon',
   mapStyle: 'normal',
+  heatMapType: 'heatmap',
+  heatMapIntensity: 2,
+  heatMapRadius: 20,
   areaBorderColor: '#EBEEF5',
-  suspension: true,
   areaBaseColor: '#ffffff',
   mapSymbolOpacity: 0.7,
   mapSymbolStrokeWidth: 2,
   mapSymbol: 'circle',
-  mapSymbolSize: 20,
+  mapSymbolSize: 6,
   radius: 80,
-  innerRadius: 60
+  innerRadius: 60,
+  showZoom: true,
+  zoomButtonColor: '#aaa',
+  zoomBackground: '#fff',
+  tableLayoutMode: 'grid',
+  calcTopN: false,
+  topN: 5,
+  topNLabel: t('datasource.other'),
+  gaugeAxisLine: true,
+  gaugePercentLabel: true,
+  showSummary: false,
+  summaryLabel: t('chart.total_show'),
+  seriesColor: [],
+  layout: 'horizontal',
+  mapSymbolSizeMin: 4,
+  mapSymbolSizeMax: 30,
+  showLabel: true,
+  mapStyleUrl: '',
+  autoFit: true,
+  mapCenter: {
+    longitude: 117.232,
+    latitude: 39.354
+  },
+  zoomLevel: 7,
+  customIcon: '',
+  showHoverStyle: true,
+  autoWrap: false,
+  maxLines: 3,
+  radarShowPoint: true,
+  radarPointSize: 4,
+  radarAreaColor: true
 }
 
 export const BASE_VIEW_CONFIG = {
   id: '', // 图表id
-  title: '图表',
+  title: t('data_set.view'),
   sceneId: 0, // 仪表板id
   tableId: '', // 数据集id
   type: 'bar',
   render: 'antv',
   resultCount: 1000,
-  resultMode: 'all',
+  resultMode: 'custom',
   refreshViewEnable: false,
   refreshTime: 5,
   refreshUnit: 'minute',
@@ -1314,7 +1694,8 @@ export const BASE_VIEW_CONFIG = {
   extBubble: [],
   extLabel: [],
   extTooltip: [],
-  customFilter: [],
+  customFilter: {},
+  sortPriority: [],
   customAttr: {
     basicStyle: DEFAULT_BASIC_STYLE,
     misc: DEFAULT_MISC,
@@ -1342,8 +1723,12 @@ export const BASE_VIEW_CONFIG = {
     functionCfg: DEFAULT_FUNCTION_CFG,
     assistLineCfg: DEFAULT_ASSIST_LINE_CFG,
     threshold: DEFAULT_THRESHOLD,
-    scrollCfg: DEFAULT_SCROLL
-  }
+    scrollCfg: DEFAULT_SCROLL,
+    areaMapping: {},
+    bubbleCfg: DEFAULT_BUBBLE_ANIMATE
+  },
+  flowMapStartName: [],
+  flowMapEndName: []
 }
 
 export function getScaleValue(propValue, scale) {

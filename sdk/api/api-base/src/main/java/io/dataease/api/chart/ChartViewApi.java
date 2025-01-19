@@ -1,8 +1,10 @@
 package io.dataease.api.chart;
 
 import com.github.xiaoymin.knife4j.annotations.ApiSupport;
-import io.dataease.api.chart.dto.ChartViewDTO;
-import io.dataease.api.chart.dto.ChartViewFieldDTO;
+import io.dataease.api.chart.vo.ChartBaseVO;
+import io.dataease.api.chart.vo.ViewSelectorVO;
+import io.dataease.extensions.view.dto.ChartViewDTO;
+import io.dataease.extensions.view.dto.ChartViewFieldDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,7 +27,7 @@ public interface ChartViewApi {
 
     @Operation(summary = "获取图表字段")
     @PostMapping("listByDQ/{id}/{chartId}")
-    Map<String, List<ChartViewFieldDTO>> listByDQ(@PathVariable Long id, @PathVariable Long chartId);
+    Map<String, List<ChartViewFieldDTO>> listByDQ(@PathVariable Long id, @PathVariable Long chartId, @RequestBody ChartViewDTO dto);
 
     @Operation(summary = "保存图表")
     @PostMapping("save")
@@ -38,4 +40,23 @@ public interface ChartViewApi {
     @Operation(summary = "查询图表详情")
     @PostMapping("getDetail/{id}")
     ChartViewDTO getDetail(@PathVariable Long id);
+
+    @Operation(summary = "查询仪表板下视图项")
+    @GetMapping("/viewOption/{resourceId}")
+    List<ViewSelectorVO> viewOption(@PathVariable("resourceId") Long resourceId);
+
+    @Operation(summary = "视图复制字段")
+    @PostMapping("copyField/{id}/{chartId}")
+    void copyField(@PathVariable Long id, @PathVariable Long chartId);
+
+    @Operation(summary = "视图删除字段")
+    @PostMapping("deleteField/{id}")
+    void deleteField(@PathVariable Long id);
+
+    @Operation(summary = "清空当前视图计算字段")
+    @PostMapping("deleteFieldByChart/{chartId}")
+    void deleteFieldByChart(@PathVariable Long chartId);
+
+    @GetMapping("/chartBaseInfo/{id}")
+    ChartBaseVO chartBaseInfo(@PathVariable("id") Long id);
 }

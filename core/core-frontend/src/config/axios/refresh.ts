@@ -1,26 +1,36 @@
 import { useCache } from '@/hooks/web/useCache'
 import { refreshApi } from '@/api/login'
 import { useUserStoreWithOut } from '@/store/modules/user'
+import { useRequestStoreWithOut } from '@/store/modules/request'
+
+import { isLink } from '@/utils/utils'
 const { wsCache } = useCache()
 const userStore = useUserStoreWithOut()
+const requestStore = useRequestStoreWithOut()
 const refreshUrl = '/login/refresh'
-let cachedRequestList = []
 
 const expConstants = 10000
+
+const expTimeConstants = 90000
 
 const isExpired = () => {
   const exp = wsCache.get('user.exp')
   if (!exp) {
     return false
   }
-  return exp - new Date().getTime() < expConstants
+  const time = wsCache.get('user.time')
+  if (!time) {
+    return exp - Date.now() < expConstants
+  }
+  return Date.now() - time > expTimeConstants
 }
 
 const delayExecute = (token: string) => {
+  const cachedRequestList = requestStore.getRequestList
   cachedRequestList.forEach(cb => {
     cb(token)
   })
-  cachedRequestList = []
+  requestStore.cleanCacheRequest()
 }
 
 const getRefreshStatus = () => {
@@ -31,12 +41,15 @@ const setRefreshStatus = (status: boolean) => {
 }
 
 const cacheRequest = cb => {
-  cachedRequestList.push(cb)
+  requestStore.addCacheRequest(cb)
 }
 
 export const configHandler = config => {
   const desktop = wsCache.get('app.desktop')
   if (desktop) {
+    return config
+  }
+  if (isLink()) {
     return config
   }
   if (wsCache.get('user.token')) {
@@ -49,6 +62,7 @@ export const configHandler = config => {
           .then(res => {
             userStore.setToken(res.data.token)
             userStore.setExp(res.data.exp)
+            userStore.setTime(Date.now())
             config.headers['X-DE-TOKEN'] = res.data.token
             delayExecute(res.data.token)
           })

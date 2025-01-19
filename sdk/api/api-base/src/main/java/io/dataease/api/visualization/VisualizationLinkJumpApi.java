@@ -1,11 +1,11 @@
 package io.dataease.api.visualization;
 
 import com.github.xiaoymin.knife4j.annotations.ApiSupport;
+import io.dataease.api.visualization.dto.VisualizationComponentDTO;
 import io.dataease.api.visualization.dto.VisualizationLinkJumpDTO;
 import io.dataease.api.visualization.request.VisualizationLinkJumpBaseRequest;
 import io.dataease.api.visualization.response.VisualizationLinkJumpBaseResponse;
-import io.dataease.api.visualization.vo.VisualizationViewTableVO;
-import io.dataease.dto.dataset.DatasetTableFieldDTO;
+import io.dataease.extensions.datasource.dto.DatasetTableFieldDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,9 +46,14 @@ public interface VisualizationLinkJumpApi {
 
     @GetMapping("/viewTableDetailList/{dvId}")
     @Operation(summary = "查询跳转明细")
-    List<VisualizationViewTableVO> viewTableDetailList(@PathVariable Long dvId);
+    VisualizationComponentDTO viewTableDetailList(@PathVariable Long dvId);
 
     @PostMapping("/updateJumpSetActive")
     @Operation(summary = "更新跳转信息可用状态")
     VisualizationLinkJumpBaseResponse updateJumpSetActive(@RequestBody VisualizationLinkJumpBaseRequest request);
+
+    @PostMapping("/removeJumpSet")
+    @Operation(summary = "删除跳转信息")
+    void removeJumpSet(@RequestBody VisualizationLinkJumpDTO jumpDTO);
+
 }

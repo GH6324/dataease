@@ -1,8 +1,10 @@
 package io.dataease.chart.server;
 
 import io.dataease.api.chart.ChartViewApi;
-import io.dataease.api.chart.dto.ChartViewDTO;
-import io.dataease.api.chart.dto.ChartViewFieldDTO;
+import io.dataease.api.chart.vo.ChartBaseVO;
+import io.dataease.extensions.view.dto.ChartViewDTO;
+import io.dataease.extensions.view.dto.ChartViewFieldDTO;
+import io.dataease.api.chart.vo.ViewSelectorVO;
 import io.dataease.chart.manage.ChartViewManege;
 import io.dataease.exception.DEException;
 import io.dataease.result.ResultCode;
@@ -33,8 +35,8 @@ public class ChartViewServer implements ChartViewApi {
     }
 
     @Override
-    public Map<String, List<ChartViewFieldDTO>> listByDQ(Long id, Long chartId) {
-        return chartViewManege.listByDQ(id, chartId);
+    public Map<String, List<ChartViewFieldDTO>> listByDQ(Long id, Long chartId, ChartViewDTO dto) {
+        return chartViewManege.listByDQ(id, chartId, dto);
     }
 
     @Override
@@ -52,5 +54,28 @@ public class ChartViewServer implements ChartViewApi {
         return chartViewManege.getDetails(id);
     }
 
+    @Override
+    public List<ViewSelectorVO> viewOption(Long resourceId) {
+        return chartViewManege.viewOption(resourceId);
+    }
 
+    @Override
+    public void copyField(Long id, Long chartId) {
+        chartViewManege.copyField(id, chartId);
+    }
+
+    @Override
+    public void deleteField(Long id) {
+        chartViewManege.deleteField(id);
+    }
+
+    @Override
+    public void deleteFieldByChart(Long chartId) {
+        chartViewManege.deleteFieldByChartId(chartId);
+    }
+
+    @Override
+    public ChartBaseVO chartBaseInfo(Long id) {
+        return chartViewManege.chartBaseInfo(id);
+    }
 }

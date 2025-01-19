@@ -4,7 +4,7 @@
       id="input"
       ref="files"
       type="file"
-      accept=".jpeg,.jpg,.png,.gif"
+      accept=".jpeg,.jpg,.png,.gif,.svg"
       hidden
       @click="
         e => {
@@ -13,7 +13,7 @@
       "
       @change="reUpload"
     />
-    <el-form label-position="top" style="width: 100%">
+    <el-form label-position="top" style="width: 100%; margin-bottom: 8px">
       <el-row :gutter="8">
         <el-col :span="12">
           <el-form-item
@@ -57,6 +57,34 @@
         <el-checkbox
           size="small"
           :effect="themes"
+          v-model="state.commonBackground.backdropFilterEnable"
+          @change="onBackgroundChange"
+        >
+          {{ $t('chart.backdrop_blur') }}
+        </el-checkbox>
+      </el-form-item>
+      <div class="indented-container">
+        <div class="indented-item">
+          <el-form-item class="form-item" :class="'form-item-' + themes">
+            <el-input-number
+              style="width: 100%"
+              :effect="themes"
+              controls-position="right"
+              size="middle"
+              :min="0"
+              :max="30"
+              :disabled="!state.commonBackground.backdropFilterEnable"
+              v-model="state.commonBackground.backdropFilter"
+              @change="onBackgroundChange"
+            />
+          </el-form-item>
+        </div>
+      </div>
+
+      <el-form-item class="form-item no-margin-bottom" :class="'form-item-' + themes">
+        <el-checkbox
+          size="small"
+          :effect="themes"
           v-model="state.commonBackground.backgroundColorSelect"
           @change="onBackgroundChange"
         >
@@ -68,6 +96,7 @@
         <div class="indented-item">
           <el-form-item class="form-item" :class="'form-item-' + themes">
             <el-color-picker
+              v-if="state.commonBackground.backgroundColor"
               v-model="state.commonBackground.backgroundColor"
               :effect="themes"
               :disabled="!state.commonBackground.backgroundColorSelect"
@@ -141,6 +170,12 @@
               placeholder="选择边框..."
               @change="onBackgroundChange"
             >
+              <template v-if="state.commonBackground.innerImage" #prefix>
+                <border-option-prefix
+                  inner-image-color="state.commonBackground.innerImageColor"
+                  :url="state.commonBackground.innerImage"
+                ></border-option-prefix>
+              </template>
               <el-option
                 v-for="(item, index) in state.BackgroundShowMap['default']"
                 :key="index"
@@ -187,7 +222,7 @@
                 class="image-hint"
                 :class="`image-hint_${themes}`"
               >
-                支持JPG、PNG、GIF
+                支持JPG、PNG、GIF、SVG
               </span>
 
               <el-button
@@ -223,6 +258,7 @@ import elementResizeDetectorMaker from 'element-resize-detector'
 import { ElMessage } from 'element-plus-secondary'
 import BoardItem from '@/components/visualization/component-background/BoardItem.vue'
 import ImgViewDialog from '@/custom-component/ImgViewDialog.vue'
+import BorderOptionPrefix from '@/components/visualization/component-background/BorderOptionPrefix.vue'
 const snapshotStore = snapshotStoreWithOut()
 const { t } = useI18n()
 const emits = defineEmits(['onBackgroundChange'])
@@ -270,6 +306,7 @@ const reUpload = e => {
   const file = e.target.files[0]
   if (file.size > maxImageSize) {
     sizeMessage()
+    return
   }
   uploadFileResult(file, fileUrl => {
     state.commonBackground['outerImage'] = fileUrl
@@ -287,14 +324,14 @@ const queryBackground = () => {
 const init = () => {
   state.commonBackground = deepCopy(props.commonBackgroundPop)
   if (state.commonBackground['outerImage']) {
-    state.fileList.push({ url: imgUrlTrans(state.commonBackground['outerImage']) })
+    state.fileList = [{ url: imgUrlTrans(state.commonBackground['outerImage']) }]
   } else {
     state.fileList = []
   }
 }
 queryBackground()
 const commitStyle = () => {
-  snapshotStore.recordSnapshotCache()
+  snapshotStore.recordSnapshotCacheToMobile('commonBackground')
 }
 
 const handleRemove = () => {
@@ -316,7 +353,6 @@ const upload = file => {
 }
 
 const onBackgroundChange = () => {
-  snapshotStore.recordSnapshotCache()
   emits('onBackgroundChange', state.commonBackground)
 }
 

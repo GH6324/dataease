@@ -1,8 +1,14 @@
 <script lang="ts" setup>
-import { ref, watch } from 'vue'
+import icon_left_outlined from '@/assets/svg/icon_left_outlined.svg'
+import icon_close_outlined from '@/assets/svg/icon_close_outlined.svg'
+import icon_deleteTrash_outlined from '@/assets/svg/icon_delete-trash_outlined.svg'
+import icon_right_outlined from '@/assets/svg/icon_right_outlined.svg'
+import { nextTick, ref, watch } from 'vue'
 import { Icon } from '@/components/icon-custom'
 import { ElButton, ElDivider, ElIcon } from 'element-plus-secondary'
 import { propTypes } from '@/utils/propTypes'
+import { useI18n } from '@/hooks/web/useI18n'
+const { t } = useI18n()
 const props = defineProps({
   filterTexts: propTypes.arrayOf(propTypes.string),
   total: propTypes.number.def(0)
@@ -29,10 +35,16 @@ const clearFilter = (index?: number) => {
   emits('clearFilter', index)
 }
 
+const clearFilterAll = () => {
+  emits('clearFilter', 'empty')
+}
+
 watch(
-  props.filterTexts,
+  () => props.filterTexts,
   () => {
-    showScroll.value = container.value && container.value.scrollWidth > container.value.offsetWidth
+    nextTick(() => {
+      showScroll.value = container.value?.scrollWidth > container.value?.offsetWidth
+    })
   },
   { deep: true }
 )
@@ -41,27 +53,50 @@ watch(
 <template>
   <div v-if="filterTexts.length" class="filter-texts">
     <span class="sum">{{ total }}</span>
-    <span class="title">个结果</span>
+    <span class="title">{{ t('commons.result_count') }}</span>
     <el-divider direction="vertical" />
     <el-icon @click="scrollPre" class="arrow-left arrow-filter" v-if="showScroll">
-      <Icon name="icon_left_outlined"></Icon>
+      <Icon name="icon_left_outlined"><icon_left_outlined class="svg-icon" /></Icon>
     </el-icon>
     <div class="filter-texts-container" ref="container">
       <p v-for="(ele, index) in filterTexts" :key="ele" class="text">
-        {{ ele }}
+        <el-tooltip effect="dark" :content="ele" placement="top-start">
+          {{ ele }}
+        </el-tooltip>
         <el-icon @click="clearFilter(index)">
-          <Icon name="icon_close_outlined"></Icon>
+          <Icon name="icon_close_outlined"><icon_close_outlined class="svg-icon" /></Icon>
         </el-icon>
       </p>
+      <el-button
+        type="text"
+        class="clear-btn clear-btn-inner"
+        v-if="!showScroll"
+        @click="clearFilterAll"
+      >
+        <template #icon>
+          <Icon name="icon_delete-trash_outlined"
+            ><icon_deleteTrash_outlined class="svg-icon"
+          /></Icon>
+        </template>
+        {{ t('commons.clear_filter') }}</el-button
+      >
     </div>
     <el-icon @click="scrollNext" class="arrow-right arrow-filter" v-if="showScroll">
-      <Icon name="icon_right_outlined"></Icon>
+      <Icon name="icon_right_outlined"><icon_right_outlined class="svg-icon" /></Icon>
     </el-icon>
-    <el-button type="text" class="clear-btn" @click="clearFilter()">
+    <el-button
+      type="text"
+      class="clear-btn"
+      style="height: 24px; line-height: 24px"
+      v-if="showScroll"
+      @click="clearFilterAll"
+    >
       <template #icon>
-        <Icon name="icon_delete-trash_outlined"></Icon>
+        <Icon name="icon_delete-trash_outlined"
+          ><icon_deleteTrash_outlined class="svg-icon"
+        /></Icon>
       </template>
-      清空条件</el-button
+      {{ t('commons.clear_filter') }}</el-button
     >
   </div>
 </template>
@@ -71,7 +106,7 @@ watch(
   display: flex;
   align-items: center;
   margin: 17px 0;
-  font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+  font-family: var(--de-custom_font, 'PingFang');
   font-weight: 400;
 
   .sum {
@@ -102,8 +137,9 @@ watch(
 
     i {
       position: absolute;
-      right: 2px;
+      right: 6px;
       top: 50%;
+      font-size: 12px;
       transform: translateY(-50%);
       cursor: pointer;
     }
@@ -150,6 +186,10 @@ watch(
     overflow-x: auto;
     white-space: nowrap;
     height: 24px;
+
+    .clear-btn-inner {
+      margin-top: -16px;
+    }
   }
 }
 </style>

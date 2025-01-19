@@ -1,20 +1,21 @@
 package io.dataease.visualization.server;
 
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import io.dataease.api.permissions.dataset.dto.DataSetRowPermissionsTreeDTO;
 import io.dataease.api.visualization.VisualizationLinkJumpApi;
+import io.dataease.api.visualization.dto.VisualizationComponentDTO;
 import io.dataease.api.visualization.dto.VisualizationLinkJumpDTO;
 import io.dataease.api.visualization.dto.VisualizationLinkJumpInfoDTO;
 import io.dataease.api.visualization.request.VisualizationLinkJumpBaseRequest;
 import io.dataease.api.visualization.response.VisualizationLinkJumpBaseResponse;
+import io.dataease.api.visualization.vo.VisualizationOutParamsJumpVO;
 import io.dataease.api.visualization.vo.VisualizationViewTableVO;
+import io.dataease.auth.DeLinkPermit;
 import io.dataease.chart.dao.auto.entity.CoreChartView;
 import io.dataease.chart.dao.auto.mapper.CoreChartViewMapper;
-import io.dataease.dto.dataset.DatasetTableFieldDTO;
-import io.dataease.license.config.XpackInteract;
+import io.dataease.extensions.datasource.dto.DatasetTableFieldDTO;
 import io.dataease.utils.AuthUtils;
 import io.dataease.utils.BeanUtils;
 import io.dataease.utils.IDUtils;
+import io.dataease.utils.ModelUtils;
 import io.dataease.visualization.dao.auto.entity.DataVisualizationInfo;
 import io.dataease.visualization.dao.auto.entity.VisualizationLinkJump;
 import io.dataease.visualization.dao.auto.entity.VisualizationLinkJumpInfo;
@@ -69,12 +70,12 @@ public class VisualizationLinkJumpService implements VisualizationLinkJumpApi {
         return extVisualizationLinkageMapper.queryTableFieldWithViewId(viewId);
     }
 
+    @DeLinkPermit
     //获取仪表板的跳转信息
     @Override
-    @XpackInteract(value = "visualizationLinkJumpService", original = true)
     public VisualizationLinkJumpBaseResponse queryVisualizationJumpInfo(Long dvId) {
         Map<String, VisualizationLinkJumpInfoDTO> resultBase = new HashMap<>();
-        List<VisualizationLinkJumpDTO> resultLinkJumpList = extVisualizationLinkJumpMapper.queryWithDvId(dvId, AuthUtils.getUser().getUserId());
+        List<VisualizationLinkJumpDTO> resultLinkJumpList = extVisualizationLinkJumpMapper.queryWithDvId(dvId, AuthUtils.getUser().getUserId(), ModelUtils.isDesktop());
         Optional.ofNullable(resultLinkJumpList).orElse(new ArrayList<>()).forEach(resultLinkJump -> {
             if (resultLinkJump.getChecked()) {
                 Long sourceViewId = resultLinkJump.getSourceViewId();
@@ -99,7 +100,7 @@ public class VisualizationLinkJumpService implements VisualizationLinkJumpApi {
 
     @Override
     public VisualizationLinkJumpDTO queryWithViewId(Long dvId, Long viewId) {
-        return extVisualizationLinkJumpMapper.queryWithViewId(dvId, viewId, AuthUtils.getUser().getUserId());
+        return extVisualizationLinkJumpMapper.queryWithViewId(dvId, viewId, AuthUtils.getUser().getUserId(), ModelUtils.isDesktop());
     }
 
     @Transactional
@@ -138,6 +139,7 @@ public class VisualizationLinkJumpService implements VisualizationLinkJumpApi {
         });
     }
 
+    @DeLinkPermit("#p0.targetDvId")
     @Override
     public VisualizationLinkJumpBaseResponse queryTargetVisualizationJumpInfo(VisualizationLinkJumpBaseRequest request) {
         List<VisualizationLinkJumpDTO> result = extVisualizationLinkJumpMapper.getTargetVisualizationJumpInfo(request);
@@ -145,14 +147,21 @@ public class VisualizationLinkJumpService implements VisualizationLinkJumpApi {
     }
 
     @Override
-    public List<VisualizationViewTableVO> viewTableDetailList(Long dvId) {
+    public VisualizationComponentDTO viewTableDetailList(Long dvId) {
         DataVisualizationInfo dvInfo = dataVisualizationInfoMapper.selectById(dvId);
+        List<VisualizationViewTableVO> result;
+        List<VisualizationOutParamsJumpVO> outParamsJumpInfo;
+        String componentData;
         if (dvInfo != null) {
-            List<VisualizationViewTableVO> result = extVisualizationLinkJumpMapper.getViewTableDetails(dvId);
-            return result.stream().filter(viewTableInfo -> dvInfo.getComponentData().indexOf(viewTableInfo.getId().toString()) > -1).collect(Collectors.toList());
-        }else {
-            return new ArrayList<>();
+            result = extVisualizationLinkJumpMapper.getViewTableDetails(dvId).stream().filter(viewTableInfo -> dvInfo.getComponentData().indexOf(viewTableInfo.getId().toString()) > -1).collect(Collectors.toList());
+            componentData = dvInfo.getComponentData();
+            outParamsJumpInfo = extVisualizationLinkJumpMapper.queryOutParamsTargetWithDvId(dvId);
+        } else {
+            result = new ArrayList<>();
+            outParamsJumpInfo = new ArrayList<>();
+            componentData = "[]";
         }
+        return new VisualizationComponentDTO(componentData,result,outParamsJumpInfo);
 
     }
 
@@ -163,6 +172,14 @@ public class VisualizationLinkJumpService implements VisualizationLinkJumpApi {
         coreChartView.setJumpActive(request.getActiveStatus());
         coreChartViewMapper.updateById(coreChartView);
         return queryVisualizationJumpInfo(request.getSourceDvId());
+    }
+
+    @Override
+    public void removeJumpSet(VisualizationLinkJumpDTO jumpDTO) {
+        //清理原有数据
+        extVisualizationLinkJumpMapper.deleteJumpTargetViewInfo(jumpDTO.getSourceDvId(), jumpDTO.getSourceViewId());
+        extVisualizationLinkJumpMapper.deleteJumpInfo(jumpDTO.getSourceDvId(), jumpDTO.getSourceViewId());
+        extVisualizationLinkJumpMapper.deleteJump(jumpDTO.getSourceDvId(), jumpDTO.getSourceViewId());
     }
 
 }

@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { toRefs } from 'vue'
-import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
-import { storeToRefs } from 'pinia'
+import { ref, toRefs } from 'vue'
 import ComponentWrapper from '@/components/data-visualization/canvas/ComponentWrapper.vue'
 import { toPercent } from '@/utils/translate'
+import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
+import UserViewEnlarge from '@/components/visualization/UserViewEnlarge.vue'
 const dvMainStore = dvMainStoreWithOut()
-const { canvasViewInfo } = storeToRefs(dvMainStore)
+const userViewEnlargeRef = ref(null)
 
 const props = defineProps({
   propValue: {
@@ -39,11 +39,20 @@ const props = defineProps({
     type: Number,
     required: false,
     default: 1
+  },
+  canvasViewInfo: {
+    type: Object,
+    required: true
+  },
+  // 字体
+  fontFamily: {
+    type: String,
+    required: false,
+    default: 'inherit'
   }
 })
 
-const { propValue, dvInfo, searchCount, scale } = toRefs(props)
-
+const { propValue, dvInfo, searchCount, scale, canvasViewInfo } = toRefs(props)
 const customGroupStyle = item => {
   return {
     width: toPercent(item.groupStyle.width),
@@ -51,6 +60,16 @@ const customGroupStyle = item => {
     top: toPercent(item.groupStyle.top),
     left: toPercent(item.groupStyle.left)
   }
+}
+
+const userViewEnlargeOpen = (opt, item) => {
+  userViewEnlargeRef.value.dialogInit(
+    dvMainStore.canvasStyleData,
+    canvasViewInfo.value[item.id],
+    item,
+    opt,
+    { scale: scale.value }
+  )
 }
 </script>
 
@@ -65,12 +84,16 @@ const customGroupStyle = item => {
         :config="item"
         :index="index"
         :dv-info="dvInfo"
+        :canvas-view-info="canvasViewInfo"
         :style="customGroupStyle(item)"
         :show-position="showPosition"
         :search-count="searchCount"
         :scale="scale"
+        :font-family="fontFamily"
+        @userViewEnlargeOpen="userViewEnlargeOpen($event, item)"
       />
     </div>
+    <user-view-enlarge ref="userViewEnlargeRef"></user-view-enlarge>
   </div>
 </template>
 

@@ -2,18 +2,24 @@ import { defineStore, storeToRefs } from 'pinia'
 import { store } from '../../index'
 import { dvMainStoreWithOut } from './dvMain'
 import { deepCopy } from '@/utils/utils'
-import { BASE_THEMES } from '@/views/chart/components/editor/util/dataVisualiztion'
+import { BASE_THEMES } from '@/views/chart/components/editor/util/dataVisualization'
 import eventBus from '@/utils/eventBus'
 import { useEmitt } from '@/hooks/web/useEmitt'
+import { useCache } from '@/hooks/web/useCache'
+const { wsCache } = useCache('localStorage')
 
 const dvMainStore = dvMainStoreWithOut()
 const {
+  dvInfo,
   curComponent,
   componentData,
   canvasStyleData,
   canvasViewInfo,
   curOriginThemes,
-  dataPrepareState
+  dataPrepareState,
+  nowPanelTrackInfo,
+  nowPanelJumpInfo,
+  mobileInPc
 } = storeToRefs(dvMainStore)
 
 let defaultCanvasInfo = {
@@ -30,6 +36,7 @@ let defaultCanvasInfo = {
 export const snapshotStore = defineStore('snapshot', {
   state: () => {
     return {
+      snapshotDisableTime: 1, // 镜像禁用时间，解决redo undo 造成的样式变更
       styleChangeTimes: -1, // 组件样式修改次数
       cacheStyleChangeTimes: 0, // 仪表板未缓存的组件样式修改次数
       snapshotCacheTimes: 0, // 当前未计入镜像中的修改变动次数, 此为定时缓存，缓存间隔时间5秒一次 针对类型样式这种变动不大的修改
@@ -42,11 +49,36 @@ export const snapshotStore = defineStore('snapshot', {
     }
   },
   actions: {
+    initSnapShot() {
+      this.styleChangeTimes = -1
+      this.cacheStyleChangeTimes = 0
+      this.snapshotCacheTimes = 0
+      this.cacheViewIdInfo = {
+        snapshotCacheViewCalc: [],
+        snapshotCacheViewRender: []
+      }
+      this.snapshotData = []
+      this.snapshotIndex = -1
+    },
     //定时检查变动次数 存在变动次数则进行镜像处理
     snapshotCatchToStore() {
       if (this.snapshotCacheTimes) {
         this.recordSnapshot('snapshotCatchToStore')
       }
+    },
+    recordSnapshotCacheToMobile(type, component = curComponent.value, otherComponent = null) {
+      if (mobileInPc.value && component) {
+        //移动端设计
+        useEmitt().emitter.emit('onMobileStatusChange', {
+          type: 'componentStyleChange',
+          value: {
+            type: type,
+            component: JSON.parse(JSON.stringify(component)),
+            otherComponent: otherComponent
+          }
+        })
+      }
+      this.recordSnapshotCache(type)
     },
     recordSnapshotCache(type?, viewId = 'all') {
       if (dataPrepareState.value) {
@@ -63,9 +95,14 @@ export const snapshotStore = defineStore('snapshot', {
         this.snapshotIndex--
         const componentSnapshot =
           deepCopy(this.snapshotData[this.snapshotIndex]) || getDefaultCanvasInfo()
+        componentSnapshot.dvInfo.id = dvInfo.value.id
+        componentSnapshot.dvInfo.pid = dvInfo.value.pid
+        componentSnapshot.dvInfo.dataState = dvInfo.value.dataState
+        componentSnapshot.dvInfo.contentId = dvInfo.value.contentId
         // undo 是当前没有记录
         this.snapshotPublish(componentSnapshot)
         this.styleChangeTimes++
+        this.snapshotDisableTime = Date.now() + 3000
       }
     },
 
@@ -73,14 +110,21 @@ export const snapshotStore = defineStore('snapshot', {
       if (this.snapshotIndex < this.snapshotData.length - 1) {
         this.snapshotIndex++
         const snapshotInfo = deepCopy(this.snapshotData[this.snapshotIndex])
+        snapshotInfo.dvInfo.id = dvInfo.value.id
+        snapshotInfo.dvInfo.pid = dvInfo.value.pid
+        snapshotInfo.dvInfo.dataState = dvInfo.value.dataState
+        snapshotInfo.dvInfo.contentId = dvInfo.value.contentId
         this.snapshotPublish(snapshotInfo)
-        this.styleChangeTimes++
+        this.snapshotDisableTime = Date.now() + 3000
       }
     },
     snapshotPublish(snapshotInfo) {
+      dvMainStore.updateCurDvInfo(snapshotInfo.dvInfo)
       dvMainStore.setComponentData(snapshotInfo.componentData)
       dvMainStore.setCanvasStyle(snapshotInfo.canvasStyleData)
       dvMainStore.setCanvasViewInfo(snapshotInfo.canvasViewInfo)
+      dvMainStore.setNowPanelJumpInfoInner(snapshotInfo.nowPanelJumpInfo)
+      dvMainStore.setNowPanelTrackInfo(snapshotInfo.nowPanelTrackInfo)
       const curCacheViewIdInfo = deepCopy(this.cacheViewIdInfo)
       this.cacheViewIdInfo = snapshotInfo.cacheViewIdInfo
 
@@ -129,17 +173,36 @@ export const snapshotStore = defineStore('snapshot', {
 
     resetStyleChangeTimes() {
       this.styleChangeTimes = 0
+      this.snapshotCacheTimes = 0
+    },
+    resetSnapshot() {
+      this.styleChangeTimes = -1
+      this.cacheStyleChangeTimes = 0
+      this.snapshotCacheTimes = 0
+      this.cacheViewIdInfo = {
+        snapshotCacheViewCalc: [],
+        snapshotCacheViewRender: []
+      }
+      this.snapshotData = []
+      this.snapshotIndex = -1
+      this.recordSnapshot()
     },
 
-    recordSnapshot() {
-      this.styleChangeTimes = ++this.styleChangeTimes
-      if (dataPrepareState.value) {
+    recordSnapshot(type) {
+      // 移动端设计时暂不保存镜像
+      if (dataPrepareState.value && !mobileInPc.value && Date.now() > this.snapshotDisableTime) {
+        this.styleChangeTimes = ++this.styleChangeTimes
+        const snapshotComponentData = deepCopy(componentData.value)
+        dvMainStore.removeGroupArea(snapshotComponentData)
         // 添加新的快照
         const newSnapshot = {
-          componentData: deepCopy(componentData.value),
+          componentData: snapshotComponentData,
           canvasStyleData: deepCopy(canvasStyleData.value),
           canvasViewInfo: deepCopy(canvasViewInfo.value),
-          cacheViewIdInfo: deepCopy(this.cacheViewIdInfo)
+          cacheViewIdInfo: deepCopy(this.cacheViewIdInfo),
+          nowPanelTrackInfo: deepCopy(nowPanelTrackInfo.value),
+          nowPanelJumpInfo: deepCopy(nowPanelJumpInfo.value),
+          dvInfo: deepCopy(dvInfo.value)
         }
         this.snapshotData[++this.snapshotIndex] = newSnapshot
         // 在 undo 过程中，添加新的快照时，要将它后面的快照清理掉
@@ -148,6 +211,9 @@ export const snapshotStore = defineStore('snapshot', {
         }
         // 清理缓存计数器
         this.snapshotCacheTimes = 0
+        if (this.snapshotData.length > 1) {
+          wsCache.set('DE-DV-CATCH-' + dvInfo.value.id, newSnapshot)
+        }
       }
     }
   }

@@ -1,5 +1,6 @@
 package io.dataease.api.ds.vo;
 
+import io.dataease.extensions.datasource.dto.TableField;
 import lombok.Data;
 
 import java.util.List;
@@ -20,5 +21,6 @@ public class ExcelSheetData {
     private String sheetId;
     private String sheetExcelId;
     private List<Map<String, Object>> jsonArray;
+    private boolean newSheet;
 
 }

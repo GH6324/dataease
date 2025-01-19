@@ -11,6 +11,9 @@ import {
 } from '@/custom-component/component-list'
 import { createGroupStyle, getComponentRotatedStyle } from '@/utils/style'
 import eventBus from '@/utils/eventBus'
+import { canvasIdMapCheck, checkJoinGroup, isTabCanvas } from '@/utils/canvasUtils'
+import { useI18n } from '@/hooks/web/useI18n'
+const { t } = useI18n()
 
 const dvMainStore = dvMainStoreWithOut()
 const { curComponent, componentData, curOriginThemes } = storeToRefs(dvMainStore)
@@ -30,6 +33,7 @@ export const composeStore = defineStore('compose', {
       },
       editorMap: {},
       isCtrlOrCmdDown: false,
+      isSpaceDown: false,
       isShiftDown: false,
       laterIndex: null, //最后点击组件的索引
       editor: null
@@ -43,6 +47,9 @@ export const composeStore = defineStore('compose', {
     setLaterIndex(value) {
       this.laterIndex = value
     },
+    setSpaceDownStatus(value) {
+      this.isSpaceDown = value
+    },
     setIsCtrlOrCmdDownStatus(value) {
       this.isCtrlOrCmdDown = value
     },
@@ -52,8 +59,39 @@ export const composeStore = defineStore('compose', {
     setAreaData(data) {
       this.areaData = data
     },
-    updateGroupBorder() {
-      // do updateGroupBorder
+    updateGroupBorder(canvasId) {
+      if (canvasId) {
+        // 1.查找所属分组
+        const groupId = canvasId.replace('Group-', '')
+        const sourceGroupComponent = componentData.value.filter(ele => ele.id === groupId)[0]
+        const sourceSubComponents = sourceGroupComponent.propValue
+        // 2. 还原分组内部组件再主画布位置
+        const sourceParentStyle = { ...sourceGroupComponent.style }
+        sourceSubComponents.forEach(subcomponent => {
+          decomposeComponent(subcomponent, null, sourceParentStyle)
+        })
+        const newAreaData = {
+          // 选中区域包含的组件以及区域位移信息
+          style: {
+            top: 0,
+            left: 0,
+            width: 0,
+            height: 0
+          },
+          components: sourceSubComponents
+        }
+        // 3.重新计算分组区域边界
+        this.calcComposeArea(newAreaData)
+        sourceGroupComponent.style = {
+          ...sourceGroupComponent.style,
+          ...newAreaData.style
+        }
+        sourceSubComponents.forEach(component => {
+          component.canvasId = canvasId
+        })
+        // 4.计算内部子组件位置
+        createGroupStyle(sourceGroupComponent)
+      }
     },
 
     alignment: function (params) {
@@ -104,16 +142,14 @@ export const composeStore = defineStore('compose', {
         areaData.components = []
         return
       }
-      if (areaData.components.length > 0 && areaData.style.width === 0) {
+      if (areaData.components.length > 0) {
         // 计算组合区域
         this.calcComposeArea()
       }
 
       const components = []
       areaData.components.forEach(component => {
-        if (component.component != 'Group') {
-          components.push(component)
-        } else {
+        if (['Group'].includes(component.component)) {
           // 如果要组合的组件中，已经存在组合数据，则需要提前拆分
           const parentStyle = { ...component.style }
           const subComponents = component.propValue
@@ -124,6 +160,10 @@ export const composeStore = defineStore('compose', {
           })
 
           components.push(...component.propValue)
+        } else if (['GroupArea'].includes(component.component)) {
+          // do nothing GroupAreas组合视阔区 DeTabs 均不加入分组中
+        } else if (checkJoinGroup(component)) {
+          components.push(component)
         }
       })
 
@@ -131,16 +171,16 @@ export const composeStore = defineStore('compose', {
       components.forEach(component => {
         component.canvasId = 'Group-' + newId
       })
-      const groupComponent = {
+      const groupComponent = deepCopy({
         id: newId,
         component: 'Group',
         canvasActive: false,
-        name: '组合',
-        label: '组合',
+        name: t('visualization.view_group'),
+        label: t('visualization.view_group'),
         icon: 'group',
-        expand: false,
+        expand: true,
         commonBackground: {
-          ...deepCopy(COMMON_COMPONENT_BACKGROUND_MAP[curOriginThemes.value]),
+          ...COMMON_COMPONENT_BACKGROUND_MAP[curOriginThemes.value],
           backgroundColorSelect: false,
           innerPadding: 0
         },
@@ -150,7 +190,7 @@ export const composeStore = defineStore('compose', {
           ...areaData.style
         },
         propValue: components
-      }
+      })
 
       createGroupStyle(groupComponent)
       dvMainStore.addComponent({
@@ -171,28 +211,51 @@ export const composeStore = defineStore('compose', {
     // 将已经放到 Group 组件数据删除，也就是在 componentData 中删除，因为它们已经从 componentData 挪到 Group 组件中了
     batchDeleteComponent(deleteData) {
       deleteData.forEach(component => {
-        for (let i = 0, len = componentData.value.length; i < len; i++) {
-          if (component.id == componentData.value[i].id) {
-            componentData.value.splice(i, 1)
-            break
+        if (!['GroupArea'].includes(component.component)) {
+          for (let i = 0, len = componentData.value.length; i < len; i++) {
+            if (component.id == componentData.value[i].id) {
+              componentData.value.splice(i, 1)
+              break
+            }
           }
         }
       })
     },
 
-    decompose(canvasId = 'canvas-main') {
+    decompose() {
+      const canvasId = curComponent.value.canvasId
       const editor = this.editorMap[canvasId]
       const parentStyle = { ...curComponent.value.style }
       const components = curComponent.value.propValue
       const editorRect = editor.getBoundingClientRect()
-      dvMainStore.deleteComponentById(curComponent.value.id)
+      const isInTab = isTabCanvas(canvasId)
+      let decomposeComponentData = componentData.value
+      if (isInTab) {
+        const pathMap = {}
+        componentData.value.forEach(componentItem => {
+          canvasIdMapCheck(componentItem, null, pathMap)
+        })
+        const pComponent = pathMap[curComponent.value.id]
+        const pComponentTarget = pComponent.propValue.filter(
+          item => canvasId.indexOf(item.name) > -1
+        )
+        if (pComponentTarget && pComponentTarget.length > 0) {
+          decomposeComponentData = pComponentTarget[0].componentData
+        }
+      }
+      dvMainStore.deleteComponentById(curComponent.value.id, decomposeComponentData)
       components.forEach(component => {
-        decomposeComponent(component, editorRect, parentStyle)
-        dvMainStore.addComponent({ component: component, index: undefined, isFromGroup: true })
+        decomposeComponent(component, editorRect, parentStyle, canvasId)
+        dvMainStore.addComponent({
+          component: component,
+          index: undefined,
+          isFromGroup: true,
+          componentData: decomposeComponentData
+        })
       })
     },
-    calcComposeArea() {
-      if (this.areaData.components <= 1) {
+    calcComposeArea(areaDataValue = this.areaData) {
+      if (areaDataValue.components <= 1) {
         return
       }
       // 根据选中区域和区域中每个组件的位移信息来创建 Group 组件
@@ -201,7 +264,7 @@ export const composeStore = defineStore('compose', {
         left = Infinity
       let right = -Infinity,
         bottom = -Infinity
-      this.areaData.components.forEach(component => {
+      areaDataValue.components.forEach(component => {
         let style = { left: 0, top: 0, right: 0, bottom: 0 }
         style = getComponentRotatedStyle(component.style)
 
@@ -212,7 +275,7 @@ export const composeStore = defineStore('compose', {
       })
 
       // 设置选中区域位移大小信息和区域内的组件数据
-      this.areaData.style = {
+      areaDataValue.style = {
         left,
         top,
         width: right - left,

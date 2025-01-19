@@ -6,6 +6,8 @@ import org.apache.calcite.config.Lex;
 import org.apache.calcite.sql.*;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
@@ -15,8 +17,11 @@ import static org.apache.calcite.sql.SqlKind.*;
  * @Author Junjun
  */
 public class SqlUtils {
+    public static Logger logger = LoggerFactory.getLogger(SqlUtils.class);
+
     public static String addSchema(String sql, String schema) {
-        if (sql.trim().endsWith(";")) {
+        sql = sql.trim();
+        if (sql.endsWith(";")) {
             sql = sql.substring(0, sql.length() - 1);
         }
 
@@ -38,7 +43,7 @@ public class SqlUtils {
         String sqlRender = sqlNode.toString();
         // 处理sql中多余的`都替换成1个
         sqlRender = sqlRender.replaceAll("(`+)", "`");
-        return sqlRender;
+        return sqlRender.replaceAll("`", "");
     }
 
     private static void addTableSchema(SqlNode sqlNode, Boolean fromOrJoin, String schema, SqlParser.Config config) {
@@ -107,4 +112,5 @@ public class SqlUtils {
             DEException.throwException("使用 Calcite 进行语法分析发生了异常:" + e);
         }
     }
+
 }

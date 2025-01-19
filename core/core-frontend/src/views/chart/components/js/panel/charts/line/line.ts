@@ -2,19 +2,33 @@ import {
   G2PlotChartView,
   G2PlotDrawOptions
 } from '@/views/chart/components/js/panel/types/impl/g2plot'
-import { Line as G2Line, LineOptions } from '@antv/g2plot/esm/plots/line'
-import { getPadding } from '../../common/common_antv'
-import { flow, hexColorToRGBA, parseJson } from '@/views/chart/components/js/util'
-import { cloneDeep, isEmpty } from 'lodash-es'
+import type { Line as G2Line, LineOptions } from '@antv/g2plot/esm/plots/line'
+import {
+  configPlotTooltipEvent,
+  getPadding,
+  getTooltipContainer,
+  TOOLTIP_TPL
+} from '../../common/common_antv'
+import {
+  flow,
+  getLineConditions,
+  getLineLabelColorByCondition,
+  hexColorToRGBA,
+  parseJson,
+  setUpGroupSeriesColor
+} from '@/views/chart/components/js/util'
+import { cloneDeep, defaults, isEmpty } from 'lodash-es'
 import { valueFormatter } from '@/views/chart/components/js/formatter'
 import {
   LINE_AXIS_TYPE,
   LINE_EDITOR_PROPERTY,
   LINE_EDITOR_PROPERTY_INNER
 } from '@/views/chart/components/js/panel/charts/line/common'
-import { Datum } from '@antv/g2plot/esm/types/common'
+import type { Datum } from '@antv/g2plot/esm/types/common'
 import { useI18n } from '@/hooks/web/useI18n'
-import { DEFAULT_LABEL } from '@/views/chart/components/editor/util/chart'
+import { DEFAULT_LABEL, DEFAULT_LEGEND_STYLE } from '@/views/chart/components/editor/util/chart'
+import { clearExtremum, extremumEvt } from '@/views/chart/components/js/extremumUitl'
+import { Group } from '@antv/g-canvas'
 
 const { t } = useI18n()
 const DEFAULT_DATA = []
@@ -25,7 +39,8 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
   properties = LINE_EDITOR_PROPERTY
   propertyInner = {
     ...LINE_EDITOR_PROPERTY_INNER,
-    'label-selector': ['seriesLabelFormatter'],
+    'basic-style-selector': [...LINE_EDITOR_PROPERTY_INNER['basic-style-selector'], 'seriesColor'],
+    'label-selector': ['seriesLabelVPosition', 'seriesLabelFormatter', 'showExtremum'],
     'tooltip-selector': [
       ...LINE_EDITOR_PROPERTY_INNER['tooltip-selector'],
       'seriesTooltipFormatter'
@@ -34,14 +49,26 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
   axis: AxisType[] = [...LINE_AXIS_TYPE, 'xAxisExt']
   axisConfig = {
     ...this['axisConfig'],
+    xAxis: {
+      name: `${t('chart.drag_block_type_axis')} / ${t('chart.dimension')}`,
+      type: 'd'
+    },
+    xAxisExt: {
+      name: `${t('chart.chart_group')} / ${t('chart.dimension')}`,
+      type: 'd',
+      limit: 1,
+      allowEmpty: true
+    },
     yAxis: {
       name: `${t('chart.drag_block_value_axis')} / ${t('chart.quota')}`,
       type: 'q'
     }
   }
-  drawChart(drawOptions: G2PlotDrawOptions<G2Line>): G2Line {
+  async drawChart(drawOptions: G2PlotDrawOptions<G2Line>): Promise<G2Line> {
     const { chart, action, container } = drawOptions
-    if (!chart.data.data?.length) {
+    if (!chart.data?.data?.length) {
+      chart.container = container
+      clearExtremum(chart)
       return
     }
     const data = cloneDeep(chart.data.data)
@@ -81,13 +108,6 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
           }
         },
         {
-          type: 'tooltip',
-          cfg: {
-            start: [{ trigger: 'point:mousemove', action: 'tooltip:show' }],
-            end: [{ trigger: 'point:mouseleave', action: 'tooltip:hide' }]
-          }
-        },
-        {
           type: 'active-region',
           cfg: {
             start: [{ trigger: 'element:mousemove', action: 'active-region:show' }],
@@ -97,11 +117,13 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
       ]
     }
     const options = this.setupOptions(chart, initOptions)
+    const { Line: G2Line } = await import('@antv/g2plot/esm/plots/line')
     // 开始渲染
     const newChart = new G2Line(container, options)
 
     newChart.on('point:click', action)
-
+    extremumEvt(newChart, chart, options, container)
+    configPlotTooltipEvent(chart, newChart)
     return newChart
   }
 
@@ -113,7 +135,8 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
         label: false
       }
     }
-    const labelAttr = parseJson(chart.customAttr).label
+    const { label: labelAttr, basicStyle } = parseJson(chart.customAttr)
+    const conditions = getLineConditions(chart)
     const formatterMap = labelAttr.seriesLabelFormatter?.reduce((pre, next) => {
       pre[next.id] = next
       return pre
@@ -122,8 +145,11 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
     const label = {
       fields: [],
       ...tmpOptions.label,
-      offsetY: -8,
-      formatter: (data: Datum) => {
+      layout: labelAttr.fullDisplay ? [{ type: 'limit-in-plot' }] : tmpOptions.label.layout,
+      formatter: (data: Datum, _point) => {
+        if (data.EXTREME) {
+          return ''
+        }
         if (!labelAttr.seriesLabelFormatter?.length) {
           return data.value
         }
@@ -134,18 +160,26 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
         if (!labelCfg.show) {
           return
         }
+        const position =
+          labelCfg.position === 'top'
+            ? -2 - basicStyle.lineSymbolSize
+            : 10 + basicStyle.lineSymbolSize
         const value = valueFormatter(data.value, labelCfg.formatterCfg)
-        const group = new G2PlotChartView.engine.Group({})
+        const color =
+          getLineLabelColorByCondition(conditions, data.value, data.quotaList[0].id) ||
+          labelCfg.color
+        const group = new Group({})
         group.addShape({
           type: 'text',
           attrs: {
             x: 0,
-            y: 0,
+            y: position,
             text: value,
             textAlign: 'start',
             textBaseline: 'top',
             fontSize: labelCfg.fontSize,
-            fill: labelCfg.color
+            fontFamily: chart.fontFamily,
+            fill: color
           }
         })
         return group
@@ -262,17 +296,68 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
           }
         })
         return result
-      }
+      },
+      container: getTooltipContainer(`tooltip-${chart.id}`),
+      itemTpl: TOOLTIP_TPL,
+      enterable: true
     }
     return {
       ...options,
       tooltip
     }
   }
+  public setupSeriesColor(chart: ChartObj, data?: any[]): ChartBasicStyle['seriesColor'] {
+    return setUpGroupSeriesColor(chart, data)
+  }
+  protected configLegend(chart: Chart, options: LineOptions): LineOptions {
+    const optionTmp = super.configLegend(chart, options)
+    if (!optionTmp.legend) {
+      return optionTmp
+    }
+    const xAxisExt = chart.xAxisExt[0]
+    if (xAxisExt?.customSort?.length > 0) {
+      // 图例自定义排序
+      const sort = xAxisExt.customSort ?? []
+      if (sort?.length) {
+        // 用值域限定排序，有可能出现新数据但是未出现在图表上，所以这边要遍历一下子维度，加到后面，让新数据显示出来
+        const data = optionTmp.data
+        data?.forEach(d => {
+          const cat = d['category']
+          if (cat && !sort.includes(cat)) {
+            sort.push(cat)
+          }
+        })
+        optionTmp.meta = {
+          ...optionTmp.meta,
+          category: {
+            type: 'cat',
+            values: sort
+          }
+        }
+      }
+    }
 
+    const customStyle = parseJson(chart.customStyle)
+    let size
+    if (customStyle && customStyle.legend) {
+      size = defaults(JSON.parse(JSON.stringify(customStyle.legend)), DEFAULT_LEGEND_STYLE).size
+    } else {
+      size = DEFAULT_LEGEND_STYLE.size
+    }
+
+    optionTmp.legend.marker.style = style => {
+      return {
+        r: size,
+        fill: style.stroke
+      }
+    }
+    return optionTmp
+  }
   protected setupOptions(chart: Chart, options: LineOptions): LineOptions {
     return flow(
       this.configTheme,
+      this.configEmptyDataStrategy,
+      this.configGroupColor,
       this.configLabel,
       this.configTooltip,
       this.configBasicStyle,
@@ -282,7 +367,7 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
       this.configYAxis,
       this.configSlider,
       this.configAnalyse,
-      this.configEmptyDataStrategy
+      this.configConditions
     )(chart, options)
   }
 

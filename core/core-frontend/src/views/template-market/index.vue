@@ -11,27 +11,27 @@
       :create-auth="createAuth"
       @closePreview="closePreview"
       @templateApply="templateApply"
-    ></market-preview-v2>
+    />
     <el-row v-if="previewModel === 'createPreview'" class="main-container">
       <el-row class="market-head">
         <el-icon class="custom-back-icon hover-icon" @click="previewModel = 'full'"
           ><ArrowLeft
         /></el-icon>
-        <span>{{ state.curTemplate.title }}1 </span>
+        <span>{{ state.curTemplate.title }} </span>
         <el-row class="head-right">
           <el-button
             secondary
             :disabled="state.curTemplateIndex === 0"
             style="float: right"
             @click="preOne"
-            >上一个</el-button
+            >{{ t('work_branch.last') }}</el-button
           >
           <el-button
             :disabled="state.curTemplateIndex === state.curTemplateShowFilter.length - 1"
             style="float: right"
             secondary
             @click="nextOne"
-            >下一个</el-button
+            >{{ t('work_branch.next') }}</el-button
           >
           <el-button
             style="float: right"
@@ -40,7 +40,7 @@
             >{{ t('visualization.apply_this_template') }}</el-button
           >
           <el-divider class="custom-divider-line" direction="vertical" />
-          <el-icon class="custom-market-icon hover-icon" @click="close"><Close /></el-icon>
+          <el-icon class="custom-market-icon hover-icon_custom" @click="close"><Close /></el-icon>
         </el-row>
       </el-row>
       <el-row class="template-area">
@@ -81,9 +81,17 @@
               :value="item.value"
             />
           </el-select>
+          <el-select class="title-type" v-model="state.templateClassifyType" placeholder="Select">
+            <el-option
+              v-for="item in state.templateClassifyOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
           <template v-if="['branchCreate', 'create'].includes(state.curPosition)">
             <el-divider class="custom-divider-line" direction="vertical" />
-            <el-icon class="custom-market-icon hover-icon" @click="close"><Close /></el-icon>
+            <el-icon class="custom-market-icon hover-icon_custom" @click="close"><Close /></el-icon>
           </template>
         </el-row>
       </el-row>
@@ -101,37 +109,25 @@
             highlight-current
             :current-node-key="state.marketActiveTab"
             @node-click="nodeClick"
-          />
+          >
+            <template #default="{ data }">
+              <span :title="data.label" class="ed-tree-node__label">{{ data.label }}</span>
+            </template>
+          </el-tree>
         </div>
         <div
           v-show="state.networkStatus && state.hasResult"
           id="template-show-area"
           class="template-right"
         >
-          <el-row v-show="state.marketActiveTab !== '推荐'">
-            <category-template-v2
-              :search-text="state.searchText"
-              :label="state.marketActiveTab"
-              :full-template-show-list="state.currentMarketTemplateShowList"
-              :template-span="state.templateSpan"
-              :base-url="state.baseUrl"
-              :template-cur-width="state.templateCurWidth"
-              :cur-position="state.curPosition"
-              :create-auth="createAuth"
-              @templateApply="templateApply"
-              @templatePreview="templatePreview"
-            ></category-template-v2>
-          </el-row>
-          <el-row v-show="state.marketActiveTab === '推荐'">
-            <el-row
-              style="display: inline; width: 100%; margin-bottom: 16px"
-              v-for="(categoryItem, index) in categoriesComputed"
-              :key="index"
-            >
+          <el-row v-if="state.marketActiveTab === null"
+            ><TemplateSkeleton :width="state.templateCurWidth"
+          /></el-row>
+          <template v-else>
+            <el-row v-show="state.marketActiveTab !== t('work_branch.recommend')">
               <category-template-v2
-                v-if="categoryItem.label !== '最近使用'"
                 :search-text="state.searchText"
-                :label="categoryItem.label"
+                :label="state.marketActiveTab"
                 :full-template-show-list="state.currentMarketTemplateShowList"
                 :template-span="state.templateSpan"
                 :base-url="state.baseUrl"
@@ -140,15 +136,38 @@
                 :create-auth="createAuth"
                 @templateApply="templateApply"
                 @templatePreview="templatePreview"
-              ></category-template-v2>
+              />
             </el-row>
-          </el-row>
+            <el-row v-show="state.marketActiveTab === t('work_branch.recommend')">
+              <el-row
+                style="display: inline; width: 100%; margin-bottom: 32px"
+                v-for="(categoryItem, index) in categoriesComputed"
+                :key="index"
+              >
+                <category-template-v2
+                  v-if="categoryItem.label !== t('work_branch.recent')"
+                  :search-text="state.searchText"
+                  :label="categoryItem.label"
+                  :full-template-show-list="state.currentMarketTemplateShowList"
+                  :template-span="state.templateSpan"
+                  :base-url="state.baseUrl"
+                  :template-cur-width="state.templateCurWidth"
+                  :cur-position="state.curPosition"
+                  :create-auth="createAuth"
+                  @templateApply="templateApply"
+                  @templatePreview="templatePreview"
+                />
+              </el-row>
+            </el-row>
+          </template>
         </div>
         <el-row v-show="state.networkStatus && !state.hasResult" class="template-empty">
           <div style="text-align: center">
-            <Icon name="no_result" style="margin-bottom: 16px; font-size: 75px"></Icon>
+            <Icon name="no_result"
+              ><no_result style="margin-bottom: 16px; font-size: 75px" class="svg-icon"
+            /></Icon>
             <br />
-            <span>没有找到相关模板</span>
+            <span>{{ t('work_branch.relevant_templates_found') }}</span>
           </div>
         </el-row>
         <el-row v-show="!state.networkStatus" class="template-empty">
@@ -157,23 +176,31 @@
       </el-row>
     </el-row>
   </el-row>
+  <XpackComponent ref="openHandler" jsname="L2NvbXBvbmVudC9lbWJlZGRlZC1pZnJhbWUvT3BlbkhhbmRsZXI=" />
 </template>
 
 <script setup lang="ts">
+import no_result from '@/assets/svg/no_result.svg'
 import { searchMarket } from '@/api/templateMarket'
+import { useEmbedded } from '@/store/modules/embedded'
+import { useAppStoreWithOut } from '@/store/modules/app'
 import elementResizeDetectorMaker from 'element-resize-detector'
 import { nextTick, reactive, watch, onMounted, ref, computed } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { ElMessage } from 'element-plus-secondary'
-import { decompression } from '@/api/visualization/dataVisualization'
 import { useCache } from '@/hooks/web/useCache'
 import MarketPreviewV2 from '@/views/template-market/component/MarketPreviewV2.vue'
 import { imgUrlTrans } from '@/utils/imgUtils'
 import CategoryTemplateV2 from '@/views/template-market/component/CategoryTemplateV2.vue'
+import TemplateSkeleton from '@/views/template-market/component/TemplateSkeleton.vue'
 import { interactiveStoreWithOut } from '@/store/modules/interactive'
+import { XpackComponent } from '@/components/plugin'
+import { useEmitt } from '@/hooks/web/useEmitt'
+import { Base64 } from 'js-base64'
 const { t } = useI18n()
 const { wsCache } = useCache()
-
+const embeddedStore = useEmbedded()
+const appStore = useAppStoreWithOut()
 const interactiveStore = interactiveStoreWithOut()
 
 // full 正常展示 marketPreview 模板中心预览 createPreview 创建界面预览
@@ -184,8 +211,12 @@ const close = () => {
   emits('close')
 }
 
-const title = computed(() => (state.curPosition === 'branch' ? '模板中心' : '使用模板新建'))
-
+const title = computed(() =>
+  state.curPosition === 'branch'
+    ? t('work_branch.template_center')
+    : t('work_branch.new_using_template')
+)
+const isEmbedded = computed(() => appStore.getIsDataEaseBi || appStore.getIsIframe)
 const state = reactive({
   initReady: true,
   curPosition: 'branch',
@@ -194,35 +225,50 @@ const state = reactive({
     value: 'label',
     label: 'label'
   },
-  templateType: 'all',
-  templateSourceType: 'all',
+  templateType: 'all', // 模板类型 仪表板 数据大屏
+  templateSourceType: 'all', // 模板来源 模板市场 模板管理
+  templateClassifyType: 'all', // 模板分类 样式模板 应用模板
   treeShow: true,
+  templateClassifyOptions: [
+    {
+      value: 'all',
+      label: t('visualization.all_type')
+    },
+    {
+      value: 'app',
+      label: t('visualization.apply_template')
+    },
+    {
+      value: 'template',
+      label: t('visualization.style_template')
+    }
+  ],
   templateSourceOptions: [
     {
       value: 'all',
-      label: '全部来源'
+      label: t('work_branch.all_source')
     },
     {
       value: 'market',
-      label: '模板市场'
+      label: t('visualization.template_market')
     },
     {
       value: 'manage',
-      label: '模板管理'
+      label: t('template_manage.name')
     }
   ],
   templateTypeOptions: [
     {
       value: 'all',
-      label: '全部类型'
+      label: t('work_branch.all_types')
     },
     {
       value: 'PANEL',
-      label: '仪表板'
+      label: t('work_branch.dashboard')
     },
     {
       value: 'SCREEN',
-      label: '大屏'
+      label: t('work_branch.big_data_screen')
     }
   ],
   loading: false,
@@ -277,8 +323,8 @@ const state = reactive({
 const createAuth = computed(() => {
   const authMap = interactiveStore.getData
   return {
-    PANEL: authMap['0'].menuAuth && authMap['0'].anyManage,
-    SCREEN: authMap['1'].menuAuth && authMap['1'].anyManage
+    PANEL: authMap['0']?.menuAuth && authMap['0']?.anyManage,
+    SCREEN: authMap['1']?.menuAuth && authMap['1']?.anyManage
   }
 })
 
@@ -344,6 +390,17 @@ watch(
     })
   }
 )
+watch(
+  () => state.templateClassifyType,
+  () => {
+    state.treeShow = false
+    initTemplateShow()
+    nextTick(() => {
+      state.treeShow = true
+      initStyle()
+    })
+  }
+)
 
 const nodeClick = data => {
   state.marketActiveTab = data.label
@@ -397,6 +454,7 @@ const nextOne = () => {
 const templateApply = template => {
   state.curApplyTemplate = template
   state.dvCreateForm.name = template.title
+  state.dvCreateForm.nodeType = template.templateType
   if (template.source === 'market') {
     state.dvCreateForm.newFrom = 'new_market_template'
     state.dvCreateForm.templateUrl = template.metas.theme_repo
@@ -405,36 +463,65 @@ const templateApply = template => {
     state.dvCreateForm.newFrom = 'new_inner_template'
     state.dvCreateForm.templateId = template.id
   }
-  apply()
+  apply(template)
 }
 
-const apply = () => {
+const apply = template => {
   if (state.dvCreateForm.newFrom === 'new_market_template' && !state.dvCreateForm.templateUrl) {
-    ElMessage.warning('未获取模板下载链接请联系模板市场官方')
+    ElMessage.warning(t('template_manage.get_download_link_hint'))
     return false
   }
-  state.loading = true
-  decompression(state.dvCreateForm)
-    .then(response => {
-      state.curApplyTemplate.recentUseTime = Date.now()
-      state.curApplyTemplate.categoryNames.push('最近使用')
-      state.loading = false
-      const templateData = response.data
-      // do create
-      wsCache.set(`de-template-data`, JSON.stringify(templateData))
-      const baseUrl =
-        templateData.type === 'dataV'
-          ? '#/dvCanvas?opt=create&createType=template'
-          : '#/dashboard?opt=create&createType=template'
-      if (state.pid) {
-        window.open(baseUrl + `&pid=${state.pid}`, '_blank')
-      } else {
-        window.open(baseUrl, '_blank')
-      }
-    })
-    .catch(() => {
-      state.loading = false
-    })
+  const templateTemplate = {
+    newFrom: state.dvCreateForm.newFrom,
+    templateUrl: state.dvCreateForm.templateUrl,
+    resourceName: state.dvCreateForm.resourceName,
+    templateId: state.dvCreateForm.templateId
+  }
+  state.curApplyTemplate.recentUseTime = Date.now()
+  state.curApplyTemplate.categoryNames.push(t('work_branch.recent'))
+  const baseUrl =
+    (['dataV', 'SCREEN'].includes(state.dvCreateForm.nodeType)
+      ? '#/dvCanvas?opt=create&createType=template'
+      : '#/dashboard?opt=create&createType=template') +
+    '&templateParams=' +
+    encodeURIComponent(Base64.encode(JSON.stringify(templateTemplate)))
+  let newWindow = null
+  if (isEmbedded.value) {
+    embeddedStore.clearState()
+    embeddedStore.setCreateType('template')
+    embeddedStore.setTemplateParams(
+      encodeURIComponent(Base64.encode(JSON.stringify(templateTemplate)))
+    )
+    embeddedStore.setOpt('create')
+
+    if (state.pid) {
+      embeddedStore.setPid(state.pid)
+    }
+    useEmitt().emitter.emit(
+      'changeCurrentComponent',
+      ['dataV', 'SCREEN'].includes(state.dvCreateForm.nodeType)
+        ? 'VisualizationEditor'
+        : 'DashboardEditor'
+    )
+    return
+  }
+  const openType = wsCache.get('open-backend') === '1' ? '_self' : '_blank'
+  if (state.pid) {
+    newWindow = window.open(baseUrl + `&pid=${state.pid}`, openType)
+  } else {
+    newWindow = window.open(baseUrl, openType)
+  }
+  initOpenHandler(newWindow)
+}
+const openHandler = ref(null)
+const initOpenHandler = newWindow => {
+  if (openHandler?.value) {
+    const pm = {
+      methodName: 'initOpenHandler',
+      args: newWindow
+    }
+    openHandler.value.invokeMethod(pm)
+  }
 }
 
 const initTemplateShow = () => {
@@ -454,6 +541,7 @@ const templateShow = templateItem => {
   let searchMarch = false
   let templateTypeMarch = false
   let templateSourceTypeMarch = false
+  let templateClassifyTypeMarch = false
   if (!state.searchText || templateItem.title.indexOf(state.searchText) > -1) {
     searchMarch = true
   }
@@ -465,7 +553,14 @@ const templateShow = templateItem => {
   if (state.templateSourceType === 'all' || templateItem.source === state.templateSourceType) {
     templateSourceTypeMarch = true
   }
-  return searchMarch && templateTypeMarch && templateSourceTypeMarch
+
+  if (
+    state.templateClassifyType === 'all' ||
+    templateItem.classify === state.templateClassifyType
+  ) {
+    templateClassifyTypeMarch = true
+  }
+  return searchMarch && templateTypeMarch && templateSourceTypeMarch && templateClassifyTypeMarch
 }
 
 const templatePreview = previewId => {
@@ -475,7 +570,7 @@ const templatePreview = previewId => {
     previewModel.value = 'marketPreview'
   } else {
     state.curTemplateShowFilter =
-      state.marketActiveTab === '推荐'
+      state.marketActiveTab === t('work_branch.recommend')
         ? state.currentMarketTemplateShowList.filter(ele => ele.showFlag)
         : state.currentMarketTemplateShowList.filter(
             ele => ele.showFlag && ele.categoryNames?.includes(state.marketActiveTab)
@@ -620,13 +715,32 @@ defineExpose({
 
 .custom-divider-line {
   height: 16px;
-  margin-top: 6px;
+  margin: 8px 14px 0 16px !important;
 }
 
 .custom-market-icon {
   font-size: 20px;
   margin-top: 4px;
+  height: 24px !important;
+  width: 24px !important;
   cursor: pointer;
+
+  &.hover-icon_custom {
+    border-radius: 4px;
+    color: #646a73;
+
+    &[aria-expanded='true'] {
+      background: rgba(31, 35, 41, 0.1);
+    }
+
+    &:hover {
+      background: rgba(31, 35, 41, 0.1);
+    }
+
+    &:active {
+      background: rgba(31, 35, 41, 0.2);
+    }
+  }
 }
 
 .custom-back-icon {
@@ -643,6 +757,17 @@ defineExpose({
   overflow-x: auto;
   overflow-y: hidden;
   height: 100%;
+}
+
+.custom-market-tree {
+  ::v-deep(.ed-tree-node__content) {
+    .ed-tree-node__label {
+      width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
 }
 </style>
 

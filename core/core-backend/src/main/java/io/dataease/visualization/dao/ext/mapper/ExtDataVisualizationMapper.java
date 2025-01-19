@@ -2,9 +2,11 @@ package io.dataease.visualization.dao.ext.mapper;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import io.dataease.api.permissions.user.vo.UserFormVO;
 import io.dataease.api.visualization.dto.VisualizationViewTableDTO;
 import io.dataease.api.visualization.vo.DataVisualizationBaseVO;
 import io.dataease.api.visualization.vo.DataVisualizationVO;
+import io.dataease.api.visualization.vo.VisualizationReportFilterVO;
 import io.dataease.api.visualization.vo.VisualizationResourceVO;
 import io.dataease.chart.dao.auto.entity.CoreChartView;
 import io.dataease.visualization.dao.ext.po.StorePO;
@@ -15,6 +17,7 @@ import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Mapper
 public interface ExtDataVisualizationMapper {
@@ -34,7 +37,7 @@ public interface ExtDataVisualizationMapper {
 
     DataVisualizationVO findDvInfo(@Param("dvId") Long dvId,@Param("dvType") String dvType);
 
-    IPage<VisualizationResourcePO> findRecent(IPage<VisualizationResourcePO> page, @Param("uid") Long uid, @Param("ew") QueryWrapper<Object> ew);
+    IPage<VisualizationResourcePO> findRecent(IPage<VisualizationResourcePO> page, @Param("uid") Long uid, @Param("keyword") String keyword, @Param("ew") QueryWrapper<Object> ew);
 
     void copyLinkJump(@Param("copyId") Long copyId);
 
@@ -48,5 +51,11 @@ public interface ExtDataVisualizationMapper {
 
     List<VisualizationViewTableDTO> getVisualizationViewDetails(@Param("dvId") Long dvId);
 
+    List<VisualizationReportFilterVO> queryReportFilter(@Param("dvId") Long dvId,@Param("taskId") Long taskId);
 
+    void deleteDataVBatch(@Param("ids") Set<Long> ids);
+
+    void deleteViewsBatch(@Param("ids") Set<Long> ids);
+
+    UserFormVO queryInnerUserInfo(@Param("id") Long id);
 }

@@ -1,7 +1,8 @@
 package io.dataease.dataset.utils;
 
-import io.dataease.api.dataset.union.model.SQLObj;
-import io.dataease.dataset.dto.DatasourceSchemaDTO;
+import io.dataease.extensions.datasource.dto.DatasourceSchemaDTO;
+import io.dataease.extensions.datasource.dto.DsTypeDTO;
+import io.dataease.extensions.datasource.model.SQLObj;
 import io.dataease.utils.Md5Utils;
 import org.apache.calcite.avatica.util.Quoting;
 import org.apache.commons.lang3.StringUtils;
@@ -38,14 +39,21 @@ public class TableUtils {
         return "C_" + Md5Utils.md5(fieldName);
     }
 
-    public static String getTableAndAlias(SQLObj sqlObj) {
+    public static String getTableAndAlias(SQLObj sqlObj, DsTypeDTO datasourceType, boolean isCross) {
         String schema = "";
         String prefix = "";
+        String suffix = "";
         if (StringUtils.isNotEmpty(sqlObj.getTableSchema())) {
-            schema = sqlObj.getTableSchema() + ".";
-            prefix = "`";
+            if (isCross) {
+                prefix = "`";
+                suffix = "`";
+            } else {
+                prefix = datasourceType.getPrefix();
+                suffix = datasourceType.getSuffix();
+            }
+            schema = prefix + sqlObj.getTableSchema() + suffix + ".";
         }
-        return schema + prefix + sqlObj.getTableName() + prefix + " " + sqlObj.getTableAlias();
+        return schema + prefix + sqlObj.getTableName() + suffix + " " + sqlObj.getTableAlias();
     }
 
     public static String tableName2Sql(DatasourceSchemaDTO ds, String tableName) {

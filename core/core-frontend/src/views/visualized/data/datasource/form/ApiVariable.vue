@@ -1,6 +1,9 @@
 <script lang="ts" setup>
+import icon_drag_outlined from '@/assets/svg/icon_drag_outlined.svg'
+import icon_deleteTrash_outlined from '@/assets/svg/icon_delete-trash_outlined.svg'
+import icon_add_outlined from '@/assets/svg/icon_add_outlined.svg'
 import { propTypes } from '@/utils/propTypes'
-import { computed, onBeforeMount, PropType, toRefs } from 'vue'
+import { computed, onBeforeMount, PropType, toRefs, inject } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { KeyValue } from './ApiTestModel.js'
 import { guid } from '@/views/visualized/data/dataset/form/util'
@@ -19,6 +22,10 @@ const props = defineProps({
   type: propTypes.string.def(''),
   isReadOnly: propTypes.bool.def(false),
   parameters: {
+    type: Array as PropType<Item[]>,
+    default: () => []
+  },
+  valueList: {
     type: Array as PropType<Item[]>,
     default: () => []
   },
@@ -43,6 +50,7 @@ onBeforeMount(() => {
     parameters.value.push(
       new KeyValue({
         type: 'text',
+        nameType: 'fixed',
         enable: true,
         required: true,
         uuid: guid(),
@@ -72,6 +80,7 @@ const change = () => {
     new KeyValue({
       type: 'text',
       enable: true,
+      nameType: 'fixed',
       uuid: guid(),
       contentType: 'text/plain'
     })
@@ -91,6 +100,56 @@ const createFilter = (queryString: string) => {
     return restaurant.value.toLowerCase().indexOf(queryString.toLowerCase()) === 0
   }
 }
+const changeNameType = element => {
+  element.value = ''
+}
+const activeName = inject('api-active-name')
+const options = [
+  {
+    label: t('data_source.parameter'),
+    value: 'params'
+  },
+  {
+    label: t('data_source.page_parameter'),
+    value: 'pageParams'
+  },
+  {
+    label: t('data_source.fixed_value'),
+    value: 'fixed'
+  },
+  {
+    label: t('data_source.time_function'),
+    value: 'timeFun'
+  },
+  {
+    label: t('data_source.customize'),
+    value: 'custom'
+  }
+]
+const pageParams = [
+  {
+    label: '${pageNumber}',
+    value: '${pageNumber}'
+  },
+  {
+    label: '${pageSize}',
+    value: '${pageSize}'
+  },
+  {
+    label: '${pageToken}',
+    value: '${pageToken}'
+  }
+]
+const timeFunLists = [
+  {
+    label: t('data_source.that_day') + '（yyyy-MM-dd）',
+    value: 'currentDay yyyy-MM-dd'
+  },
+  {
+    label: t('data_source.that_day') + '（yyyy/MM/dd）',
+    value: 'currentDay yyyy/MM/dd'
+  }
+]
 </script>
 
 <template>
@@ -98,12 +157,12 @@ const createFilter = (queryString: string) => {
     <span v-if="description" class="kv-description">
       {{ description }}
     </span>
-    <draggable tag="div" :list="parameters" handle=".handle">
+    <draggable class="draggable-content_api" tag="div" :list="parameters" handle=".handle">
       <template #item="{ element, index }">
         <div :key="index" style="margin-bottom: 16px">
           <el-row :gutter="8">
             <el-icon class="drag handle">
-              <Icon name="icon_drag_outlined"></Icon>
+              <Icon name="icon_drag_outlined"><icon_drag_outlined class="svg-icon" /></Icon>
             </el-icon>
             <el-col :span="6">
               <el-input
@@ -137,9 +196,19 @@ const createFilter = (queryString: string) => {
                 show-word-limit
               />
             </el-col>
-
+            <el-col :span="3" v-if="activeName === 'table'">
+              <el-select v-model="element.nameType" @change="changeNameType(element)">
+                <el-option
+                  v-for="item in options"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-col>
             <el-col v-if="element.type !== 'file'" :span="6">
               <el-input
+                v-if="activeName === 'params'"
                 v-model="element.value"
                 :disabled="isReadOnly"
                 class="input-with-autocomplete"
@@ -147,9 +216,64 @@ const createFilter = (queryString: string) => {
                 value-key="name"
                 highlight-first-item
               />
+
+              <el-select
+                v-model="element.value"
+                v-if="!needMock && activeName === 'table' && element.nameType === 'params'"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="item in valueList"
+                  :key="item.originName"
+                  :label="item.name"
+                  :value="item.originName"
+                />
+              </el-select>
+              <el-select
+                v-model="element.value"
+                v-if="!needMock && activeName === 'table' && element.nameType === 'timeFun'"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="item in timeFunLists"
+                  :key="item.originName"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+              <el-select
+                v-model="element.value"
+                v-if="!needMock && activeName === 'table' && element.nameType === 'pageParams'"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="item in pageParams"
+                  :key="item.originName"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+              <el-input
+                v-if="
+                  activeName === 'table' &&
+                  element.nameType !== 'params' &&
+                  element.nameType !== 'timeFun' &&
+                  element.nameType !== 'pageParams'
+                "
+                v-model="element.value"
+                :disabled="isReadOnly"
+                class="input-with-autocomplete"
+                :placeholder="
+                  element.nameType === 'fixed'
+                    ? t('data_source.value')
+                    : t('data_source.name_use_parameters')
+                "
+                value-key="name"
+                highlight-first-item
+              />
             </el-col>
 
-            <el-col :span="5">
+            <el-col :span="activeName === 'params' ? 10 : 7">
               <el-input
                 v-model="element.description"
                 maxlength="200"
@@ -157,21 +281,15 @@ const createFilter = (queryString: string) => {
                 show-word-limit
               />
             </el-col>
-            <el-col :span="5">
-              <el-autocomplete
-                v-if="suggestions"
-                v-model="element.name"
-                :disabled="isReadOnly"
-                :fetch-suggestions="querySearch"
-                :placeholder="keyText"
-                show-word-limit
-              />
-            </el-col>
-
             <el-col :span="1">
-              <el-button text :disabled="isDisable() || isReadOnly" @click="remove(index)">
+              <el-button
+                class="api-variable_del"
+                text
+                :disabled="isDisable() || isReadOnly"
+                @click="remove(index)"
+              >
                 <template #icon>
-                  <Icon name="icon_delete-trash_outlined"></Icon>
+                  <Icon><icon_deleteTrash_outlined class="svg-icon" /></Icon>
                 </template>
               </el-button>
             </el-col>
@@ -180,44 +298,48 @@ const createFilter = (queryString: string) => {
       </template>
     </draggable>
 
-    <el-button @click="change" text>
+    <el-button style="margin-top: 14px" @click="change" text>
       <template #icon>
-        <icon name="icon_add_outlined"></icon>
+        <icon name="icon_add_outlined"><icon_add_outlined class="svg-icon" /></icon>
       </template>
-      添加参数
+      {{ t('data_source.add_parameters') }}
     </el-button>
   </div>
 </template>
 
 <style lang="less" scoped>
 .api-variable {
+  padding-bottom: 14px;
   & > .ed-input,
-  .ed-autocomplete {
+  :deep(.ed-autocomplete) {
     width: 100%;
   }
   .drag {
     margin-top: 10px;
     cursor: pointer;
   }
-}
-.kv-description {
-  font-size: 13px;
-}
+  :deep(.draggable-content_api) > :last-child {
+    margin-bottom: 0 !important;
+  }
 
-.kv-row {
-  margin-top: 10px;
-}
+  .api-variable_del {
+    color: #646a73;
+    :deep(.ed-icon) {
+      font-size: 16px;
+    }
 
-.kv-checkbox {
-  width: 20px;
-  margin-right: 10px;
-}
-
-.kv-delete {
-  width: 60px;
-}
-
-.ed-autocomplete {
-  width: 100%;
+    &:hover {
+      background: rgba(31, 35, 41, 0.1) !important;
+    }
+    &:focus {
+      background: rgba(31, 35, 41, 0.1) !important;
+    }
+    &:active {
+      background: rgba(31, 35, 41, 0.2) !important;
+    }
+  }
+  .kv-description {
+    font-size: 13px;
+  }
 }
 </style>

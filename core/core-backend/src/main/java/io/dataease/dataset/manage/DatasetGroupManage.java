@@ -2,12 +2,10 @@ package io.dataease.dataset.manage;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
-import io.dataease.api.dataset.dto.DatasetTableDTO;
-import io.dataease.api.dataset.dto.SqlVariableDetails;
 import io.dataease.api.dataset.union.DatasetGroupInfoDTO;
 import io.dataease.api.dataset.union.UnionDTO;
 import io.dataease.api.dataset.vo.DataSetBarVO;
-import io.dataease.api.ds.vo.DatasourceDTO;
+import io.dataease.api.permissions.relation.api.RelationApi;
 import io.dataease.commons.constants.OptConstants;
 import io.dataease.dataset.dao.auto.entity.CoreDatasetGroup;
 import io.dataease.dataset.dao.auto.entity.CoreDatasetTable;
@@ -20,11 +18,15 @@ import io.dataease.dataset.utils.FieldUtils;
 import io.dataease.dataset.utils.TableUtils;
 import io.dataease.datasource.dao.auto.entity.CoreDatasource;
 import io.dataease.datasource.dao.auto.mapper.CoreDatasourceMapper;
-import io.dataease.dto.dataset.DatasetTableFieldDTO;
 import io.dataease.engine.constant.ExtFieldConstant;
 import io.dataease.exception.DEException;
+import io.dataease.extensions.datasource.dto.DatasetTableDTO;
+import io.dataease.extensions.datasource.dto.DatasetTableFieldDTO;
+import io.dataease.extensions.datasource.dto.DatasourceDTO;
+import io.dataease.extensions.view.dto.SqlVariableDetails;
 import io.dataease.i18n.Translator;
 import io.dataease.license.config.XpackInteract;
+import io.dataease.license.utils.LicenseUtil;
 import io.dataease.model.BusiNodeRequest;
 import io.dataease.model.BusiNodeVO;
 import io.dataease.operation.manage.CoreOptRecentManage;
@@ -34,6 +36,7 @@ import jakarta.annotation.Resource;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -74,11 +77,15 @@ public class DatasetGroupManage {
     @Resource
     private CoreOptRecentManage coreOptRecentManage;
 
+    @Autowired(required = false)
+    private RelationApi relationManage;
+
     private static final String leafType = "dataset";
 
     private Lock lock = new ReentrantLock();
 
 
+    @Transactional
     public DatasetGroupInfoDTO save(DatasetGroupInfoDTO datasetGroupInfoDTO, boolean rename) throws Exception {
         lock.lock();
         try {
@@ -142,6 +149,7 @@ public class DatasetGroupManage {
 
     @XpackInteract(value = "authResourceTree", before = false)
     public void innerEdit(DatasetGroupInfoDTO datasetGroupInfoDTO) {
+        checkName(datasetGroupInfoDTO);
         CoreDatasetGroup coreDatasetGroup = BeanUtils.copyBean(new CoreDatasetGroup(), datasetGroupInfoDTO);
         coreDatasetGroup.setLastUpdateTime(System.currentTimeMillis());
         coreDatasetGroupMapper.updateById(coreDatasetGroup);
@@ -150,6 +158,7 @@ public class DatasetGroupManage {
 
     @XpackInteract(value = "authResourceTree", before = false)
     public void innerSave(DatasetGroupInfoDTO datasetGroupInfoDTO) {
+        checkName(datasetGroupInfoDTO);
         CoreDatasetGroup coreDatasetGroup = BeanUtils.copyBean(new CoreDatasetGroup(), datasetGroupInfoDTO);
         coreDatasetGroupMapper.insert(coreDatasetGroup);
         coreOptRecentManage.saveOpt(coreDatasetGroup.getId(), OptConstants.OPT_RESOURCE_TYPE.DATASET, OptConstants.OPT_TYPE.NEW);
@@ -170,6 +179,21 @@ public class DatasetGroupManage {
         coreDatasetGroupMapper.updateById(coreDatasetGroup);
         coreOptRecentManage.saveOpt(coreDatasetGroup.getId(), OptConstants.OPT_RESOURCE_TYPE.DATASET, OptConstants.OPT_TYPE.UPDATE);
         return datasetGroupInfoDTO;
+    }
+
+    public boolean perDelete(Long id) {
+        if (LicenseUtil.licenseValid()) {
+            try {
+                relationManage.checkAuth();
+            } catch (Exception e) {
+                return false;
+            }
+            Long count = relationManage.getDatasetResource(id);
+            if (count > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @XpackInteract(value = "authResourceTree", before = false)
@@ -198,14 +222,17 @@ public class DatasetGroupManage {
     }
 
 
-    @XpackInteract(value = "authResourceTree", replace = true)
+    @XpackInteract(value = "authResourceTree", replace = true, invalid = true)
     public List<BusiNodeVO> tree(BusiNodeRequest request) {
 
         QueryWrapper<Object> queryWrapper = new QueryWrapper<>();
         if (ObjectUtils.isNotEmpty(request.getLeaf())) {
             queryWrapper.eq("node_type", request.getLeaf() ? "dataset" : "folder");
         }
-
+        String info = CommunityUtils.getInfo();
+        if (StringUtils.isNotBlank(info)) {
+            queryWrapper.notExists(String.format(info, "core_dataset_group.id"));
+        }
         queryWrapper.orderByDesc("create_time");
         List<DataSetNodePO> pos = coreDataSetExtMapper.query(queryWrapper);
         List<DataSetNodeBO> nodes = new ArrayList<>();
@@ -238,6 +265,9 @@ public class DatasetGroupManage {
         List<CoreDatasetTable> coreDatasetTables = coreDatasetTableMapper.selectList(wrapper);
         Set<Long> ids = new LinkedHashSet();
         coreDatasetTables.forEach(ele -> ids.add(ele.getDatasourceId()));
+        if (CollectionUtils.isEmpty(ids)) {
+            DEException.throwException(Translator.get("i18n_dataset_create_error"));
+        }
 
         QueryWrapper<CoreDatasource> datasourceQueryWrapper = new QueryWrapper<>();
         datasourceQueryWrapper.in("id", ids);
@@ -248,7 +278,7 @@ public class DatasetGroupManage {
             return dto;
         }).collect(Collectors.toList());
         if (ids.size() != datasourceDTOList.size()) {
-            DEException.throwException("由于数据集所用的数据源已被删除,无法显示数据集");
+            DEException.throwException(Translator.get("i18n_dataset_ds_delete"));
         }
         return datasourceDTOList;
     }
@@ -258,29 +288,31 @@ public class DatasetGroupManage {
     }
 
     private DataSetNodeBO convert(DataSetNodePO po) {
-        return new DataSetNodeBO(po.getId(), po.getName(), StringUtils.equals(po.getNodeType(), leafType), 7, po.getPid(), 0);
+        return new DataSetNodeBO(po.getId(), po.getName(), StringUtils.equals(po.getNodeType(), leafType), 9, po.getPid(), 0);
     }
 
     public void checkName(DatasetGroupInfoDTO dto) {
-        QueryWrapper<CoreDatasetGroup> wrapper = new QueryWrapper<>();
-        if (ObjectUtils.isNotEmpty(dto.getPid())) {
-            wrapper.eq("pid", dto.getPid());
-        }
-        if (StringUtils.isNotEmpty(dto.getName())) {
-            wrapper.eq("name", dto.getName());
-        }
-        if (ObjectUtils.isNotEmpty(dto.getId())) {
-            wrapper.ne("id", dto.getId());
-        }
-        if (ObjectUtils.isNotEmpty(dto.getLevel())) {
-            wrapper.eq("level", dto.getLevel());
-        }
-        if (ObjectUtils.isNotEmpty(dto.getNodeType())) {
-            wrapper.eq("node_type", dto.getNodeType());
-        }
-        List<CoreDatasetGroup> list = coreDatasetGroupMapper.selectList(wrapper);
-        if (list.size() > 0) {
-            DEException.throwException(Translator.get("i18n_ds_name_exists"));
+        if (!LicenseUtil.licenseValid()) {
+            QueryWrapper<CoreDatasetGroup> wrapper = new QueryWrapper<>();
+            if (ObjectUtils.isNotEmpty(dto.getPid())) {
+                wrapper.eq("pid", dto.getPid());
+            }
+            if (StringUtils.isNotEmpty(dto.getName())) {
+                wrapper.eq("name", dto.getName());
+            }
+            if (ObjectUtils.isNotEmpty(dto.getId())) {
+                wrapper.ne("id", dto.getId());
+            }
+            if (ObjectUtils.isNotEmpty(dto.getLevel())) {
+                wrapper.eq("level", dto.getLevel());
+            }
+            if (ObjectUtils.isNotEmpty(dto.getNodeType())) {
+                wrapper.eq("node_type", dto.getNodeType());
+            }
+            List<CoreDatasetGroup> list = coreDatasetGroupMapper.selectList(wrapper);
+            if (list.size() > 0) {
+                DEException.throwException(Translator.get("i18n_ds_name_exists"));
+            }
         }
     }
 
@@ -369,7 +401,43 @@ public class DatasetGroupManage {
         return dto;
     }
 
-    public DatasetGroupInfoDTO get(Long id, String type) throws Exception {
+    public DatasetGroupInfoDTO getDetail(Long id) throws Exception {
+        CoreDatasetGroup coreDatasetGroup = coreDatasetGroupMapper.selectById(id);
+        if (coreDatasetGroup == null) {
+            return null;
+        }
+        DatasetGroupInfoDTO dto = new DatasetGroupInfoDTO();
+        BeanUtils.copyBean(dto, coreDatasetGroup);
+        // get creator
+        String userName = coreUserManage.getUserName(Long.valueOf(dto.getCreateBy()));
+        if (StringUtils.isNotBlank(userName)) {
+            dto.setCreator(userName);
+        }
+        String updateUserName = coreUserManage.getUserName(Long.valueOf(dto.getUpdateBy()));
+        if (StringUtils.isNotBlank(updateUserName)) {
+            dto.setUpdater(updateUserName);
+        }
+        dto.setUnionSql(null);
+        if (StringUtils.equalsIgnoreCase(dto.getNodeType(), "dataset")) {
+            List<UnionDTO> unionDTOList = JsonUtil.parseList(coreDatasetGroup.getInfo(), new TypeReference<>() {
+            });
+            dto.setUnion(unionDTOList);
+
+            // 获取field
+            List<DatasetTableFieldDTO> dsFields = datasetTableFieldManage.selectByDatasetGroupId(id);
+            List<DatasetTableFieldDTO> allFields = dsFields.stream().map(ele -> {
+                DatasetTableFieldDTO datasetTableFieldDTO = new DatasetTableFieldDTO();
+                BeanUtils.copyBean(datasetTableFieldDTO, ele);
+                datasetTableFieldDTO.setFieldShortName(ele.getDataeaseName());
+                return datasetTableFieldDTO;
+            }).collect(Collectors.toList());
+
+            dto.setAllFields(allFields);
+        }
+        return dto;
+    }
+
+    public DatasetGroupInfoDTO getDatasetGroupInfoDTO(Long id, String type) throws Exception {
         CoreDatasetGroup coreDatasetGroup = coreDatasetGroupMapper.selectById(id);
         if (coreDatasetGroup == null) {
             return null;
@@ -491,9 +559,15 @@ public class DatasetGroupManage {
         }
     }
 
-    private void geFullName(Long pid, List<String> fullName) {
+    public void geFullName(Long pid, List<String> fullName) {
         CoreDatasetGroup parent = coreDatasetGroupMapper.selectById(pid);// 查找父级folder
+        if (parent == null) {
+            return;
+        }
         fullName.add(parent.getName());
+        if (parent.getId().equals(parent.getPid())) {
+            return;
+        }
         if (parent.getPid() != null && parent.getPid() != 0) {
             geFullName(parent.getPid(), fullName);
         }

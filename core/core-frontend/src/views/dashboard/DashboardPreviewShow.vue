@@ -1,18 +1,29 @@
 <script setup lang="ts">
+import icon_add_outlined from '@/assets/svg/icon_add_outlined.svg'
 import DeResourceTree from '@/views/common/DeResourceTree.vue'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
-import { reactive, nextTick, ref, toRefs, onBeforeMount, computed } from 'vue'
+import { reactive, nextTick, ref, toRefs, onBeforeMount, computed, onMounted } from 'vue'
 import DePreview from '@/components/data-visualization/canvas/DePreview.vue'
 import PreviewHead from '@/views/data-visualization/PreviewHead.vue'
 import EmptyBackground from '@/components/empty-background/src/EmptyBackground.vue'
 import ArrowSide from '@/views/common/DeResourceArrow.vue'
-import { initCanvasData, initCanvasDataPrepare } from '@/utils/canvasUtils'
+import { initCanvasData, initCanvasDataPrepare, onInitReady } from '@/utils/canvasUtils'
 import { useAppStoreWithOut } from '@/store/modules/app'
 import { useRequestStoreWithOut } from '@/store/modules/request'
 import { usePermissionStoreWithOut } from '@/store/modules/permission'
 import { useMoveLine } from '@/hooks/web/useMoveLine'
 import { Icon } from '@/components/icon-custom'
-import { download2AppTemplate, downloadCanvas } from '@/utils/imgUtils'
+import { download2AppTemplate, downloadCanvas2 } from '@/utils/imgUtils'
+import { storeToRefs } from 'pinia'
+import { ElMessage } from 'element-plus-secondary'
+import AppExportForm from '@/components/de-app/AppExportForm.vue'
+import { useEmitt } from '@/hooks/web/useEmitt'
+import { useUserStoreWithOut } from '@/store/modules/user'
+import { useI18n } from '@/hooks/web/useI18n'
+const userStore = useUserStoreWithOut()
+
+const userName = computed(() => userStore.getName)
+const appExportFormRef = ref(null)
 
 const dvMainStore = dvMainStoreWithOut()
 const previewCanvasContainer = ref(null)
@@ -31,7 +42,10 @@ const state = reactive({
   curPreviewGap: 0
 })
 
+const { fullscreenFlag, canvasViewDataInfo } = storeToRefs(dvMainStore)
+
 const { width, node } = useMoveLine('DASHBOARD')
+const { t } = useI18n()
 
 const props = defineProps({
   showPosition: {
@@ -62,6 +76,15 @@ const mounted = computed(() => {
   return resourceTreeRef.value?.mounted
 })
 
+onMounted(() => {
+  useEmitt({
+    name: 'canvasDownload',
+    callback: function () {
+      downloadH2('img')
+    }
+  })
+})
+
 function createNew() {
   resourceTreeRef.value?.createNewObject()
 }
@@ -89,6 +112,7 @@ const loadCanvasData = (dvId, weight?) => {
       dataInitState.value = true
       nextTick(() => {
         dashboardPreview.value.restore()
+        onInitReady({ resourceId: dvId })
       })
     }
   )
@@ -98,17 +122,52 @@ const downloadH2 = type => {
   downloadStatus.value = true
   nextTick(() => {
     const vueDom = previewCanvasContainer.value.querySelector('.canvas-container')
-    downloadCanvas(type, vueDom, state.dvInfo.name, () => {
+    downloadCanvas2(type, vueDom, state.dvInfo.name, () => {
       downloadStatus.value = false
     })
   })
 }
 
 const downloadAsAppTemplate = downloadType => {
+  if (downloadType === 'template') {
+    fileDownload(downloadType, null)
+  } else if (downloadType === 'app') {
+    downLoadToAppPre()
+  }
+}
+
+const downLoadToAppPre = () => {
+  const result = checkTemplate()
+  if (result && result.length > 0) {
+    ElMessage.warning(t('visualization.export_tips', [result]))
+  } else {
+    appExportFormRef.value.init({
+      appName: state.dvInfo.name,
+      icon: null,
+      version: '2.0',
+      creator: userName.value,
+      required: '2.9.0',
+      description: null
+    })
+  }
+}
+
+const checkTemplate = () => {
+  let templateViewNames = ','
+  Object.keys(canvasViewDataInfo.value).forEach(key => {
+    const viewInfo = canvasViewDataInfo.value[key]
+    if (viewInfo && viewInfo?.dataFrom === 'template') {
+      templateViewNames = templateViewNames + viewInfo.title + ','
+    }
+  })
+  return templateViewNames.slice(1)
+}
+
+const fileDownload = (downloadType, attachParams) => {
   downloadStatus.value = true
   nextTick(() => {
     const vueDom = previewCanvasContainer.value.querySelector('.canvas-container')
-    download2AppTemplate(downloadType, vueDom, state.dvInfo.name, () => {
+    download2AppTemplate(downloadType, vueDom, state.dvInfo.name, attachParams, () => {
       downloadStatus.value = false
     })
   })
@@ -153,6 +212,10 @@ const mouseleave = () => {
   appStore.setArrowSide(false)
 }
 
+const downLoadApp = appAttachInfo => {
+  fileDownload('app', appAttachInfo)
+}
+
 defineExpose({
   getPreviewStateInfo
 })
@@ -191,7 +254,7 @@ defineExpose({
     <el-container
       class="preview-area"
       :class="{ 'no-data': !hasTreeData }"
-      v-loading="requestStore.loadingMap[permissionStore.currentPath]"
+      v-loading="requestStore.loadingMap && requestStore.loadingMap[permissionStore.currentPath]"
     >
       <div
         @click="slideOpenChange"
@@ -209,7 +272,12 @@ defineExpose({
           @download="downloadH2"
           @downloadAsAppTemplate="downloadAsAppTemplate"
         />
-        <div ref="previewCanvasContainer" class="content">
+        <div
+          ref="previewCanvasContainer"
+          class="content"
+          id="de-preview-content"
+          :class="{ 'de-screen-full': fullscreenFlag }"
+        >
           <de-preview
             ref="dashboardPreview"
             v-if="state.canvasStylePreview && dataInitState"
@@ -224,20 +292,27 @@ defineExpose({
         </div>
       </template>
       <template v-else-if="hasTreeData && mounted">
-        <empty-background description="请在左侧选择仪表板" img-type="select" />
+        <empty-background :description="t('visualization.preview_select_tips')" img-type="select" />
       </template>
       <template v-else-if="mounted">
-        <empty-background description="暂无仪表板" img-type="none">
+        <empty-background :description="t('visualization.have_none_resource')" img-type="none">
           <el-button v-if="rootManage && !isDataEaseBi" @click="createNew" type="primary">
             <template #icon>
-              <Icon name="icon_add_outlined" />
+              <Icon name="icon_add_outlined"><icon_add_outlined class="svg-icon" /></Icon>
             </template>
-            {{ $t('commons.create') }}{{ $t('chart.dashboard') }}
+            {{ t('commons.create') }}{{ t('chart.dashboard') }}
           </el-button>
         </empty-background>
       </template>
     </el-container>
   </div>
+  <app-export-form
+    ref="appExportFormRef"
+    :dv-info="state.dvInfo"
+    :component-data="state.canvasDataPreview"
+    :canvas-view-info="state.canvasViewInfoPreview"
+    @downLoadApp="downLoadApp"
+  ></app-export-form>
 </template>
 
 <style lang="less">

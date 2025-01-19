@@ -1,49 +1,79 @@
 package io.dataease.engine.trans;
 
-import io.dataease.api.chart.dto.ChartViewFieldDTO;
-import io.dataease.dto.dataset.DatasetTableFieldDTO;
-import io.dataease.api.dataset.union.model.SQLMeta;
-import io.dataease.api.dataset.union.model.SQLObj;
 import io.dataease.engine.constant.DeTypeConstants;
 import io.dataease.engine.constant.ExtFieldConstant;
 import io.dataease.engine.constant.SQLConstants;
 import io.dataease.engine.utils.Utils;
+import io.dataease.extensions.datasource.api.PluginManageApi;
+import io.dataease.extensions.datasource.constant.SqlPlaceholderConstants;
+import io.dataease.extensions.datasource.dto.CalParam;
+import io.dataease.extensions.datasource.dto.DatasetTableFieldDTO;
+import io.dataease.extensions.datasource.dto.DatasourceSchemaDTO;
+import io.dataease.extensions.datasource.model.SQLMeta;
+import io.dataease.extensions.datasource.model.SQLObj;
+import io.dataease.extensions.view.dto.ChartViewFieldDTO;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.util.CollectionUtils;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 
 /**
  * @Author Junjun
  */
 public class Quota2SQLObj {
 
-    public static void quota2sqlObj(SQLMeta meta, List<ChartViewFieldDTO> fields, List<DatasetTableFieldDTO> originFields) {
+    public static void quota2sqlObj(SQLMeta meta, List<ChartViewFieldDTO> fields, List<DatasetTableFieldDTO> originFields, boolean isCross, Map<Long, DatasourceSchemaDTO> dsMap, List<CalParam> fieldParam, List<CalParam> chartParam, PluginManageApi pluginManage) {
         SQLObj tableObj = meta.getTable();
         if (ObjectUtils.isEmpty(tableObj)) {
             return;
         }
+        Map<String, String> paramMap = Utils.mergeParam(fieldParam, chartParam);
         List<SQLObj> yFields = new ArrayList<>();
         List<String> yWheres = new ArrayList<>();
         List<SQLObj> yOrders = new ArrayList<>();
+        Map<String, String> fieldsDialect = new HashMap<>();
+
+        String dsType = null;
+        if (dsMap != null && dsMap.entrySet().iterator().hasNext()) {
+            Map.Entry<Long, DatasourceSchemaDTO> next = dsMap.entrySet().iterator().next();
+            dsType = next.getValue().getType();
+        }
+
         if (!CollectionUtils.isEmpty(fields)) {
             for (int i = 0; i < fields.size(); i++) {
                 ChartViewFieldDTO y = fields.get(i);
                 String originField;
                 if (ObjectUtils.isNotEmpty(y.getExtField()) && Objects.equals(y.getExtField(), ExtFieldConstant.EXT_CALC)) {
                     // 解析origin name中有关联的字段生成sql表达式
-                    originField = Utils.calcFieldRegex(y.getOriginName(), tableObj, originFields);
+                    String calcFieldExp = Utils.calcFieldRegex(y, tableObj, originFields, isCross, dsMap, paramMap, pluginManage);
+                    // 给计算字段处加一个占位符，后续SQL方言转换后再替换
+                    originField = String.format(SqlPlaceholderConstants.CALC_FIELD_PLACEHOLDER, y.getId());
+                    fieldsDialect.put(originField, calcFieldExp);
+                    if (isCross) {
+                        originField = calcFieldExp;
+                    }
                 } else if (ObjectUtils.isNotEmpty(y.getExtField()) && Objects.equals(y.getExtField(), ExtFieldConstant.EXT_COPY)) {
-                    originField = String.format(SQLConstants.FIELD_NAME, tableObj.getTableAlias(), y.getDataeaseName());
+                    if (StringUtils.equalsIgnoreCase(dsType, "es")) {
+                        originField = String.format(SQLConstants.FIELD_NAME, tableObj.getTableAlias(), y.getOriginName());
+                    } else {
+                        originField = String.format(SQLConstants.FIELD_NAME, tableObj.getTableAlias(), y.getDataeaseName());
+                    }
                 } else {
-                    originField = String.format(SQLConstants.FIELD_NAME, tableObj.getTableAlias(), y.getDataeaseName());
+                    if (StringUtils.equalsIgnoreCase(dsType, "es")) {
+                        originField = String.format(SQLConstants.FIELD_NAME, tableObj.getTableAlias(), y.getOriginName());
+                    } else {
+                        originField = String.format(SQLConstants.FIELD_NAME, tableObj.getTableAlias(), y.getDataeaseName());
+                    }
                 }
                 String fieldAlias = String.format(SQLConstants.FIELD_ALIAS_Y_PREFIX, i);
                 // 处理纵轴字段
-                yFields.add(getYFields(y, originField, fieldAlias));
+                SQLObj ySQLObj = getYFields(y, originField, fieldAlias);
+                if (StringUtils.equalsIgnoreCase("bar-range", meta.getChartType()) && StringUtils.equalsIgnoreCase(y.getGroupType(), "d") && y.getDeType() == 1) {
+                    yFields.add(Dimension2SQLObj.getXFields(y, ySQLObj.getFieldName(), fieldAlias, isCross));
+                } else {
+                    yFields.add(ySQLObj);
+                }
                 // 处理纵轴过滤
                 String wheres = getYWheres(y, originField, fieldAlias);
                 if (ObjectUtils.isNotEmpty(wheres)) {
@@ -55,6 +85,7 @@ public class Quota2SQLObj {
                             .orderField(originField)
                             .orderAlias(fieldAlias)
                             .orderDirection(y.getSort())
+                            .id(y.getId())
                             .build());
                 }
             }
@@ -62,6 +93,7 @@ public class Quota2SQLObj {
         meta.setYFields(yFields);
         meta.setYWheres(yWheres);
         meta.setYOrders(yOrders);
+        meta.setYFieldsDialect(fieldsDialect);
     }
 
     private static SQLObj getYFields(ChartViewFieldDTO y, String originField, String fieldAlias) {
@@ -84,6 +116,9 @@ public class Quota2SQLObj {
                 String cast = String.format(SQLConstants.CAST, originField, Objects.equals(y.getDeType(), DeTypeConstants.DE_INT) ? SQLConstants.DEFAULT_INT_FORMAT : SQLConstants.DEFAULT_FLOAT_FORMAT);
                 if (StringUtils.equalsIgnoreCase(y.getSummary(), "count_distinct")) {
                     fieldName = String.format(SQLConstants.AGG_FIELD, "COUNT", "DISTINCT " + cast);
+                } else if (y.getSummary() == null) {
+                    // 透视表自定义汇总不用聚合
+                    fieldName = cast;
                 } else {
                     fieldName = String.format(SQLConstants.AGG_FIELD, y.getSummary(), cast);
                 }

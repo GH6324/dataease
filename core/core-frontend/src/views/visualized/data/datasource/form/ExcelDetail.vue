@@ -1,4 +1,6 @@
 <script lang="tsx" setup>
+import icon_upload_outlined from '@/assets/svg/icon_upload_outlined.svg'
+import icon_refresh_outlined from '@/assets/svg/icon_refresh_outlined.svg'
 import { Icon } from '@/components/icon-custom'
 import { ElIcon } from 'element-plus-secondary'
 import { useI18n } from '@/hooks/web/useI18n'
@@ -6,6 +8,7 @@ import {
   ref,
   shallowRef,
   reactive,
+  h,
   computed,
   toRefs,
   onMounted,
@@ -21,6 +24,8 @@ import SheetTabs from '../SheetTabs.vue'
 import { cloneDeep, debounce } from 'lodash-es'
 import { uploadFile } from '@/api/datasource'
 import { useEmitt } from '@/hooks/web/useEmitt'
+import { iconFieldMap } from '@/components/icon-group/field-list'
+import { boolean } from 'mathjs'
 
 export interface Param {
   editType: number
@@ -29,6 +34,8 @@ export interface Param {
   id?: string
   name?: string
   creator?: string
+  isPlugin?: boolean
+  staticMap?: any
 }
 
 export interface Field {
@@ -57,16 +64,22 @@ const props = defineProps({
       })
     },
     type: Object
+  },
+  isSupportSetKey: {
+    type: boolean,
+    required: true
   }
 })
 
-const { param } = toRefs(props)
+const { param, isSupportSetKey } = toRefs(props)
 
 const { t } = useI18n()
 const { emitter } = useEmitt()
 
 const loading = ref(false)
 const columns = shallowRef([])
+const multipleSelection = shallowRef([])
+const multipleTable = ref()
 
 const defaultSheetObj = {
   tableName: ' ',
@@ -109,14 +122,18 @@ const generateColumns = (arr: Field[]) =>
     fieldType: ele.fieldType,
     dataKey: ele.originName,
     title: ele.name,
+    checked: ele.checked,
+    primaryKey: ele.primaryKey,
+    length: ele.length,
     width: 150,
     headerCellRenderer: ({ column }) => (
       <div class="flex-align-center icon">
         <ElIcon>
-          <Icon
-            name={`field_${fieldType[column.fieldType]}`}
-            className={`field-icon-${fieldType[column.fieldType]}`}
-          ></Icon>
+          <Icon>
+            {h(iconFieldMap[fieldType[column.fieldType]], {
+              class: `svg-icon field-icon-${fieldType[column.fieldType]}`
+            })}
+          </Icon>
         </ElIcon>
         <span class="ellipsis" title={column.title} style={{ width: '100px' }}>
           {column.title}
@@ -129,6 +146,8 @@ const handleNodeClick = data => {
   if (data.sheet) {
     Object.assign(sheetObj, data)
     columns.value = generateColumns(data.fields)
+    multipleSelection.value = columns.value.filter(item => item.checked)
+    currentMode.value = 'preview'
   }
 }
 
@@ -143,6 +162,10 @@ const handleTabClick = tab => {
 }
 
 const uploadFail = response => {
+  state.excelData = []
+  activeTab.value = ''
+  tabList.value = []
+  Object.assign(sheetObj, cloneDeep(defaultSheetObj))
   let myError = response.toString()
   myError.replace('Error: ', '')
 }
@@ -157,19 +180,30 @@ const handleExcelDel = () => {
 }
 
 const uploadSuccess = response => {
+  if (!response) {
+    return
+  }
   if (response?.code !== 0) {
+    state.excelData = []
+    activeTab.value = ''
+    tabList.value = []
+    Object.assign(sheetObj, cloneDeep(defaultSheetObj))
     ElMessage.warning(response.msg)
     return
   }
+  columns.value = []
+  Object.assign(sheetObj, cloneDeep(defaultSheetObj))
+  multipleSelection.value = []
   uploading.value = false
   if (!param.value.name) {
     param.value.name = response.data.excelLabel
   }
   tabList.value = response.data.sheets.map(ele => {
-    const { sheetId, tableName } = ele
+    const { sheetId, tableName, newSheet } = ele
     return {
       value: sheetId,
-      label: tableName
+      label: tableName,
+      newSheet: newSheet
     }
   })
   state.excelData = [response.data]
@@ -192,6 +226,33 @@ const saveExcelDs = (params, successCb, finallyCb) => {
       if (selectNode[i].changeFiled) {
         changeFiled = true
       }
+      if (selectNode[i].fields.filter(field => field.checked).length == 0) {
+        ElMessage({
+          message: selectNode[i].excelLabel + t('datasource.api_field_not_empty'),
+          type: 'error'
+        })
+        finallyCb?.()
+        return
+      }
+      for (let j = 0; j < selectNode[i].fields.length; j++) {
+        if (
+          selectNode[i].fields[j].checked &&
+          selectNode[i].fields[j].primaryKey &&
+          !selectNode[i].fields[j].length &&
+          selectNode[i].fields[j].deExtractType === 0
+        ) {
+          ElMessage({
+            message:
+              t('datasource.primary_key_length') +
+              selectNode[i].excelLabel +
+              ': ' +
+              selectNode[i].fields[j].name,
+            type: 'error'
+          })
+          finallyCb?.()
+          return
+        }
+      }
       selectedSheet.push(selectNode[i])
       sheetFileMd5.push(selectNode[i].fieldsMd5)
     }
@@ -201,9 +262,11 @@ const saveExcelDs = (params, successCb, finallyCb) => {
       message: t('dataset.ple_select_excel'),
       type: 'error'
     })
+    finallyCb?.()
     return
   }
   if (!validate) {
+    finallyCb?.()
     return
   }
 
@@ -232,7 +295,7 @@ const saveExcelDs = (params, successCb, finallyCb) => {
   if (props.param.editType === 0 && props.param.id && (effectExtField || changeFiled)) {
     ElMessageBox.confirm(t('deDataset.replace_the_data'), {
       confirmButtonText: t('dataset.confirm'),
-      tip: '替换可能会影响自定义数据集、关联数据集、仪表板等，是否替换？',
+      tip: t('data_source.to_replace_it'),
       cancelButtonText: 'Cancel',
       confirmButtonType: 'primary',
       type: 'warning',
@@ -354,11 +417,28 @@ const uploadExcel = () => {
   formData.append('type', '')
   formData.append('editType', param.value.editType)
   formData.append('id', param.value.id || 0)
-  return uploadFile(formData).then(res => {
-    upload.value?.clearFiles()
-    uploadAgain.value?.clearFiles()
-    uploadSuccess(res)
-  })
+  loading.value = true
+  return uploadFile(formData)
+    .then(res => {
+      upload.value?.clearFiles()
+      uploadAgain.value?.clearFiles()
+      uploadSuccess(res)
+      loading.value = false
+    })
+    .catch(error => {
+      state.excelData = []
+      activeTab.value = ''
+      tabList.value = []
+      Object.assign(sheetObj, cloneDeep(defaultSheetObj))
+      if (error.code === 'ECONNABORTED') {
+        ElMessage({
+          type: 'error',
+          message: error.message,
+          showClose: true
+        })
+      }
+      loading.value = false
+    })
 }
 const excelForm = ref()
 const submitForm = () => {
@@ -373,6 +453,89 @@ const appendReplaceExcel = response => {
 }
 
 const status = ref(false)
+const initMultipleTable = ref(false)
+const currentMode = ref('preview')
+const refreshData = () => {
+  currentMode.value = 'preview'
+}
+
+const lengthChange = val => {
+  const sheet = state.excelData[0]?.sheets.find(ele => ele.sheetId === activeTab.value)
+  sheet.fields.forEach(row => {
+    if (row.originName === val.dataKey) {
+      row.length = val.length
+    }
+  })
+}
+const primaryKeyChange = val => {
+  const sheet = state.excelData[0]?.sheets.find(ele => ele.sheetId === activeTab.value)
+  sheet.fields.forEach(row => {
+    if (row.originName === val.dataKey) {
+      row.primaryKey = val.primaryKey
+    }
+  })
+}
+
+const handleSelectionChange = val => {
+  if (!initMultipleTable.value) {
+    multipleSelection.value = val
+    multipleSelection.value.forEach(row => {
+      row.checked = true
+    })
+    columns.value.forEach(row => {
+      let item
+      for (let i = 0; i < multipleSelection.value.length; i++) {
+        if (row.dataKey === multipleSelection.value[i].dataKey) {
+          item = multipleSelection.value[i]
+        }
+      }
+      if (item) {
+        row.checked = item.checked
+      } else {
+        row.checked = false
+      }
+    })
+
+    const sheet = state.excelData[0]?.sheets.find(ele => ele.sheetId === activeTab.value)
+    sheet.fields.forEach(row => {
+      let item
+      for (let i = 0; i < multipleSelection.value.length; i++) {
+        if (row.originName === multipleSelection.value[i].dataKey) {
+          item = multipleSelection.value[i]
+        }
+      }
+      if (item) {
+        row.checked = item.checked
+      } else {
+        row.checked = false
+      }
+    })
+  }
+}
+
+const disabledFieldLength = item => {
+  if (!item.checked) {
+    return true
+  }
+  if (item.fieldType !== 'TEXT') {
+    return true
+  }
+}
+
+const changeCurrentMode = val => {
+  currentMode.value = val
+  if (val === 'select') {
+    nextTick(() => {
+      initMultipleTable.value = true
+      for (let i = 0; i < columns.value.length; i++) {
+        if (columns.value[i].checked) {
+          multipleTable?.value?.toggleRowSelection(columns.value[i], true)
+        }
+      }
+      initMultipleTable.value = false
+    })
+  }
+}
 
 const uploadStatus = val => {
   status.value = val
@@ -394,11 +557,12 @@ defineExpose({
         require-asterisk-position="right"
         :model="param"
         label-position="top"
+        v-loading="loading"
       >
         <el-form-item
           v-if="sheetFile.name"
           prop="id"
-          label="文件"
+          :label="t('data_source.document')"
           key="sheetFile"
           :rules="[
             {
@@ -425,7 +589,7 @@ defineExpose({
             name="file"
           >
             <template #trigger>
-              <el-button text>重新上传</el-button>
+              <el-button text>{{ t('data_source.reupload') }}</el-button>
             </template>
           </el-upload>
         </el-form-item>
@@ -433,7 +597,7 @@ defineExpose({
           v-else
           prop="id"
           key="sheetId"
-          label="文件"
+          :label="t('data_source.document')"
           :rules="[
             {
               required: true
@@ -455,14 +619,16 @@ defineExpose({
             <template #trigger>
               <el-button secondary>
                 <template #icon>
-                  <Icon name="icon_upload_outlined"></Icon>
+                  <Icon name="icon_upload_outlined"><icon_upload_outlined class="svg-icon" /></Icon>
                 </template>
                 {{ t('dataset.upload_file') }}
               </el-button>
             </template>
           </el-upload>
-          <p class="upload-tip" style="width: 100%">仅支持xlsx、xls、csv格式的文件</p>
-          <div class="ed-form-item__error" v-if="status">请上传文件</div>
+          <p class="upload-tip" style="width: 100%">{{ t('data_source.and_csv_formats') }}</p>
+          <div class="ed-form-item__error" v-if="status">
+            {{ t('data_source.please_upload_files') }}
+          </div>
         </el-form-item>
         <el-form-item
           :class="status && !sheetFile.name && 'error-status'"
@@ -493,11 +659,33 @@ defineExpose({
           :tab-list="tabList"
         ></SheetTabs>
 
-        <div class="info-table" v-if="isResize">
-          <el-auto-resizer>
+        <div class="table-select_mode" v-if="param.editType === 0">
+          <div class="btn-select">
+            <el-button
+              @click="changeCurrentMode('preview')"
+              :class="[currentMode === 'preview' && 'is-active']"
+              text
+            >
+              {{ t('chart.data_preview') }}
+            </el-button>
+            <el-button
+              @click="changeCurrentMode('select')"
+              :class="[currentMode === 'select' && 'is-active']"
+              text
+            >
+              {{ t('data_set.field_selection') }}
+            </el-button>
+          </div>
+        </div>
+        <div
+          class="info-table"
+          :class="param.editType === 0 && 'info-table_height'"
+          v-if="isResize"
+        >
+          <el-auto-resizer v-if="currentMode === 'preview'">
             <template #default="{ height, width }">
               <el-table-v2
-                :columns="columns"
+                :columns="multipleSelection"
                 header-class="excel-header-cell"
                 :data="sheetObj.jsonArray"
                 :width="width"
@@ -506,6 +694,73 @@ defineExpose({
               />
             </template>
           </el-auto-resizer>
+          <el-table
+            header-class="header-cell"
+            v-else
+            ref="multipleTable"
+            :data="columns"
+            style="width: 100%"
+            @selection-change="handleSelectionChange"
+          >
+            <el-table-column type="selection" width="55" />
+            <el-table-column :label="t('data_set.field_name')">
+              <template #default="scope">{{ scope.row.title }}</template>
+            </el-table-column>
+            <el-table-column :label="t('data_set.field_type')">
+              <template #default="scope">
+                <div class="flex-align-center">
+                  <el-icon>
+                    <Icon>
+                      <component
+                        :class="`svg-icon field-icon-${fieldType[scope.row.fieldType]}`"
+                        :is="iconFieldMap[fieldType[scope.row.fieldType]]"
+                      ></component>
+                    </Icon>
+                  </el-icon>
+
+                  {{ t(`dataset.${fieldType[scope.row.fieldType]}`) }}
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="length"
+              :label="t('datasource.length')"
+              v-if="param.editType === 0"
+            >
+              <template #default="scope">
+                <el-input-number
+                  :disabled="disabledFieldLength(scope.row)"
+                  v-model="scope.row.length"
+                  autocomplete="off"
+                  step-strictly
+                  class="text-left edit-all-line"
+                  :min="1"
+                  :max="512"
+                  :placeholder="t('common.inputText')"
+                  controls-position="right"
+                  type="number"
+                  @change="lengthChange(scope.row)"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="primaryKey"
+              class-name="checkbox-table"
+              :label="t('datasource.set_key')"
+              width="100"
+              v-if="param.editType === 0 && isSupportSetKey"
+            >
+              <template #default="scope">
+                <el-checkbox
+                  :key="scope.row.dataKey"
+                  v-model="scope.row.primaryKey"
+                  :disabled="!scope.row.checked"
+                  @change="primaryKeyChange(scope.row)"
+                >
+                </el-checkbox>
+              </template>
+            </el-table-column>
+          </el-table>
         </div>
       </template>
     </div>
@@ -522,6 +777,40 @@ defineExpose({
     margin-bottom: 16px;
   }
 
+  .table-select_mode {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #f5f6f7;
+    padding: 16px;
+    .btn-select {
+      width: 164px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #ffffff;
+      border: 1px solid #bbbfc4;
+      border-radius: 4px;
+
+      .is-active {
+        background: var(--ed-color-primary-1a, rgba(51, 112, 255, 0.1));
+      }
+
+      .ed-button:not(.is-active) {
+        color: #1f2329;
+      }
+      .ed-button.is-text {
+        height: 24px;
+        width: 74px;
+        line-height: 24px;
+      }
+      .ed-button + .ed-button {
+        margin-left: 4px;
+      }
+    }
+  }
+
   .detail-operate {
     height: 56px;
     padding: 16px 24px;
@@ -534,6 +823,7 @@ defineExpose({
     width: 800px;
     padding-top: 16px;
     height: calc(100vh - 280px);
+    min-height: 700px;
 
     .dropdown-icon {
       .down-outlined {
@@ -553,7 +843,7 @@ defineExpose({
 
     .upload-tip {
       color: #8f959e;
-      font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+      font-family: var(--de-custom_font, 'PingFang');
       font-size: 14px;
       font-style: normal;
       font-weight: 400;
@@ -567,7 +857,10 @@ defineExpose({
 
     .info-table {
       width: 100%;
-      height: calc(100% - 315px);
+      height: calc(100% - 200px);
+      &.info-table_height {
+        height: calc(100% - 379px);
+      }
     }
   }
 }

@@ -2,7 +2,7 @@
   <div class="user-center flex-align-center">
     <div class="user-center-container">
       <div class="user-tabs">
-        <div class="tabs-title flex-align-center">用户中心</div>
+        <div class="tabs-title flex-align-center">{{ t('commons.user_center') }}</div>
         <el-divider />
         <div class="list-item_primary active">
           {{ t('user.change_password') }}
@@ -33,7 +33,6 @@ const { t } = useI18n()
   padding-top: 24px;
   .user-center-container {
     display: flex;
-    font-family: PingFang SC;
     font-style: normal;
   }
 
@@ -55,7 +54,6 @@ const { t } = useI18n()
     .tabs-title {
       padding-left: 8px;
       color: #8d9199;
-      font-family: PingFang SC;
       font-size: 14px;
       font-style: normal;
       font-weight: 500;
@@ -85,7 +83,6 @@ const { t } = useI18n()
           }
 
           .info {
-            font-family: PingFang SC;
             font-style: normal;
             font-weight: 400;
             width: 80%;
@@ -163,7 +160,6 @@ const { t } = useI18n()
 </style>
 <style lang="less">
 .qr-code-dialog {
-  font-family: PingFang SC;
   font-style: normal;
   .ed-dialog__body {
     display: flex;

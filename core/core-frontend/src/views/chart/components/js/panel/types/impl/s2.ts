@@ -3,8 +3,19 @@ import {
   AntVDrawOptions,
   ChartLibraryType
 } from '@/views/chart/components/js/panel/types'
-import { S2Theme, SpreadSheet, Style, S2Options } from '@antv/s2'
 import {
+  S2Theme,
+  SpreadSheet,
+  Style,
+  S2Options,
+  Meta,
+  SERIES_NUMBER_FIELD,
+  setTooltipContainerStyle,
+  S2DataConfig
+} from '@antv/s2'
+import {
+  configHeaderInteraction,
+  configMergeCells,
   configTooltip,
   getConditions,
   getCustomTheme,
@@ -12,6 +23,7 @@ import {
   handleTableEmptyStrategy
 } from '@/views/chart/components/js/panel/common/common_table'
 import '@antv/s2/dist/style.min.css'
+import { find } from 'lodash-es'
 
 declare interface PageInfo {
   currentPage: number
@@ -32,19 +44,73 @@ export abstract class S2ChartView<P extends SpreadSheet> extends AntVAbstractCha
     return getCustomTheme(chart)
   }
 
-  protected configStyle(chart: Chart): Style {
-    return getStyle(chart)
+  protected configStyle(chart: Chart, s2DataConfig: S2DataConfig): Style {
+    return getStyle(chart, s2DataConfig)
   }
 
   protected configEmptyDataStrategy(chart: Chart): Record<string, any>[] {
     return handleTableEmptyStrategy(chart)
   }
 
-  protected configTooltip(option: S2Options) {
-    configTooltip(option)
+  protected configTooltip(chart: Chart, option: S2Options) {
+    configTooltip(chart, option)
+  }
+
+  protected configHeaderInteraction(chart: Chart, option: S2Options) {
+    configHeaderInteraction(chart, option)
   }
 
   protected configConditions(chart: Chart) {
     return getConditions(chart)
+  }
+
+  protected configMergeCells(chart: Chart, option: S2Options, dataConfig: S2DataConfig) {
+    configMergeCells(chart, option, dataConfig)
+  }
+
+  protected showTooltip(s2Instance: P, event, metaConfig: Meta[]) {
+    const cell = s2Instance.getCell(event.target)
+    const meta = cell.getMeta()
+    let content = ''
+    let field
+    switch (cell.cellType) {
+      case 'dataCell':
+      case 'mergedCell':
+        if (meta.valueField === SERIES_NUMBER_FIELD) {
+          content = meta.fieldValue.toString()
+          break
+        }
+        field = find(metaConfig, item => item.field === meta.valueField)
+        if (meta.fieldValue === 0) {
+          content = '0'
+        }
+        if (meta.fieldValue) {
+          content = field?.formatter?.(meta.fieldValue)
+        }
+        break
+      case 'rowCell':
+      case 'colCell':
+        content = meta.label
+        field = find(metaConfig, item => item.field === content)
+        if (field) {
+          content = field.name
+        }
+        break
+    }
+    if (!content) {
+      return
+    }
+    event.s2Instance = s2Instance
+    const style = s2Instance.options.tooltip.style
+    setTooltipContainerStyle(s2Instance.tooltip.container, { style })
+    s2Instance.showTooltip({
+      position: {
+        x: event.clientX,
+        y: event.clientY
+      },
+      content,
+      meta,
+      event
+    })
   }
 }

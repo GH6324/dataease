@@ -49,21 +49,28 @@ function usage() {
 }
 function _generate_compose_file_args() {
    if [[ $DE_INSTALL_MODE != "community" ]];then
-      compose_files="${compose_files} -f docker-compose-apisix.yml"
-      if [[ -f $DE_RUNNING_BASE/docker-compose-task.yml ]];then
+      if [[ -f $DE_RUNNING_BASE/docker-compose-apisix.yml ]] && [[ "$DE_EXTERNAL_APISIX" != "true" ]];then
+         compose_files="${compose_files} -f docker-compose-apisix.yml"
+      fi
+      
+      if [[ -f $DE_RUNNING_BASE/docker-compose-task.yml ]] && [[ "$DE_EXTERNAL_SYNC_TASK" != "true" ]];then
          compose_files="${compose_files} -f docker-compose-task.yml"
+      fi
+
+      if [[ -f $DE_RUNNING_BASE/docker-compose-selenium.yml ]] && [[ "$DE_EXTERNAL_SELENIUM" != "true" ]];then
+         compose_files="${compose_files} -f docker-compose-selenium.yml"
       fi
    fi
 }
 function _check_apisix_init() {
-   if [[ $DE_INSTALL_MODE != "community" ]];then
+   if [[ $DE_INSTALL_MODE != "community" ]] && [[ "$DE_EXTERNAL_APISIX" != "true" ]];then
       _prepare_apisix
    fi
 }
 function _prepare_apisix() {
    if [[ -z $DE_APISIX_KEY ]];then
       need_init_apisix=true
-      DE_APISIX_KEY=$(uuidgen | sed 's/-//g')
+      DE_APISIX_KEY=$(head -c 32 /dev/urandom | base64 | sed 's#/#+#g')
       export DE_APISIX_KEY=$DE_APISIX_KEY
       cd $DE_RUNNING_BASE
       env | grep DE_ >.env
@@ -71,10 +78,6 @@ function _prepare_apisix() {
       sed -i -e "s/DE_APISIX_KEY/${DE_APISIX_KEY}/g" $DE_RUNNING_BASE/conf/application.yml
    fi
 }
-function _init_apisix() {
-   DE_APISIX_KEY=$DE_APISIX_KEY sh $DE_RUNNING_BASE/bin/apisix/init.sh
-}
-
 function _healthcheck() {
    echo
    container_name=$(grep "container_name" $DE_RUNNING_BASE/docker-compose.yml | awk -F': ' '{print $2}')
@@ -220,9 +223,6 @@ function start() {
    cd ${DE_RUNNING_BASE}
    ${compose_cmd} ${compose_files} up -d
    _healthcheck
-   if [ $? -eq 0 ] && [[ $need_init_apisix = true ]]; then
-      _init_apisix
-   fi
 }
 function stop() {
    echo
@@ -301,13 +301,13 @@ function clear_images() {
          component_version=$(echo ${component_image_defined} | awk -F":" '{print $3}' | uniq)
          component_image=$(echo ${component_image_defined} | awk -F'image: ' '{print $2}' | awk -F':' '{print $1}')
 
-         if [[ $(docker images | grep "$component_image" | grep -v " $component_version ") == 0 ]]; then
+         if [[ $(docker images | grep "$component_image[[:space:]]" | grep -v " $component_version " | wc -l) == 0 ]]; then
             echo "$component_image 不存在旧版本镜像"
          else
-            echo "存在旧版本镜像 : "
-            docker images | grep "$component_image" | grep -v " $component_version "
+            echo "存在非当前版本镜像 : "
+            docker images | grep "$component_image[[:space:]]" | grep -v " $component_version "
             echo "清理${component}镜像"
-            docker rmi $(docker images | grep "$component_image" | grep -v " $component_version " | awk -F' ' '{print $1":"$2}')
+            docker rmi $(docker images | grep "$component_image[[:space:]]" | grep -v " $component_version " | awk -F' ' '{print $1":"$2}')
             echo "清理完毕"
          fi
       done
@@ -320,13 +320,45 @@ function clear_images() {
    fi
 }
 function backup() {
+   need_stop=0
+   if [[ -z $1 ]];then
+      echo "如需备份 DataEase 数据，建议您先停止 DataEase 服务，以保证备份数据的完整性。"
+      read -r -p "即将备份 DataEase 数据，是否需要停止 DataEase 服务? [Y/n] " input
+
+      case $input in
+         [yY][eE][sS]|[yY])
+            echo "Yes"
+            need_stop=1
+            ;;
+         [nN][oO]|[nN])
+            echo "No"
+            ;;
+         *)
+            echo "无效输入..."
+            exit 1
+            ;;
+      esac
+   elif [[ "$1" == "stop" ]];then
+      need_stop=1
+   fi
+
+   if [[ $need_stop == 1 ]];then
+      service dataease stop
+   else
+      echo "不停服进行备份"
+   fi
+
    backup_file_name=dataease-backup-$(date +%Y%m%d)_$(date +%H%M%S).tar.gz
    tar --exclude=logs/dataease -zcf $backup_file_name -C $DE_RUNNING_BASE .
    if [ $? -ne 0 ]; then
       echo "备份失败"
       exit 1
    else
-      echo "备份成功，备份文件 : $backup_file_name"
+      echo "备份成功，备份文件 : $(pwd)/$backup_file_name"
+   fi
+
+   if [[ $need_stop == 1 ]];then
+      service dataease start
    fi
 }
 function restore() {
@@ -339,6 +371,7 @@ function restore() {
          mkdir -p $DE_RUNNING_BASE
       fi
       echo "恢复备份 $target"
+      rm -rf $DE_RUNNING_BASE/data/mysql/*
       tar -zxf $target --directory=$DE_RUNNING_BASE
       service dataease start
    else
@@ -367,7 +400,7 @@ function main() {
          upgrade
          ;;
       backup)
-         backup
+         backup $target
          ;;
       restore)
          restore $target
@@ -382,6 +415,9 @@ function main() {
          usage
          ;;
       --help)
+         usage
+         ;;
+      "")
          usage
          ;;
       *)

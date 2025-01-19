@@ -2,7 +2,6 @@
 import { propTypes } from '@/utils/propTypes'
 import { computed, PropType, reactive, toRefs, h } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
-import { Icon } from '@/components/icon-custom'
 
 const { t } = useI18n()
 
@@ -11,8 +10,6 @@ interface Config {
   showType: string
   // 日期分隔符
   rangeSeparator: string
-  // 前缀图标
-  prefixIcon: string
   // 开始日期label
   startPlaceholder: string
   // 结束日期label
@@ -32,13 +29,11 @@ const props = defineProps({
   title: propTypes.string
 })
 const { property } = toRefs(props)
-const prefixIcon = h(Icon, { name: 'icon_calendar_outlined' })
 const timeConfig = computed(() => {
   let obj = Object.assign(
     {
       showType: 'datetime',
       rangeSeparator: '-',
-      prefixIcon,
       startPlaceholder: t('datasource.start_time'),
       endPlaceholder: t('datasource.end_time'),
       format: 'YYYY-MM-DD HH:mm:ss',
@@ -67,14 +62,13 @@ defineExpose({
 </script>
 
 <template>
-  <div class="filter">
+  <div class="draw-filter_time">
     <span>{{ title }}</span>
     <div class="filter-item">
       <el-date-picker
         v-model="state.modelValue"
         :type="timeConfig.showType"
         :range-separator="timeConfig.rangeSeparator"
-        :prefix-icon="timeConfig.prefixIcon"
         :start-placeholder="timeConfig.startPlaceholder"
         :end-placeholder="timeConfig.endPlaceholder"
         :format="timeConfig.format"
@@ -88,24 +82,20 @@ defineExpose({
   </div>
 </template>
 <style lang="less" scope>
-.filter {
-  display: flex;
-  min-height: 32px;
+.draw-filter_time {
+  margin-bottom: 16px;
 
   > :nth-child(1) {
     color: var(--deTextSecondary, #1f2329);
-    font-family: 'PingFang SC';
     font-style: normal;
     font-weight: 400;
     font-size: 14px;
-    line-height: 24px;
+    line-height: 22px;
     white-space: nowrap;
-    width: 116px;
-    margin-top: 5px;
   }
 
   .filter-item {
-    flex: 1;
+    margin-top: 8px;
     .ed-date-editor {
       width: 100%;
     }

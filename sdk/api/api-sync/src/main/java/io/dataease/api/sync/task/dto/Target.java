@@ -21,4 +21,6 @@ public class Target {
     private String incrementSync;
     private String incrementField;
     private String datasourceVersion;
+    private double faultToleranceRate;
+    private String incrementFieldType;
 }

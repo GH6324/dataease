@@ -27,11 +27,41 @@
       v-if="dvInfo.type === 'dashboard'"
       class="form-item"
       :class="'form-item-' + themes"
+      :label="t('visualization.font_family_select')"
+    >
+      <el-select :effect="themes" v-model="canvasStyleData.fontFamily" @change="fontFamilyChange()">
+        <el-option
+          v-for="option in fontFamily"
+          :key="option.value"
+          :label="option.name"
+          :value="option.value"
+        />
+      </el-select>
+    </el-form-item>
+    <el-form-item
+      v-if="dvInfo.type === 'dashboard'"
+      class="form-item"
+      :class="'form-item-' + themes"
       :label="t('visualization.component_gap')"
     >
       <el-radio-group v-model="canvasStyleData.dashboard.gap" @change="themeChange">
         <el-radio :effect="themes" label="yes">{{ t('visualization.gap') }}</el-radio>
         <el-radio :effect="themes" label="no">{{ t('visualization.no_gap') }}</el-radio>
+      </el-radio-group>
+    </el-form-item>
+    <el-form-item
+      v-if="dvInfo.type === 'dashboard'"
+      class="form-item"
+      :class="'form-item-' + themes"
+      :label="t('visualization.dashboard_adaptor')"
+    >
+      <el-radio-group v-model="canvasStyleData.dashboardAdaptor" @change="onKeepSizeChange">
+        <el-radio :effect="themes" label="keepHeightAndWidth">{{
+          t('visualization.scale_keep_height_and_width')
+        }}</el-radio>
+        <el-radio :effect="themes" label="withWidth">{{
+          t('visualization.scale_with_width')
+        }}</el-radio>
       </el-radio-group>
     </el-form-item>
     <el-form-item class="form-item" :class="'form-item-' + themes" style="margin-bottom: 8px">
@@ -55,7 +85,7 @@
         :max="3600"
         size="middle"
         :disabled="!canvasStyleData.refreshViewEnable"
-        @change="themeChange"
+        @change="onRefreshChange"
       >
         <template #append>
           <el-select
@@ -63,6 +93,56 @@
             size="middle"
             :effect="themes"
             :disabled="!canvasStyleData.refreshViewEnable"
+            style="width: 90px"
+            @change="themeChange"
+          >
+            <el-option :label="t('visualization.minute')" :value="'minute'" />
+            <el-option :label="t('visualization.second')" :value="'second'" />
+          </el-select>
+        </template>
+      </el-input>
+    </el-form-item>
+    <el-form-item class="form-item" :class="'form-item-' + themes" style="margin-bottom: 8px">
+      <el-checkbox
+        :effect="themes"
+        size="small"
+        v-model="canvasStyleData.refreshBrowserEnable"
+        @change="themeChange"
+      >
+        {{ t('components.overall_refresh') }}
+      </el-checkbox>
+      <el-tooltip class="item" :effect="toolTip" placement="bottom">
+        <template #content>
+          <div>{{ t('components.previews_take_effect') }}</div>
+        </template>
+        <el-icon
+          class="hint-icon"
+          style="margin-left: 4px"
+          :class="{ 'hint-icon--dark': themes === 'dark' }"
+        >
+          <Icon name="icon_info_outlined"><icon_info_outlined class="svg-icon" /></Icon>
+        </el-icon>
+      </el-tooltip>
+    </el-form-item>
+    <el-form-item class="form-item" :class="'form-item-' + themes" style="padding-left: 20px">
+      <el-input
+        v-model="canvasStyleData.refreshBrowserTime"
+        :effect="themes"
+        class="time-input-number"
+        :class="[dvInfo.type === 'dashboard' && 'padding20', themes === 'dark' && 'dv-dark']"
+        type="number"
+        :min="1"
+        :max="3600"
+        size="middle"
+        :disabled="!canvasStyleData.refreshBrowserEnable"
+        @change="onRefreshChange"
+      >
+        <template #append>
+          <el-select
+            v-model="canvasStyleData.refreshBrowserUnit"
+            size="middle"
+            :effect="themes"
+            :disabled="!canvasStyleData.refreshBrowserEnable"
             style="width: 90px"
             @change="themeChange"
           >
@@ -91,11 +171,11 @@
           <el-tooltip class="item" :effect="toolTip" placement="bottom">
             <template #content>
               <div>
-                {{ t('visualization.panel_view_result_tips') }}
+                {{ t('visualization.panel_view_result_tips', [resourceType]) }}
               </div>
             </template>
             <el-icon class="hint-icon" :class="{ 'hint-icon--dark': themes === 'dark' }">
-              <Icon name="icon_info_outlined" />
+              <Icon name="icon_info_outlined"><icon_info_outlined class="svg-icon" /></Icon>
             </el-icon>
           </el-tooltip>
         </span>
@@ -130,10 +210,48 @@
         :disabled="canvasStyleData.dashboard.resultMode === 'all'"
       />
     </el-form-item>
+    <el-form-item
+      v-show="dvInfo.type === 'dashboard' && !isDesktopFlag"
+      style="margin-top: 16px; margin-bottom: 8px"
+      :class="'form-item-' + themes"
+    >
+      <el-checkbox
+        :effect="themes"
+        size="small"
+        v-model="canvasStyleData.suspensionButtonAvailable"
+        @change="themeChange"
+      >
+        <span class="data-area-label">
+          <span style="margin-right: 4px"> {{ t('visualization.button_tips') }}</span>
+          <el-tooltip class="item" :effect="toolTip" placement="bottom">
+            <template #content>
+              <div>{{ t('visualization.effective_during_link') }}</div>
+            </template>
+            <el-icon class="hint-icon" :class="{ 'hint-icon--dark': themes === 'dark' }">
+              <Icon name="icon_info_outlined"><icon_info_outlined class="svg-icon" /></Icon>
+            </el-icon>
+          </el-tooltip>
+        </span>
+      </el-checkbox>
+    </el-form-item>
+    <el-form-item
+      v-show="dvInfo.type === 'dashboard'"
+      class="form-item"
+      :class="'form-item-' + themes"
+    >
+      <el-checkbox
+        :effect="themes"
+        size="small"
+        v-model="canvasStyleData.dashboard.showGrid"
+        @change="themeChange"
+        >{{ t('visualization.display_auxiliary_grid') }}</el-checkbox
+      >
+    </el-form-item>
   </el-form>
 </template>
 
 <script setup lang="ts">
+import icon_info_outlined from '@/assets/svg/icon_info_outlined.svg'
 import { useI18n } from '@/hooks/web/useI18n'
 const { t } = useI18n()
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
@@ -141,10 +259,12 @@ const dvMainStore = dvMainStoreWithOut()
 const { canvasStyleData, dvInfo } = storeToRefs(dvMainStore)
 import {
   adaptCurThemeCommonStyleAll,
+  adaptTitleFontFamilyAll,
   DARK_THEME_DASHBOARD_BACKGROUND,
   LIGHT_THEME_DASHBOARD_BACKGROUND
 } from '@/utils/canvasStyle'
 import {
+  CHART_FONT_FAMILY_ORIGIN,
   DEFAULT_COLOR_CASE_DARK,
   DEFAULT_COLOR_CASE_LIGHT,
   DEFAULT_TAB_COLOR_CASE_DARK,
@@ -152,7 +272,9 @@ import {
   DEFAULT_TITLE_STYLE_DARK,
   DEFAULT_TITLE_STYLE_LIGHT,
   FILTER_COMMON_STYLE_DARK,
-  FILTER_COMMON_STYLE_LIGHT
+  FILTER_COMMON_STYLE_LIGHT,
+  SENIOR_STYLE_SETTING_DARK,
+  SENIOR_STYLE_SETTING_LIGHT
 } from '@/views/chart/components/editor/util/chart'
 import ColorButton from '@/components/assist-button/ColorButton.vue'
 import { computed } from 'vue'
@@ -165,6 +287,11 @@ import {
 } from '@/custom-component/component-list'
 import { ElFormItem, ElIcon, ElSpace } from 'element-plus-secondary'
 import Icon from '@/components/icon-custom/src/Icon.vue'
+import { useAppearanceStoreWithOut } from '@/store/modules/appearance'
+import { isDesktop } from '@/utils/ModelUtil'
+import eventBus from '@/utils/eventBus'
+const appearanceStore = useAppearanceStoreWithOut()
+const isDesktopFlag = isDesktop()
 const snapshotStore = snapshotStoreWithOut()
 const props = defineProps({
   themes: {
@@ -172,12 +299,46 @@ const props = defineProps({
     default: 'light'
   }
 })
+const fontFamily = CHART_FONT_FAMILY_ORIGIN.concat(
+  appearanceStore.fontList.map(ele => ({
+    name: ele.name,
+    value: ele.name
+  }))
+)
+
 const toolTip = computed(() => {
   return props.themes === 'dark' ? 'ndark' : 'dark'
 })
 
-const resourceType = computed(() => (dvInfo.value.type === 'dashboard' ? '仪表板' : '数据大屏'))
-const themeChange = modifyName => {
+const resourceType = computed(() =>
+  dvInfo.value.type === 'dashboard' ? t('work_branch.dashboard') : t('work_branch.big_data_screen')
+)
+
+const onRefreshChange = val => {
+  if (val === '' || parseFloat(val).toString() === 'NaN' || parseFloat(val) < 1) {
+    canvasStyleData.value.refreshTime = 1
+    return
+  } else if (parseFloat(val) > 3600) {
+    canvasStyleData.value.refreshTime = 3600
+  }
+  themeChange()
+}
+const fontFamilyChange = () => {
+  appearanceStore.setCurrentFont(canvasStyleData.value.fontFamily)
+  document.documentElement.style.setProperty(
+    '--de-canvas_custom_font',
+    `${canvasStyleData.value.fontFamily}`
+  )
+  adaptTitleFontFamilyAll(canvasStyleData.value.fontFamily)
+  snapshotStore.recordSnapshotCache('renderChart')
+}
+
+const onKeepSizeChange = () => {
+  eventBus.emit('event-canvas-size-init')
+  snapshotStore.recordSnapshotCache('renderChart')
+}
+
+const themeChange = (modifyName?) => {
   if (modifyName === 'themeColor') {
     // 主题变更
     canvasStyleData.value.component.chartCommonStyle.backgroundColorSelect = true
@@ -189,6 +350,7 @@ const themeChange = modifyName => {
       canvasStyleData.value.component.chartColor = deepCopy(DEFAULT_COLOR_CASE_LIGHT)
       canvasStyleData.value.component.filterStyle = deepCopy(FILTER_COMMON_STYLE_LIGHT)
       canvasStyleData.value.component.tabStyle = deepCopy(DEFAULT_TAB_COLOR_CASE_LIGHT)
+      canvasStyleData.value.component.seniorStyleSetting = deepCopy(SENIOR_STYLE_SETTING_LIGHT)
     } else {
       canvasStyleData.value.backgroundColor = DARK_THEME_DASHBOARD_BACKGROUND
       canvasStyleData.value.component.chartCommonStyle = deepCopy(COMMON_COMPONENT_BACKGROUND_DARK)
@@ -196,6 +358,7 @@ const themeChange = modifyName => {
       canvasStyleData.value.component.chartColor = deepCopy(DEFAULT_COLOR_CASE_DARK)
       canvasStyleData.value.component.filterStyle = deepCopy(FILTER_COMMON_STYLE_DARK)
       canvasStyleData.value.component.tabStyle = deepCopy(DEFAULT_TAB_COLOR_CASE_DARK)
+      canvasStyleData.value.component.seniorStyleSetting = deepCopy(SENIOR_STYLE_SETTING_DARK)
     }
     adaptCurThemeCommonStyleAll()
   }

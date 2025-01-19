@@ -3,14 +3,20 @@
     <el-dropdown :teleported="false" trigger="click">
       <input id="input" ref="trackButton" type="button" hidden />
       <template #dropdown>
-        <el-dropdown-menu class="track-menu" :append-to-body="false">
-          <el-dropdown-item
-            v-for="(item, key) in trackMenu"
-            :key="key"
-            @click="trackMenuClick(item)"
-            ><span class="menu-item">{{ state.i18n_map[item] }}</span></el-dropdown-item
+        <div :class="{ 'data-mobile': isDataVMobile }">
+          <el-dropdown-menu
+            class="track-menu"
+            :style="{ 'font-family': fontFamily }"
+            :append-to-body="false"
           >
-        </el-dropdown-menu>
+            <el-dropdown-item
+              v-for="(item, key) in trackMenu"
+              :key="key"
+              @click="trackMenuClick(item)"
+              ><span class="menu-item">{{ state.i18n_map[item] }}</span></el-dropdown-item
+            >
+          </el-dropdown-menu>
+        </div>
       </template>
     </el-dropdown>
   </div>
@@ -27,6 +33,16 @@ const props = defineProps({
   trackMenu: {
     type: Array,
     required: true
+  },
+  isDataVMobile: {
+    type: Boolean,
+    required: false,
+    default: false
+  },
+  fontFamily: {
+    type: String,
+    required: false,
+    default: 'inherit'
   }
 })
 const { trackMenu } = toRefs(props)
@@ -34,7 +50,9 @@ const state = reactive({
   i18n_map: {
     drill: t('visualization.drill'),
     linkage: t('visualization.linkage'),
-    jump: t('visualization.jump')
+    linkageAndDrill: t('visualization.linkage_and_drill'),
+    jump: t('visualization.jump'),
+    enlarge: t('visualization.enlarge')
   }
 })
 
@@ -58,10 +76,6 @@ defineExpose({
   font-size: 12px;
 }
 
-:deep(ul) {
-  width: 80px;
-}
-
 :deep(.ed-dropdown__popper) {
   position: static !important;
 }
@@ -72,5 +86,9 @@ defineExpose({
 
 :deep(.ed-popper[x-placement^='bottom']) {
   margin-top: -80px !important;
+}
+
+.data-mobile {
+  zoom: 0.3;
 }
 </style>

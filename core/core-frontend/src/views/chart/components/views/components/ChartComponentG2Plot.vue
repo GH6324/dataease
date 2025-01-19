@@ -1,5 +1,14 @@
 <script lang="ts" setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, toRefs } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  shallowRef,
+  toRefs
+} from 'vue'
 import { getData } from '@/api/chart'
 import { ChartLibraryType } from '@/views/chart/components/js/panel/types'
 import { G2PlotChartView } from '@/views/chart/components/js/panel/types/impl/g2plot'
@@ -14,12 +23,26 @@ import { defaultsDeep, cloneDeep } from 'lodash-es'
 import ChartError from '@/views/chart/components/views/components/ChartError.vue'
 import { BASE_VIEW_CONFIG } from '../../editor/util/chart'
 import { customAttrTrans, customStyleTrans, recursionTransObj } from '@/utils/canvasStyle'
-import { deepCopy } from '@/utils/utils'
-
+import { deepCopy, isMobile } from '@/utils/utils'
+import { isDashboard, trackBarStyleCheck } from '@/utils/canvasUtils'
+import { useEmitt } from '@/hooks/web/useEmitt'
+import { L7ChartView } from '@/views/chart/components/js/panel/types/impl/l7'
+import { useI18n } from '@/hooks/web/useI18n'
+import { ExportImage } from '@antv/l7'
+const { t } = useI18n()
 const dvMainStore = dvMainStoreWithOut()
-const { nowPanelTrackInfo, nowPanelJumpInfo, mobileInPc } = storeToRefs(dvMainStore)
-
+const { nowPanelTrackInfo, nowPanelJumpInfo, mobileInPc, embeddedCallBack, inMobile } =
+  storeToRefs(dvMainStore)
+const { emitter } = useEmitt()
 const props = defineProps({
+  element: {
+    type: Object,
+    default() {
+      return {
+        propValue: null
+      }
+    }
+  },
   view: {
     type: Object,
     default() {
@@ -41,18 +64,47 @@ const props = defineProps({
   terminal: {
     type: String,
     default: 'pc'
+  },
+  //图表渲染id后缀
+  suffixId: {
+    type: String,
+    required: false,
+    default: 'common'
+  },
+  fontFamily: {
+    type: String,
+    required: false,
+    default: 'inherit'
   }
 })
 
-const emit = defineEmits(['onChartClick', 'onDrillFilters', 'onJumpClick'])
+const emit = defineEmits([
+  'onPointClick',
+  'onChartClick',
+  'onDrillFilters',
+  'onJumpClick',
+  'resetLoading'
+])
 
-const { view, showPosition, scale, terminal } = toRefs(props)
+const g2TypeSeries1 = ['bidirectional-bar']
+const g2TypeSeries0 = ['bar-range']
+const g2TypeTree = ['circle-packing']
+
+const { view, showPosition, scale, terminal, suffixId } = toRefs(props)
 
 const isError = ref(false)
 const errMsg = ref('')
+const linkageActiveHistory = ref(false)
+
+const dataVMobile = !isDashboard() && isMobile()
 
 const state = reactive({
   trackBarStyle: {
+    position: 'absolute',
+    left: '50px',
+    top: '50px'
+  },
+  trackBarStyleMobile: {
     position: 'absolute',
     left: '50px',
     top: '50px'
@@ -65,15 +117,80 @@ let chartData = shallowRef<Partial<Chart['data']>>({
   fields: []
 })
 
-const containerId = 'container-' + showPosition.value + '-' + view.value.id
+const containerId = 'container-' + showPosition.value + '-' + view.value.id + '-' + suffixId.value
 const viewTrack = ref(null)
 
-const calcData = (view, callback) => {
+const clearLinkage = () => {
+  linkageActiveHistory.value = false
+  try {
+    myChart?.setState('active', () => true, false)
+    myChart?.setState('inactive', () => true, false)
+    myChart?.setState('selected', () => true, false)
+  } catch (e) {
+    console.warn('clearLinkage error')
+  }
+}
+const reDrawView = () => {
+  linkageActiveHistory.value = false
+  myChart?.render()
+}
+const linkageActivePre = () => {
+  if (linkageActiveHistory.value) {
+    reDrawView()
+  }
+  nextTick(() => {
+    linkageActive()
+  })
+}
+const linkageActive = () => {
+  linkageActiveHistory.value = true
+  myChart?.setState('active', param => {
+    if (Array.isArray(param)) {
+      return false
+    } else {
+      if (checkSelected(param)) {
+        return true
+      }
+    }
+  })
+  myChart?.setState('inactive', param => {
+    if (Array.isArray(param)) {
+      return false
+    } else {
+      if (!checkSelected(param)) {
+        return true
+      }
+    }
+  })
+}
+const checkSelected = param => {
+  if (g2TypeSeries1.includes(view.value.type)) {
+    return state.linkageActiveParam.name === param.field
+  } else if (g2TypeSeries0.includes(view.value.type)) {
+    return state.linkageActiveParam.category === param.category
+  } else if (g2TypeTree.includes(view.value.type)) {
+    if (
+      param.path?.startsWith(state.linkageActiveParam.name) ||
+      state.linkageActiveParam.name === t('commons.all')
+    ) {
+      return true
+    }
+    return state.linkageActiveParam.name === param.name
+  } else {
+    return (
+      (state.linkageActiveParam.name === param.name ||
+        (state.linkageActiveParam.name === 'NO_DATA' && !param.name)) &&
+      state.linkageActiveParam.category === param.category
+    )
+  }
+}
+
+const calcData = async (view, callback) => {
   if (view.tableId || view['dataFrom'] === 'template') {
     isError.value = false
     const v = JSON.parse(JSON.stringify(view))
     getData(v)
-      .then(res => {
+      .then(async res => {
         if (res.code && res.code !== 0) {
           isError.value = true
           errMsg.value = res.msg
@@ -83,24 +200,39 @@ const calcData = (view, callback) => {
           emit('onDrillFilters', res?.drillFilters)
           if (!res?.drillFilters?.length) {
             dynamicAreaId.value = ''
+            scope = null
           } else {
-            dynamicAreaId.value =
-              view.chartExtRequest?.drill?.[res?.drillFilters?.length - 1].extra?.adcode + ''
+            const extra = view.chartExtRequest?.drill?.[res?.drillFilters?.length - 1].extra
+            dynamicAreaId.value = extra?.adcode + ''
+            scope = extra?.scope
             // 地图
+            const map = parseJson(view.customAttr)?.map
+            if (map) {
+              let areaId = map.id
+              country.value = areaId.slice(0, 3)
+            }
             if (!dynamicAreaId.value?.startsWith(country.value)) {
-              dynamicAreaId.value = country.value + dynamicAreaId.value
+              if (country.value === 'cus') {
+                dynamicAreaId.value = '156' + dynamicAreaId.value
+              } else {
+                dynamicAreaId.value = country.value + dynamicAreaId.value
+              }
             }
           }
-          dvMainStore.setViewDataDetails(view.id, chartData.value)
-          renderChart(res, callback)
+          dvMainStore.setViewDataDetails(view.id, res)
+          if (!res.drill && !res.chartExtRequest?.linkageFilters?.length) {
+            dvMainStore.setViewOriginData(view.id, chartData.value)
+            emitter.emit('chart-data-change')
+          }
+          await renderChart(res, callback)
         }
       })
       .catch(() => {
         callback?.()
       })
   } else {
-    if (view.type === 'map') {
-      renderChart(view, callback)
+    if (['bubble-map', 'map', 'flow-map', 'heat-map'].includes(view.type)) {
+      await renderChart(view, callback)
     }
     callback?.()
   }
@@ -115,17 +247,21 @@ const renderChart = async (view, callback?) => {
   // 与默认图表对象合并，方便增加配置项
   const chart = deepCopy({
     ...defaultsDeep(view, cloneDeep(BASE_VIEW_CONFIG)),
-    data: chartData.value
+    data: chartData.value,
+    ...(props.fontFamily && props.fontFamily !== 'inherit' ? { fontFamily: props.fontFamily } : {})
   })
   const chartView = chartViewManager.getChartView(view.render, view.type)
   recursionTransObj(customAttrTrans, chart.customAttr, scale.value, terminal.value)
   recursionTransObj(customStyleTrans, chart.customStyle, scale.value, terminal.value)
   switch (chartView.library) {
     case ChartLibraryType.L7_PLOT:
-      renderL7Plot(chart, chartView as L7PlotChartView<any, any>, callback)
+      await renderL7Plot(chart, chartView as L7PlotChartView<any, any>, callback)
+      break
+    case ChartLibraryType.L7:
+      await renderL7(chart, chartView as L7ChartView<any, any>, callback)
       break
     case ChartLibraryType.G2_PLOT:
-      renderG2Plot(chart, chartView as G2PlotChartView<any, any>)
+      await renderG2Plot(chart, chartView as G2PlotChartView<any, any>)
       callback?.()
       break
     default:
@@ -133,30 +269,48 @@ const renderChart = async (view, callback?) => {
   }
 }
 let myChart = null
-const renderG2Plot = (chart, chartView: G2PlotChartView<any, any>) => {
-  myChart?.destroy()
-  myChart = chartView.drawChart({
-    chartObj: myChart,
-    container: containerId,
-    chart: chart,
-    scale: 1,
-    action
-  })
-  myChart?.render()
+let g2Timer: number
+const renderG2Plot = async (chart, chartView: G2PlotChartView<any, any>) => {
+  g2Timer && clearTimeout(g2Timer)
+  g2Timer = setTimeout(async () => {
+    try {
+      myChart?.destroy()
+      myChart = await chartView.drawChart({
+        chartObj: myChart,
+        container: containerId,
+        chart: chart,
+        scale: 1,
+        action,
+        quadrantDefaultBaseline
+      })
+      myChart?.render()
+      if (linkageActiveHistory.value) {
+        linkageActive()
+      }
+    } catch (e) {
+      console.error('renderG2Plot error', e)
+    }
+  }, 300)
 }
 
 const dynamicAreaId = ref('')
 const country = ref('')
 const appStore = useAppStoreWithOut()
-const isDataEaseBi = computed(() => appStore.getIsDataEaseBi)
-let mapTimer
 const chartContainer = ref<HTMLElement>(null)
-const renderL7Plot = (chart, chartView: L7PlotChartView<any, any>, callback?) => {
+let scope
+let mapTimer: number
+const renderL7Plot = async (chart: ChartObj, chartView: L7PlotChartView<any, any>, callback) => {
   const map = parseJson(chart.customAttr).map
   let areaId = map.id
   country.value = areaId.slice(0, 3)
   if (dynamicAreaId.value) {
-    areaId = dynamicAreaId.value
+    // 世界下钻到国家，切换路径
+    if (country.value === '000' && dynamicAreaId.value.startsWith('000')) {
+      country.value = dynamicAreaId.value.slice(3)
+      areaId = country.value
+    } else {
+      areaId = dynamicAreaId.value
+    }
   }
   mapTimer && clearTimeout(mapTimer)
   mapTimer = setTimeout(async () => {
@@ -169,15 +323,65 @@ const renderL7Plot = (chart, chartView: L7PlotChartView<any, any>, callback?) =>
       container: containerId,
       chart,
       areaId,
-      action
+      action,
+      scope
     })
     callback?.()
+    emit('resetLoading')
   }, 500)
 }
 
+let mapL7Timer: number
+const renderL7 = async (chart: ChartObj, chartView: L7ChartView<any, any>, callback) => {
+  mapL7Timer && clearTimeout(mapL7Timer)
+  mapL7Timer = setTimeout(async () => {
+    myChart = await chartView.drawChart({
+      chartObj: myChart,
+      container: containerId,
+      chart: chart,
+      action
+    })
+    myChart?.render()
+    callback?.()
+    emit('resetLoading')
+  }, 500)
+}
+
+const pointClickTrans = () => {
+  if (embeddedCallBack.value === 'yes') {
+    trackClick('pointClick')
+  }
+}
+
+const actionDefault = param => {
+  if (param.from === 'map') {
+    emitter.emit('map-default-range', param)
+  }
+  if (param.from === 'word-cloud') {
+    emitter.emit('word-cloud-default-data-range', param)
+  }
+  if (param.from === 'gauge') {
+    emitter.emit('gauge-default-data', param)
+  }
+  if (param.from === 'liquid') {
+    emitter.emit('liquid-default-data', param)
+  }
+}
+
 const action = param => {
-  // 下钻 联动 跳转
+  if (param.from) {
+    actionDefault(param)
+    return
+  }
+  if (view.value.type === 'map') {
+    if (!(param?.data?.data?.quotaList && param?.data?.data?.quotaList.length > 0)) {
+      return
+    }
+  }
   state.pointParam = param.data
+  // 点击
+  pointClickTrans()
+  // 下钻 联动 跳转
   state.linkageActiveParam = {
     category: state.pointParam.data.category ? state.pointParam.data.category : 'NO_DATA',
     name: state.pointParam.data.name ? state.pointParam.data.name : 'NO_DATA'
@@ -187,8 +391,29 @@ const action = param => {
     trackClick(trackMenu.value[0])
   } else {
     // 图表关联多个事件
-    state.trackBarStyle.left = param.x - 50 + 'px'
-    state.trackBarStyle.top = param.y + 10 + 'px'
+    const barStyleTemp = {
+      left: param.x - 50,
+      top: param.y + 10
+    }
+    trackBarStyleCheck(props.element, barStyleTemp, props.scale, trackMenu.value.length)
+    const trackBarX = barStyleTemp.left
+    let trackBarY = 50
+    state.trackBarStyle.left = barStyleTemp.left + 'px'
+    if (curView.type === 'symbolic-map') {
+      trackBarY = param.y + 10
+      state.trackBarStyle.top = param.y + 10 + 'px'
+    } else {
+      trackBarY = barStyleTemp.top
+      state.trackBarStyle.top = barStyleTemp.top + 'px'
+    }
+    if (dataVMobile) {
+      state.trackBarStyle.left = trackBarX + 40 + 'px'
+      state.trackBarStyle.top = trackBarY + 70 + 'px'
+    } else {
+      state.trackBarStyle.left = trackBarX + 'px'
+      state.trackBarStyle.top = trackBarY + 'px'
+    }
+
     viewTrack.value.trackButtonClick()
   }
 }
@@ -203,8 +428,48 @@ const trackClick = trackAction => {
   if (state.pointParam.data.dimensionList.length > 1) {
     checkName = state.pointParam.data.dimensionList[0].id
   }
-  const quotaList = state.pointParam.data.quotaList
-  quotaList[0]['value'] = state.pointParam.data.value
+  // 跳转字段处理
+  let jumpName = state.pointParam.data.name
+  if (state.pointParam.data.dimensionList.length > 1) {
+    const fieldIds = []
+    // 优先下钻字段
+    if (curView.drill) {
+      const curFiled = curView.drillFields[curView.drillFilters.length]
+      fieldIds.push(curFiled.id)
+    }
+    if (curView.type.includes('chart-mix')) {
+      chartData.value?.left?.fields?.forEach(field => {
+        if (!fieldIds.includes(field.id)) {
+          fieldIds.push(field.id)
+        }
+      })
+      chartData.value?.right?.fields?.forEach(field => {
+        if (!fieldIds.includes(field.id)) {
+          fieldIds.push(field.id)
+        }
+      })
+    } else {
+      chartData.value?.fields?.forEach(field => {
+        if (!fieldIds.includes(field.id)) {
+          fieldIds.push(field.id)
+        }
+      })
+    }
+    for (let i = 0; i < fieldIds.length; i++) {
+      const id = fieldIds[i]
+      const sourceInfo = view.value.id + '#' + id
+      if (nowPanelJumpInfo.value[sourceInfo]) {
+        jumpName = id
+        break
+      }
+    }
+  }
+  let quotaList = state.pointParam.data.quotaList
+  if (['bar-range', 'circle-packing'].includes(curView.type)) {
+    quotaList = state.pointParam.data.dimensionList
+  } else {
+    quotaList[0]['value'] = state.pointParam.data.value
+  }
   const linkageParam = {
     option: 'linkage',
     name: checkName,
@@ -214,21 +479,36 @@ const trackClick = trackAction => {
   }
   const jumpParam = {
     option: 'jump',
-    name: checkName,
+    name: jumpName,
     viewId: view.value.id,
     dimensionList: state.pointParam.data.dimensionList,
     quotaList: quotaList
   }
 
+  const clickParams = {
+    option: 'pointClick',
+    name: checkName,
+    viewId: view.value.id,
+    dimensionList: state.pointParam.data.dimensionList,
+    quotaList: quotaList
+  }
   switch (trackAction) {
+    case 'pointClick':
+      emit('onPointClick', clickParams)
+      break
+    case 'linkageAndDrill':
+      dvMainStore.addViewTrackFilter(linkageParam)
+      emit('onChartClick', param)
+      break
     case 'drill':
       emit('onChartClick', param)
       break
     case 'linkage':
+      linkageActivePre()
       dvMainStore.addViewTrackFilter(linkageParam)
       break
     case 'jump':
-      if (isDataEaseBi.value || mobileInPc.value) return
+      if (mobileInPc.value && !inMobile.value) return
       emit('onJumpClick', jumpParam)
       break
     default:
@@ -237,39 +517,144 @@ const trackClick = trackAction => {
 }
 
 const trackMenu = computed(() => {
-  const trackMenuInfo = []
+  let trackMenuInfo = []
   // 复用、放大状态的仪表板不进行联动、跳转和下钻的动作
   if (!['multiplexing', 'viewDialog'].includes(showPosition.value)) {
     let linkageCount = 0
     let jumpCount = 0
-    chartData.value?.fields?.forEach(item => {
-      const sourceInfo = view.value.id + '#' + item.id
-      if (nowPanelTrackInfo.value[sourceInfo]) {
-        linkageCount++
-      }
-      if (nowPanelJumpInfo.value[sourceInfo]) {
-        jumpCount++
-      }
-    })
+    if (curView?.type?.includes('chart-mix')) {
+      chartData.value?.left?.fields?.forEach(item => {
+        const sourceInfo = view.value.id + '#' + item.id
+        if (nowPanelTrackInfo.value[sourceInfo]) {
+          linkageCount++
+        }
+        if (nowPanelJumpInfo.value[sourceInfo]) {
+          jumpCount++
+        }
+      })
+      chartData.value?.right?.fields?.forEach(item => {
+        const sourceInfo = view.value.id + '#' + item.id
+        if (nowPanelTrackInfo.value[sourceInfo]) {
+          linkageCount++
+        }
+        if (nowPanelJumpInfo.value[sourceInfo]) {
+          jumpCount++
+        }
+      })
+    } else {
+      chartData.value?.fields?.forEach(item => {
+        const sourceInfo = view.value.id + '#' + item.id
+        if (nowPanelTrackInfo.value[sourceInfo]) {
+          linkageCount++
+        }
+        if (nowPanelJumpInfo.value[sourceInfo]) {
+          jumpCount++
+        }
+      })
+    }
     jumpCount &&
       view.value?.jumpActive &&
-      !isDataEaseBi.value &&
-      !mobileInPc.value &&
+      (!mobileInPc.value || inMobile.value) &&
       trackMenuInfo.push('jump')
     linkageCount && view.value?.linkageActive && trackMenuInfo.push('linkage')
     view.value.drillFields.length && trackMenuInfo.push('drill')
+    // 如果同时配置jump linkage drill 切配置联动时同时下钻 在实际只显示两个 '跳转' '联动和下钻'
+    if (trackMenuInfo.length === 3 && props.element.actionSelection.linkageActive === 'auto') {
+      trackMenuInfo = ['jump', 'linkageAndDrill']
+    } else if (
+      trackMenuInfo.length === 2 &&
+      props.element.actionSelection.linkageActive === 'auto' &&
+      !trackMenuInfo.includes('jump')
+    ) {
+      trackMenuInfo = ['linkageAndDrill']
+    }
   }
   return trackMenuInfo
 })
+const quadrantDefaultBaseline = defaultQuadrant => {
+  emitter.emit('quadrant-default-baseline', defaultQuadrant)
+}
 
+const canvas2Picture = (pictureData, online) => {
+  const mapDom = document.getElementById(containerId)
+  const childNodeList = mapDom.querySelectorAll('.l7-scene')
+  if (childNodeList?.length) {
+    childNodeList.forEach(child => {
+      child['style'].display = 'none'
+    })
+  }
+  if (online) {
+    const canvasContainerList = mapDom.querySelectorAll('.amap-maps')
+    canvasContainerList?.forEach(canvasContainer => {
+      canvasContainer['style'].display = 'none'
+    })
+  }
+  const imgDom = document.createElement('img')
+  imgDom.style.width = '100%'
+  imgDom.style.height = '100%'
+  imgDom.style.position = 'absolute'
+  imgDom.style.objectFit = 'cover'
+  imgDom.style['z-index'] = '2'
+  imgDom.classList.add('prepare-picture-img')
+  imgDom.src = pictureData
+  mapDom.appendChild(imgDom)
+}
+const preparePicture = id => {
+  if (id !== curView.id) {
+    return
+  }
+  const chartView = chartViewManager.getChartView(curView.render, curView.type)
+  if (chartView.library === ChartLibraryType.L7_PLOT) {
+    myChart
+      .getScene()
+      .exportMap('png')
+      .then(res => canvas2Picture(res, false))
+  } else if (chartView.library === ChartLibraryType.L7) {
+    const scene = myChart.getScene()
+    const zoom = new ExportImage({
+      onExport: (base64: string) => {
+        canvas2Picture(base64, true)
+      }
+    })
+    scene.addControl(zoom)
+    zoom.hide()
+    zoom.getImage().then(res => {
+      canvas2Picture(res, true)
+    })
+  }
+}
+const unPreparePicture = id => {
+  if (id !== curView.id) {
+    return
+  }
+  const chartView = chartViewManager.getChartView(curView.render, curView.type)
+  if (chartView.library === ChartLibraryType.L7_PLOT || chartView.library === ChartLibraryType.L7) {
+    const mapDom = document.getElementById(containerId)
+    const childNodeList = mapDom.querySelectorAll('.l7-scene')
+    if (childNodeList?.length) {
+      childNodeList.forEach(child => {
+        child['style'].display = 'block'
+      })
+    }
+    const imgDomList = mapDom.querySelectorAll('.prepare-picture-img')
+    imgDomList?.forEach(child => {
+      child.remove()
+    })
+    const canvasContainerList = mapDom.querySelectorAll('.amap-maps')
+    canvasContainerList?.forEach(canvasContainer => {
+      canvasContainer['style'].display = 'block'
+    })
+  }
+}
 defineExpose({
   calcData,
   renderChart,
-  trackMenu
+  trackMenu,
+  clearLinkage
 })
 let resizeObserver
 const TOLERANCE = 0.01
-const RESIZE_MONITOR_CHARTS = ['map', 'bubble-map']
+const RESIZE_MONITOR_CHARTS = ['map', 'bubble-map', 'flow-map', 'heat-map']
 onMounted(() => {
   const containerDom = document.getElementById(containerId)
   const { offsetWidth, offsetHeight } = containerDom
@@ -284,15 +669,23 @@ onMounted(() => {
     if (Math.abs(widthOffsetPercent) < TOLERANCE && Math.abs(heightOffsetPercent) < TOLERANCE) {
       return
     }
+    if (myChart && preSize[1] > 1) {
+      renderChart(curView)
+    }
     preSize[0] = size.inlineSize
     preSize[1] = size.blockSize
-    renderChart(curView)
   })
   resizeObserver.observe(containerDom)
+  useEmitt({ name: 'l7-prepare-picture', callback: preparePicture })
+  useEmitt({ name: 'l7-unprepare-picture', callback: unPreparePicture })
 })
 onBeforeUnmount(() => {
-  myChart?.destroy()
-  resizeObserver?.disconnect()
+  try {
+    myChart?.destroy()
+    resizeObserver?.disconnect()
+  } catch (e) {
+    console.warn(e)
+  }
 })
 </script>
 
@@ -301,6 +694,8 @@ onBeforeUnmount(() => {
     <view-track-bar
       ref="viewTrack"
       :track-menu="trackMenu"
+      :font-family="fontFamily"
+      :is-data-v-mobile="dataVMobile"
       class="track-bar"
       :style="state.trackBarStyle"
       @trackClick="trackClick"

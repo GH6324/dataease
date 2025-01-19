@@ -10,15 +10,16 @@ import com.alibaba.excel.read.metadata.ReadSheet;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.dataease.api.dataset.dto.DatasetTableDTO;
 import io.dataease.api.ds.vo.ExcelFileData;
 import io.dataease.api.ds.vo.ExcelSheetData;
-import io.dataease.api.ds.vo.TableField;
+import io.dataease.commons.utils.EncryptUtils;
 import io.dataease.datasource.dao.auto.entity.CoreDatasource;
-import io.dataease.datasource.request.DatasourceRequest;
 import io.dataease.exception.DEException;
-import io.dataease.utils.AuthUtils;
-import io.dataease.utils.JsonUtil;
+import io.dataease.extensions.datasource.dto.DatasetTableDTO;
+import io.dataease.extensions.datasource.dto.DatasourceDTO;
+import io.dataease.extensions.datasource.dto.DatasourceRequest;
+import io.dataease.extensions.datasource.dto.TableField;
+import io.dataease.utils.*;
 import lombok.Data;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.util.CollectionUtils;
@@ -26,7 +27,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -35,11 +35,35 @@ import java.util.stream.Collectors;
 
 public class ExcelUtils {
     public static final String UFEFF = "\uFEFF";
-    private static String path = "/opt/dataease2.0/data/excel/";
+    private static String path = getExcelPath();
     private static ObjectMapper objectMapper = new ObjectMapper();
 
-    private static  TypeReference<List<TableField>> TableFieldListTypeReference = new TypeReference<List<TableField>>() {
+    public static String getExcelPath() {
+        if (ModelUtils.isDesktop()) {
+            return ConfigUtils.getConfig("dataease.path.excel", "/opt/dataease2.0/data/excel/");
+        } else {
+            return "/opt/dataease2.0/data/excel/";
+        }
+    }
+
+    private static TypeReference<List<TableField>> TableFieldListTypeReference = new TypeReference<List<TableField>>() {
     };
+
+    private static TypeReference<List<ExcelSheetData>> sheets = new TypeReference<List<ExcelSheetData>>() {
+    };
+
+    public static void mergeSheets(CoreDatasource requestDatasource, DatasourceDTO sourceData) {
+        List<ExcelSheetData> newSheets = JsonUtil.parseList(requestDatasource.getConfiguration(), sheets);
+        List<String> tableNames = newSheets.stream().map(ExcelSheetData::getDeTableName).collect(Collectors.toList());
+        List<ExcelSheetData> oldSheets = JsonUtil.parseList(sourceData.getConfiguration(), sheets);
+        for (ExcelSheetData oldSheet : oldSheets) {
+            if (!tableNames.contains(oldSheet.getDeTableName())) {
+                newSheets.add(oldSheet);
+            }
+        }
+        requestDatasource.setConfiguration(JsonUtil.toJSONString(newSheets).toString());
+    }
+
     public static List<DatasetTableDTO> getTables(DatasourceRequest datasourceRequest) throws DEException {
         List<DatasetTableDTO> tableDescs = new ArrayList<>();
         try {
@@ -49,7 +73,7 @@ public class ExcelUtils {
                 datasetTableDTO.setTableName(rootNode.get(i).get("deTableName").asText());
                 datasetTableDTO.setName(rootNode.get(i).get("deTableName").asText());
                 datasetTableDTO.setDatasourceId(datasourceRequest.getDatasource().getId());
-                datasetTableDTO.setLastUpdateTime(rootNode.get(i).get("lastUpdateTime") == null? datasourceRequest.getDatasource().getCreateTime(): rootNode.get(i).get("lastUpdateTime").asLong(0L));
+                datasetTableDTO.setLastUpdateTime(rootNode.get(i).get("lastUpdateTime") == null ? datasourceRequest.getDatasource().getCreateTime() : rootNode.get(i).get("lastUpdateTime").asLong(0L));
                 tableDescs.add(datasetTableDTO);
             }
         } catch (Exception e) {
@@ -59,15 +83,45 @@ public class ExcelUtils {
         return tableDescs;
     }
 
-    public static String getFileName(CoreDatasource datasource) throws DEException {
+    public static Map<String, String> getTableNamesMap(String configration) throws DEException {
+        Map<String, String> result = new HashMap<>();
+        JsonNode rootNode = null;
+        // 兼容历史未加密信息
         try {
-            JsonNode rootNode = objectMapper.readTree(datasource.getConfiguration());
+            rootNode = objectMapper.readTree((String) EncryptUtils.aesDecrypt(configration));
+        } catch (Exception e) {
+            try {
+                rootNode = objectMapper.readTree(configration);
+            } catch (Exception ex) {
+                DEException.throwException(ex);
+            }
+        }
+        if(rootNode != null) {
+            for (int i = 0; i < rootNode.size(); i++) {
+                result.put(rootNode.get(i).get("tableName").asText(), rootNode.get(i).get("deTableName").asText());
+            }
+        }
+        return result;
+    }
+
+    public static String getFileName(CoreDatasource datasource) throws DEException {
+        JsonNode rootNode = null;
+        try {
+            rootNode = objectMapper.readTree((String) EncryptUtils.aesDecrypt(datasource.getConfiguration()));
+        } catch (Exception e) {
+            try {
+                rootNode = objectMapper.readTree(datasource.getConfiguration());
+            } catch (Exception ex) {
+                DEException.throwException(ex);
+            }
+        }
+        if (rootNode != null) {
             for (int i = 0; i < rootNode.size(); i++) {
                 return rootNode.get(i).get("fileName").asText();
             }
-        } catch (Exception e) {
-            DEException.throwException(e);
         }
+
+
         return "";
     }
 
@@ -165,9 +219,6 @@ public class ExcelUtils {
         String filePath = saveFile(file, excelId);
 
         for (ExcelSheetData excelSheetData : returnSheetDataList) {
-            if (excelSheetData.getExcelLabel().length() > 40) {
-                DEException.throwException(excelSheetData.getExcelLabel() + "长度不能大于40！");
-            }
             excelSheetData.setLastUpdateTime(System.currentTimeMillis());
             excelSheetData.setTableName(excelSheetData.getExcelLabel());
             excelSheetData.setDeTableName("excel_" + excelSheetData.getExcelLabel() + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10));
@@ -179,9 +230,6 @@ public class ExcelUtils {
              * dataease字段类型：0-文本，1-时间，2-整型数值，3-浮点数值，4-布尔，5-地理位置，6-二进制
              */
             for (TableField field : excelSheetData.getFields()) {
-                if (field.getOriginName().length() > 40) {
-                    DEException.throwException(excelSheetData.getExcelLabel() + "的字段" + field.getOriginName() + "长度不能大于40！");
-                }
                 //TEXT LONG DATETIME DOUBLE
                 if (field.getFieldType().equalsIgnoreCase("TEXT")) {
                     field.setDeType(0);
@@ -280,7 +328,7 @@ public class ExcelUtils {
                     cells.add(str);
                 }
                 if (!isEmpty(cells)) {
-                    if(cells.size() > size){
+                    if (cells.size() > size) {
                         cells = cells.subList(0, size);
                     }
                     data.add(cells.toArray(new String[]{}));
@@ -294,13 +342,20 @@ public class ExcelUtils {
     }
 
     private String cellType(String value) {
-        if(value.length()> 19){
+        if (StringUtils.isEmpty(value) || value.length() > 19) {
+            return "TEXT";
+        }
+        String regex = "^-?\\d+(\\.\\d+)?$";
+        if (!value.matches(regex)) {
             return "TEXT";
         }
         try {
             Double d = Double.valueOf(value);
             double eps = 1e-10;
             if (d - Math.floor(d) < eps) {
+                if (value.contains(".")) {
+                    return "DOUBLE";
+                }
                 return "LONG";
             } else {
                 return "DOUBLE";
@@ -318,9 +373,9 @@ public class ExcelUtils {
             tableFiled.setFieldType(cellType(value));
         } else {
             String type = cellType(value);
-            if(tableFiled.getFieldType() == null){
+            if (tableFiled.getFieldType() == null) {
                 tableFiled.setFieldType(type);
-            }else {
+            } else {
                 if (type.equalsIgnoreCase("TEXT")) {
                     tableFiled.setFieldType(type);
                 }
@@ -403,6 +458,7 @@ public class ExcelUtils {
                     tableFiled.setFieldType(null);
                     tableFiled.setName(s);
                     tableFiled.setOriginName(s);
+                    tableFiled.setChecked(true);
                     fields.add(tableFiled);
                 }
                 List<String[]> data = new ArrayList<>(noModelDataListener.getData());
@@ -441,7 +497,7 @@ public class ExcelUtils {
             String[] split = s.split(",");
             for (int i = 0; i < split.length; i++) {
                 String filedName = split[i];
-                if(StringUtils.isEmpty(filedName)){
+                if (StringUtils.isEmpty(filedName)) {
                     DEException.throwException("首行行中不允许有空单元格！");
                 }
                 if (filedName.startsWith(UFEFF)) {
@@ -451,6 +507,7 @@ public class ExcelUtils {
                 tableFiled.setName(filedName);
                 tableFiled.setOriginName(filedName);
                 tableFiled.setFieldType(null);
+                tableFiled.setChecked(true);
                 fields.add(tableFiled);
             }
 

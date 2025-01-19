@@ -1,3 +1,5 @@
+import { SymbolicMap } from '@/views/chart/components/js/panel/charts/map/symbolic-map'
+
 /**
  * 高级设置
  */
@@ -22,6 +24,10 @@ declare interface ChartSenior {
    * 区域称映射，{区域id: {原始名称: 映射名称}}
    */
   areaMapping: Record<string, Record<string, string>>
+  /**
+   * 气泡动效
+   */
+  bubbleCfg: BubbleCfg
 }
 
 /**
@@ -52,6 +58,10 @@ declare interface ChartFunctionCfg {
    * 空值处理
    */
   emptyDataStrategy: string
+  /**
+   * 自定义值
+   */
+  emptyDataCustomValue: string
   /**
    * 空值字段控制
    */
@@ -107,6 +117,8 @@ declare interface AssistLine {
    * 动态值聚合方式
    */
   summary: string
+
+  yAxisType: 'left' | 'right'
 }
 
 /**
@@ -122,17 +134,41 @@ declare interface ChartThreshold {
    */
   gaugeThreshold: string
   /**
+   * 水波图阈值: x,y,z
+   */
+  liquidThreshold: string
+  /**
    * 指标卡阈值
    */
   labelThreshold: Threshold[]
   /**
    * 表格阈值
    */
-  tableThreshold: Threshold[]
+  tableThreshold: TableThreshold[]
   /**
    * 文本卡阈值
    */
   textLabelThreshold: Threshold[]
+  /**
+   * 折线阈值
+   */
+  lineThreshold: TableThreshold[]
+
+  symbolicBubbleThreshold: TableThreshold[]
+}
+declare interface TableThreshold {
+  /**
+   * 字段id
+   */
+  fieldId: string
+  /**
+   * 字段
+   */
+  field: ChartViewField
+  /**
+   * 条件
+   */
+  conditions: Threshold[]
 }
 /**
  * 阈值
@@ -151,7 +187,7 @@ declare interface Threshold {
    */
   term: string
   /**
-   *
+   * 字段
    */
   field: ChartViewField
   /**
@@ -166,6 +202,32 @@ declare interface Threshold {
    * 背景颜色
    */
   backgroundColor: string
+  /**
+   * url
+   */
+  url: string
+  /**
+   * 类型，固定值、动态值
+   */
+  type: 'fixed' | 'dynamic'
+  /**
+   * 动态值字段
+   */
+  dynamicField: ThresholdDynamicField
+  /**
+   * 动态值最小值字段 仅当term为between时使用
+   */
+  dynamicMinField: ThresholdDynamicField
+  /**
+   * 动态值最大值字段 仅当term为between时使用
+   */
+  dynamicMaxField: ThresholdDynamicField
+}
+
+declare interface ThresholdDynamicField {
+  fieldId: string
+  summary: string
+  field: ChartViewField
 }
 
 /**
@@ -188,4 +250,26 @@ declare interface ScrollCfg {
    * 滚动步长
    */
   step: number
+}
+
+/**
+ * 气泡动效设置
+ */
+declare interface BubbleCfg {
+  /**
+   * 开启动效
+   */
+  enable: boolean
+  /**
+   * 动效类型
+   */
+  type: 'wave'
+  /**
+   * 水波速度
+   */
+  speed: number
+  /**
+   * 水波环数
+   */
+  rings: number
 }

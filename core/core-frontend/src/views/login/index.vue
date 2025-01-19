@@ -1,9 +1,10 @@
 <script lang="ts" setup>
+import DataEase from '@/assets/svg/DataEase.svg'
 import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { FormRules, FormInstance } from 'element-plus-secondary'
 import { Icon } from '@/components/icon-custom'
-import { loginApi, queryDekey } from '@/api/login'
+import { loginApi, queryDekey, loginCategoryApi } from '@/api/login'
 import { useCache } from '@/hooks/web/useCache'
 import { useAppStoreWithOut } from '@/store/modules/app'
 import { CustomPassword } from '@/components/custom-password'
@@ -16,7 +17,7 @@ import { XpackComponent } from '@/components/plugin'
 import { logoutHandler } from '@/utils/logout'
 import DeImage from '@/assets/login-desc-de.png'
 import elementResizeDetectorMaker from 'element-resize-detector'
-import { isLarkPlatform } from '@/utils/utils'
+import { checkPlatform, cleanPlatformFlag, getQueryString } from '@/utils/utils'
 import xss from 'xss'
 const { wsCache } = useCache()
 const appStore = useAppStoreWithOut()
@@ -35,32 +36,21 @@ const slogan = ref(null)
 const footContent = ref(null)
 const loginErrorMsg = ref('')
 const xpackLoginHandler = ref()
+const showDempTips = ref(false)
+const xpackInvalidPwd = ref()
+const demoTips = computed(() => {
+  if (!showDempTips.value) {
+    return ''
+  }
+  return appearanceStore.getDemoTipsContent || ''
+})
 const state = reactive({
   loginForm: {
     username: '',
     password: ''
   },
-  uiInfo: {},
   footContent: ''
 })
-const checkUsername = value => {
-  if (!value) {
-    return true
-  }
-  const pattern = /^[a-zA-Z0-9][a-zA-Z0-9\@._-]*$/
-  const reg = new RegExp(pattern)
-  return reg.test(value)
-}
-
-const validatePwd = value => {
-  if (!value) {
-    return true
-  }
-  const pattern =
-    /^.*(?=.{6,20})(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[~!@#$%^&*()_+\-\={}|":<>?`[\];',.\/])[a-zA-Z0-9~!@#$%^&*()_+\-\={}|":<>?`[\];',.\/]*$/
-  const regep = new RegExp(pattern)
-  return regep.test(value)
-}
 
 const rules = reactive<FormRules>({
   username: [{ required: true, message: t('common.required'), trigger: 'blur' }],
@@ -68,10 +58,6 @@ const rules = reactive<FormRules>({
 })
 
 const activeName = ref('simple')
-const handleClick = tab => {
-  const param = { methodName: 'tabSwicther', args: tab }
-  xpackLoginHandler?.value.invokeMethod(param)
-}
 
 const getCurLocation = () => {
   let queryRedirectPath = '/workbranch/index'
@@ -80,17 +66,17 @@ const getCurLocation = () => {
   }
   return queryRedirectPath
 }
-
+const enterHandler = e => {
+  e.target.blur()
+  e.stopPropagation()
+  handleLogin()
+}
 const formRef = ref<FormInstance | undefined>()
-const duringLogin = ref(false)
+const duringLogin = ref(true)
 const handleLogin = () => {
   if (!formRef.value) return
   formRef.value.validate(async (valid: boolean) => {
     if (valid) {
-      if (!checkUsername(state.loginForm.username) || !validatePwd(state.loginForm.password)) {
-        ElMessage.error('用户名或密码错误')
-        return
-      }
       const name = state.loginForm.username.trim()
       const pwd = state.loginForm.password
       if (!wsCache.get(appStore.getDekey)) {
@@ -98,13 +84,31 @@ const handleLogin = () => {
         wsCache.set(appStore.getDekey, res.data)
       }
       const param = { name: rsaEncryp(name), pwd: rsaEncryp(pwd) }
+      const isLdap = activeName.value === 'ldap'
+      if (isLdap) {
+        param['origin'] = 1
+      }
       duringLogin.value = true
       cleanPlatformFlag()
       loginApi(param)
         .then(res => {
-          const { token, exp } = res.data
+          const { token, exp, mfa } = res.data
+          if (!isLdap && !xpackLoadFail.value && xpackInvalidPwd.value?.invokeMethod) {
+            const param = {
+              methodName: 'init',
+              args: res.data
+            }
+            xpackInvalidPwd?.value.invokeMethod(param)
+            return
+          }
+          if (!isLdap && mfa?.enabled) {
+            xpackLoginHandler.value?.invokeMethod({ methodName: 'toMfa', args: mfa })
+            duringLogin.value = false
+            return
+          }
           userStore.setToken(token)
           userStore.setExp(exp)
+          userStore.setTime(Date.now())
           const queryRedirectPath = getCurLocation()
           router.push({ path: queryRedirectPath })
         })
@@ -114,38 +118,27 @@ const handleLogin = () => {
     }
   })
 }
-const ldapValidate = callback => {
-  if (!formRef.value) return
-  formRef.value.validate((valid: boolean) => {
-    if (valid && callback) {
-      callback()
+const invalidPwdCb = cbParam => {
+  const val = cbParam['status']
+  duringLogin.value = !!val
+  if (val) {
+    const mfa = cbParam['mfa']
+    if (mfa?.enabled) {
+      xpackLoginHandler.value?.invokeMethod({ methodName: 'toMfa', args: mfa })
+      duringLogin.value = false
+      return
     }
-  })
+    const queryRedirectPath = getCurLocation()
+    router.push({ path: queryRedirectPath })
+  }
 }
-const activeType = ref('account')
-const tablePaneList = ref([{ title: '普通登录', name: 'simple' }])
-const xpackLoaded = info => {
-  tablePaneList.value.push(info)
-}
-
+const xpackLoadFail = ref(false)
+const loadingText = ref('登录中...')
 const loginContainer = ref()
 const loginContainerWidth = ref(0)
 const showLoginImage = computed<boolean>(() => {
   return !(loginContainerWidth.value < 889)
 })
-
-const checkPlatform = () => {
-  const flagArray = ['/casbi', 'oidcbi']
-  const pathname = window.location.pathname
-  if (!flagArray.some(flag => pathname.includes(flag)) && !isLarkPlatform()) {
-    cleanPlatformFlag()
-  }
-}
-const cleanPlatformFlag = () => {
-  const platformKey = 'out_auth_platform'
-  wsCache.delete(platformKey)
-  preheat.value = false
-}
 
 const preheat = ref(true)
 const showLoginErrorMsg = () => {
@@ -157,11 +150,11 @@ const showLoginErrorMsg = () => {
     return
   }
   if (loginErrorMsg.value.startsWith('token is Expired')) {
-    ElMessage.error('token已过期，请重新登录！')
+    ElMessage.error('登录信息已过期，请重新登录！')
     return
   }
   if (loginErrorMsg.value.startsWith('token is destroyed')) {
-    ElMessage.error('token已销毁，请重新登录！')
+    ElMessage.error('登录信息已销毁，请重新登录！')
     return
   }
   if (loginErrorMsg.value.startsWith('user_disable')) {
@@ -176,6 +169,7 @@ const showLoginErrorMsg = () => {
 }
 
 const loadArrearance = () => {
+  showDempTips.value = appearanceStore.getShowDemoTips
   if (appearanceStore.getBg) {
     loginImageUrl.value = appearanceStore.getBg
   }
@@ -189,7 +183,7 @@ const loadArrearance = () => {
     showFoot.value = appearanceStore.getFoot === 'true'
     if (showFoot.value) {
       const content = appearanceStore.getFootContent
-      const myXss = new xss.FilterXSS({
+      const myXss = new xss['FilterXSS']({
         css: {
           whiteList: {
             'background-color': true,
@@ -200,11 +194,12 @@ const loadArrearance = () => {
             'line-height': true,
             'box-sizing': true,
             'padding-top': true,
-            'padding-bottom': true
+            'padding-bottom': true,
+            'font-size': true
           }
         },
         whiteList: {
-          ...xss.whiteList,
+          ...xss['whiteList'],
           p: ['style'],
           span: ['style']
         }
@@ -213,9 +208,43 @@ const loadArrearance = () => {
     }
   }
 }
-onMounted(() => {
+const switchTab = (name: string) => {
+  activeName.value = name || 'simple'
+}
+onMounted(async () => {
   loadArrearance()
-  checkPlatform()
+  duringLogin.value = false
+  if (!checkPlatform()) {
+    const res = await loginCategoryApi()
+    const adminLogin = router.currentRoute?.value?.name === 'admin-login'
+    if (adminLogin && (!res.data || res.data === 1)) {
+      router.push('/401')
+      return
+    }
+    if (res.data && !adminLogin) {
+      if (res.data === 1) {
+        activeName.value = 'ldap'
+        preheat.value = false
+      } else {
+        loadingText.value = '加载中...'
+        document.getElementsByClassName('ed-loading-text')?.length &&
+          (document.getElementsByClassName('ed-loading-text')[0]['innerText'] = loadingText.value)
+      }
+      nextTick(() => {
+        const param = { methodName: 'ssoLogin', args: res.data }
+        const timer = setInterval(() => {
+          if (xpackLoginHandler?.value.invokeMethod) {
+            xpackLoginHandler?.value.invokeMethod(param)
+            clearInterval(timer)
+          }
+        }, 1000)
+      })
+    } else {
+      preheat.value = false
+    }
+  } else if (getQueryString('state')?.includes('de-oauth2-')) {
+    preheat.value = true
+  }
   if (localStorage.getItem('DE-GATEWAY-FLAG')) {
     const msg = localStorage.getItem('DE-GATEWAY-FLAG')
     loginErrorMsg.value = decodeURIComponent(msg)
@@ -243,7 +272,7 @@ onMounted(() => {
     ref="loginContainer"
     class="preheat-container"
     v-loading="true"
-    element-loading-text="登录中..."
+    :element-loading-text="loadingText"
     element-loading-background="#F5F6F7"
   />
   <div v-show="contentShow" class="login-background" v-loading="duringLogin">
@@ -258,84 +287,82 @@ onMounted(() => {
       </div>
       <div class="login-form-content" v-loading="loading">
         <div class="login-form-center">
-          <el-form ref="formRef" :model="state.loginForm" :rules="rules" size="default">
+          <el-form
+            ref="formRef"
+            :model="state.loginForm"
+            :rules="rules"
+            size="default"
+            :disabled="preheat"
+          >
             <div class="login-logo">
               <Icon
                 v-if="!loginLogoUrl && axiosFinished"
                 className="login-logo-icon"
                 name="DataEase"
-              ></Icon>
+              >
+                <DataEase class="login-logo-icon" />
+              </Icon>
               <img v-if="loginLogoUrl && axiosFinished" :src="loginLogoUrl" alt="" />
             </div>
             <div class="login-welcome">
-              {{ slogan || '欢迎使用 DataEase 数据可视化分析平台' }}
+              {{ slogan || t('system.available_to_everyone') }}
             </div>
             <div class="login-form">
-              <el-tabs v-model="activeName" @tab-click="handleClick" class="default-login-tabs">
-                <template v-if="activeType === 'account'">
-                  <el-tab-pane
-                    v-for="item in tablePaneList"
-                    :key="item.name"
-                    :label="item.title"
-                    :name="item.name"
-                  ></el-tab-pane>
-                </template>
-              </el-tabs>
-              <XpackComponent
+              <div
                 class="default-login-tabs"
-                :active-name="activeName"
-                @validate="ldapValidate"
-                jsname="L2NvbXBvbmVudC9sb2dpbi9MZGFw"
-              />
-
-              <template v-if="activeName === 'simple'">
-                <div class="default-login-tabs">
-                  <el-form-item class="login-form-item" prop="username">
-                    <el-input
-                      v-model="state.loginForm.username"
-                      :placeholder="t('common.account') + '/' + t('commons.email')"
-                      autofocus
-                    />
-                  </el-form-item>
-                  <el-form-item prop="password">
-                    <CustomPassword
-                      v-model="state.loginForm.password"
-                      :placeholder="t('common.pwd')"
-                      show-password
-                      maxlength="30"
-                      show-word-limit
-                      autocomplete="new-password"
-                      @keypress.enter="handleLogin"
-                    />
-                  </el-form-item>
-                  <div class="login-btn">
-                    <el-button
-                      type="primary"
-                      class="submit"
-                      size="default"
-                      :disabled="duringLogin"
-                      @click="handleLogin"
-                    >
-                      {{ t('login.btn') }}
-                    </el-button>
-                    <div
-                      v-if="
-                        state.uiInfo &&
-                        state.uiInfo['ui.demo.tips'] &&
-                        state.uiInfo['ui.demo.tips'].paramValue
-                      "
-                      class="demo-tips"
-                    >
-                      {{ state.uiInfo['ui.demo.tips'].paramValue }}
-                    </div>
+                v-if="activeName === 'simple' || activeName === 'ldap'"
+              >
+                <div class="login-form-title">
+                  <span>{{
+                    activeName === 'ldap' ? t('login.ldap_login') : t('login.account_login')
+                  }}</span>
+                </div>
+                <el-form-item class="login-form-item" prop="username">
+                  <el-input
+                    v-model="state.loginForm.username"
+                    :placeholder="`${t('common.account')}${
+                      activeName === 'simple' ? '/' + t('commons.email') : ''
+                    }`"
+                    autofocus
+                  />
+                </el-form-item>
+                <el-form-item prop="password">
+                  <CustomPassword
+                    v-model="state.loginForm.password"
+                    :placeholder="t('common.pwd')"
+                    show-password
+                    maxlength="30"
+                    show-word-limit
+                    autocomplete="new-password"
+                    @keypress.enter.stop="enterHandler"
+                  />
+                </el-form-item>
+                <div class="login-btn">
+                  <el-button
+                    type="primary"
+                    class="submit"
+                    size="default"
+                    :disabled="duringLogin"
+                    @click="handleLogin"
+                  >
+                    {{ t('login.btn') }}
+                  </el-button>
+                  <div v-if="showDempTips" class="demo-tips">
+                    <span>{{ demoTips }}</span>
                   </div>
                 </div>
-              </template>
+              </div>
 
               <XpackComponent
                 ref="xpackLoginHandler"
                 jsname="L2NvbXBvbmVudC9sb2dpbi9IYW5kbGVy"
-                @loaded="xpackLoaded"
+                @switch-tab="switchTab"
+              />
+              <XpackComponent
+                ref="xpackInvalidPwd"
+                jsname="L2NvbXBvbmVudC9sb2dpbi9JbnZhbGlkUHdk"
+                @load-fail="() => (xpackLoadFail = true)"
+                @call-back="invalidPwdCb"
               />
             </div>
 
@@ -429,20 +456,22 @@ onMounted(() => {
     text-align: center;
     margin-top: 8px;
     color: #646a73;
-    font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+    font-family: var(--de-custom_font, 'PingFang');
     font-size: 14px;
     font-style: normal;
     font-weight: 400;
     line-height: 20px;
+    word-wrap: break-word;
   }
 
   .demo-tips {
-    margin-top: 20px;
+    position: absolute;
     font-size: 18px;
     color: #f56c6c;
     letter-spacing: 0;
     line-height: 18px;
     text-align: center;
+    top: 120px;
     @media only screen and (max-width: 1280px) {
       margin-top: 20px;
     }
@@ -463,11 +492,20 @@ onMounted(() => {
     .ed-form-item--default {
       margin-bottom: 24px;
     }
+    .login-form-title {
+      margin-top: 20px;
+      color: #1f2329;
+      font-family: var(--de-custom_font, 'PingFang');
+      font-size: 20px;
+      font-weight: 500;
+      line-height: 28px;
+      text-align: left;
+    }
   }
 
   :deep(.ed-divider__text) {
     color: #8f959e;
-    font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+    font-family: var(--de-custom_font, 'PingFang');
     font-size: 12px;
     font-style: normal;
     font-weight: 400;
@@ -476,6 +514,7 @@ onMounted(() => {
   }
 
   .login-btn {
+    position: relative;
     margin-bottom: 120px;
     .submit {
       width: 100%;

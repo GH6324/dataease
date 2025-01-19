@@ -1,6 +1,10 @@
 <script lang="ts" setup>
 import { shallowRef, PropType, computed } from 'vue'
 import { dsTypes, typeList, nameMap } from './option'
+import Icon from '@/components/icon-custom/src/Icon.vue'
+import { XpackComponent } from '@/components/plugin'
+import { iconDatasourceMap } from '@/components/icon-group/datasource-list'
+import { useI18n } from '@/hooks/web/useI18n'
 
 export type DsType = 'OLTP' | 'OLAP' | 'DL' | 'OTHER' | 'LOCAL' | 'latestUse' | 'all'
 const props = defineProps({
@@ -16,6 +20,7 @@ const props = defineProps({
     type: Array
   }
 })
+const { t } = useI18n()
 
 const databaseList = shallowRef([])
 const currentTypeList = computed(() => {
@@ -50,7 +55,7 @@ const currentTypeList = computed(() => {
       })
     })
     dbList = dbList.filter(ele => ele.name.toLowerCase().includes(props.filterText.trim()))
-    dstypes.push({ name: '最近创建', dbList })
+    dstypes.push({ name: t('data_source.recently_created'), dbList })
     return dstypes
   }
   const index = typeList.findIndex(ele => props.currentType === ele)
@@ -80,6 +85,27 @@ const getDatasourceTypes = () => {
   })
 }
 getDatasourceTypes()
+const loadDsPlugin = data => {
+  data.forEach(item => {
+    const { name, category, type, icon, extraParams, staticMap } = item
+    const node = {
+      name,
+      catalog: category,
+      type,
+      icon,
+      extraParams,
+      isPlugin: true,
+      staticMap
+    }
+    const index = typeList.findIndex(ele => ele === node.catalog)
+    if (index !== -1) {
+      let copiedArr = JSON.parse(JSON.stringify(databaseList.value))
+      copiedArr[index].push(node)
+      databaseList.value = copiedArr
+    }
+  })
+}
+
 const emits = defineEmits(['selectDsType'])
 const selectDs = ({ type }) => {
   emits('selectDsType', type)
@@ -95,12 +121,20 @@ const selectDs = ({ type }) => {
       <div class="item-container">
         <div v-for="db in ele.dbList" :key="db.type" class="db-card" @click="selectDs(db)">
           <el-icon class="icon-border">
-            <Icon :name="`${db.type}-ds`"></Icon>
+            <Icon v-if="db['isPlugin']" :static-content="db.icon"></Icon>
+            <Icon v-else
+              ><component :is="iconDatasourceMap[db.type]" class="svg-icon"></component
+            ></Icon>
           </el-icon>
           <p class="db-name">{{ db.name }}</p>
         </div>
       </div>
     </template>
+
+    <XpackComponent
+      jsname="L2NvbXBvbmVudC9wbHVnaW5zLWhhbmRsZXIvRHNDYXRlZ29yeUhhbmRsZXI="
+      @load-ds-plugin="loadDsPlugin"
+    />
   </div>
 </template>
 

@@ -1,10 +1,12 @@
 <script lang="ts" setup>
-import { toRefs, PropType, ref, onBeforeMount, watch, nextTick, computed, h } from 'vue'
+import { toRefs, PropType, ref, Ref, onBeforeMount, watch, nextTick, computed, inject } from 'vue'
 import { type DatePickType } from 'element-plus-secondary'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import type { ManipulateType } from 'dayjs'
 import { type TimeRange } from './time-format'
 import dayjs from 'dayjs'
+import { useI18n } from '@/hooks/web/useI18n'
+import { useShortcuts } from './shortcuts'
 import { getThisStart, getLastStart, getAround } from './time-format-dayjs'
 import VanPopup from 'vant/es/popup'
 import VanDatePicker from 'vant/es/date-picker'
@@ -14,19 +16,21 @@ import 'vant/es/popup/style'
 import 'vant/es/date-picker/style'
 import 'vant/es/picker-group/style'
 import 'vant/es/time-picker/style'
-import { Icon } from '@/components/icon-custom'
 
 interface SelectConfig {
   selectValue: any
   defaultValue: any
   defaultValueCheck: boolean
   id: string
+  queryConditionWidth: number
   displayType: string
   timeGranularity: DatePickType
   timeGranularityMultiple: DatePickType
   timeRange: TimeRange
+  placeholder: string
   setTimeRange: boolean
 }
+const { t } = useI18n()
 
 const props = defineProps({
   config: {
@@ -35,6 +39,7 @@ const props = defineProps({
       return {
         selectValue: '',
         defaultValue: '',
+        queryConditionWidth: 0,
         defaultValueCheck: false,
         displayType: '1',
         timeGranularity: 'date',
@@ -62,16 +67,23 @@ const props = defineProps({
     default: false
   }
 })
+const placeholder: Ref = inject('placeholder')
+const placeholderText = computed(() => {
+  if (placeholder?.value?.placeholderShow) {
+    return props.config.placeholder
+  }
+  return ' '
+})
 const selectValue = ref()
 const multiple = ref(false)
 const dvMainStore = dvMainStoreWithOut()
-const calendar = h(Icon, { name: 'icon_calendar_outlined' })
 const { config } = toRefs(props)
 const minDate = new Date('1970/1/1')
 const maxDate = new Date('2100/1/1')
 watch(
   () => config.value.defaultValue,
   val => {
+    if (props.isConfig) return
     const isMultiple = config.value.displayType === '7'
     if (isMultiple) {
       multiple.value = isMultiple
@@ -82,6 +94,16 @@ watch(
     })
   }
 )
+const callback = param => {
+  startWindowTime.value = param[0]
+  const disabled = param.some(ele => {
+    return disabledDate(ele)
+  })
+  startWindowTime.value = 0
+  return disabled
+}
+
+const { shortcuts } = useShortcuts(callback)
 
 watch(
   () => config.value.id,
@@ -92,6 +114,7 @@ watch(
 
 const displayTypeChange = () => {
   if (!props.isConfig) return
+  if (multiple.value && config.value.displayType === '7') return
   selectValue.value = config.value.displayType === '7' ? [] : undefined
   multiple.value = config.value.displayType === '7'
   config.value.defaultValue = multiple.value ? [] : undefined
@@ -121,9 +144,14 @@ const handleValueChange = () => {
     config.value.selectValue = Array.isArray(selectValue.value)
       ? [...selectValue.value]
       : selectValue.value
+    nextTick(() => {
+      isConfirmSearch(config.value.id)
+    })
     return
   }
-  config.value.defaultValue = value
+  config.value.defaultValue = Array.isArray(value)
+    ? value.map(ele => new Date(ele).toLocaleString())
+    : new Date(value).toLocaleString()
 }
 
 const init = () => {
@@ -137,10 +165,26 @@ const init = () => {
     selectValue.value = plus ? [] : undefined
   }
   multiple.value = config.value.displayType === '7'
+  currentDate.value = currentDate.value.slice(0, getIndex() + 1)
 }
 
+const queryConditionWidth = inject('com-width', Function, true)
+const getCustomWidth = () => {
+  if (placeholder?.value?.placeholderShow) {
+    if (props.config.queryConditionWidth === undefined) {
+      return queryConditionWidth()
+    }
+    return props.config.queryConditionWidth
+  }
+  return 227
+}
+const isConfirmSearch = inject('is-confirm-search', Function, true)
 const selectStyle = computed(() => {
-  return props.isConfig ? {} : { width: multiple.value ? '470px' : '227px' }
+  return props.isConfig
+    ? {}
+    : {
+        width: (multiple.value ? getCustomWidth() * 2 : getCustomWidth()) + 'px !important'
+      }
 })
 
 const columnsType = computed(() => {
@@ -224,7 +268,13 @@ const disabledDate = val => {
         .startOf(queryTimeType.value)
         .valueOf() -
         1000 <
-      timeStamp
+        timeStamp ||
+      dayjs(startWindowTime.value)
+        .subtract(maximumSingleQuery, queryTimeType.value)
+        .startOf(queryTimeType.value)
+        .valueOf() +
+        1000 >
+        timeStamp
   }
   if (intervalType === 'none') {
     if (dynamicWindow) return isDynamicWindowTime
@@ -277,11 +327,19 @@ const disabledDate = val => {
   if (intervalType === 'timeInterval') {
     const startTime =
       regularOrTrends === 'fixed'
-        ? regularOrTrendsValue[0]
+        ? new Date(
+            dayjs(new Date(regularOrTrendsValue[0]))
+              .startOf(queryTimeType.value)
+              .format('YYYY/MM/DD HH:mm:ss')
+          )
         : getAround(relativeToCurrentType, around === 'f' ? 'subtract' : 'add', timeNum)
     const endTime =
       regularOrTrends === 'fixed'
-        ? regularOrTrendsValue[1]
+        ? new Date(
+            dayjs(new Date(regularOrTrendsValue[1]))
+              .endOf(queryTimeType.value)
+              .format('YYYY/MM/DD HH:mm:ss')
+          )
         : getAround(
             relativeToCurrentTypeRange,
             aroundRange === 'f' ? 'subtract' : 'add',
@@ -334,18 +392,27 @@ const setArrValue = () => {
     const [start, end] = selectValue.value || []
     if (selectSecond.value) {
       selectValue.value = [
-        start,
+        start ? start : new Date(`${currentDate.value.join('/')} ${currentTime.value.join(':')}`),
         new Date(`${currentDate.value.join('/')} ${currentTime.value.join(':')}`)
       ]
     } else {
       selectValue.value = [
         new Date(`${currentDate.value.join('/')} ${currentTime.value.join(':')}`),
-        end
+        end ? end : new Date(`${currentDate.value.join('/')} ${currentTime.value.join(':')}`)
       ]
     }
   } else {
     selectValue.value = new Date(`${currentDate.value.join('/')} ${currentTime.value.join(':')}`)
   }
+}
+
+const onClear = () => {
+  showDate.value = false
+  const { displayType } = config.value
+  const plus = displayType === '7'
+  config.value.selectValue = plus ? [] : undefined
+  selectValue.value = plus ? [] : undefined
+  handleValueChange()
 }
 
 const onConfirm = () => {
@@ -370,6 +437,7 @@ const formatDate = computed(() => {
 <template>
   <el-date-picker
     v-model="selectValue"
+    v-if="multiple"
     :key="config.timeGranularityMultiple"
     :type="config.timeGranularityMultiple"
     :style="selectStyle"
@@ -377,21 +445,25 @@ const formatDate = computed(() => {
     :disabled-date="disabledDate"
     @calendar-change="calendarChange"
     :format="formatDate"
-    :prefix-icon="calendar"
-    v-if="multiple"
+    :shortcuts="
+      ['datetimerange', 'daterange'].includes(config.timeGranularityMultiple) ? shortcuts : []
+    "
     @change="handleValueChange"
+    :editable="false"
     :range-separator="$t('cron.to')"
-    :start-placeholder="$t('datasource.start_time')"
-    :end-placeholder="$t('datasource.end_time')"
+    :start-placeholder="placeholderText"
+    :end-placeholder="placeholderText"
   />
   <el-date-picker
     v-else
+    :key="config.timeGranularity + 1"
     v-model="selectValue"
+    @visible-change="visibleChange"
+    :disabled-date="disabledDate"
     :type="config.timeGranularity"
     @change="handleValueChange"
-    :prefix-icon="calendar"
     :style="selectStyle"
-    :placeholder="$t('commons.date.select_date_time')"
+    :placeholder="placeholderText"
   />
   <div
     v-if="dvMainStore.mobileInPc"
@@ -410,9 +482,9 @@ const formatDate = computed(() => {
       @confirm="onConfirm"
       @cancel="onCancel"
       v-if="showTimePick"
-      title="时间选择"
-      :tabs="['选择日期', '选择时间']"
-      next-step-text="下一步"
+      :title="t('v_query.time_selection')"
+      :tabs="[t('dataset.select_date'), t('dataset.select_time')]"
+      :next-step-text="t('sync_datasource.next')"
     >
       <van-date-picker
         :min-date="minDate"
@@ -423,7 +495,7 @@ const formatDate = computed(() => {
       <van-time-picker :columns-type="['hour', 'minute', 'second']" v-model="currentTime" />
     </van-picker-group>
     <van-date-picker
-      title="选择日期"
+      :title="t('dataset.select_date')"
       :columns-type="columnsType"
       @confirm="onConfirm"
       @cancel="onCancel"
@@ -433,6 +505,15 @@ const formatDate = computed(() => {
       v-model="currentDate"
     />
   </van-popup>
+  <Teleport v-if="showDate" to=".van-picker__toolbar">
+    <button
+      style="position: absolute; top: 0; right: 60px"
+      @click="onClear"
+      class="van-picker__confirm van-haptics-feedback oooo"
+    >
+      {{ t('commons.clear') }}
+    </button></Teleport
+  >
 </template>
 
 <style lang="less">

@@ -17,6 +17,22 @@ declare interface Chart {
     dynamicAssistLines?: AssistLine[]
     fields: ChartViewField[]
     tableRow: []
+    //chart-mix
+    left: {
+      data: any[]
+      series?: any[]
+      dynamicAssistLines?: AssistLine[]
+      fields: ChartViewField[]
+      tableRow: []
+    }
+    right: {
+      data: any[]
+      series?: any[]
+      dynamicAssistLines?: AssistLine[]
+      fields: ChartViewField[]
+      tableRow: []
+    }
+    customCalc: any
   }
   xAxis?: Axis[]
   xAxisExt?: Axis[]
@@ -26,12 +42,15 @@ declare interface Chart {
   extBubble?: Axis[]
   extLabel?: Axis[]
   extTooltip?: Axis[]
-  customFilter: []
+  customFilter: {}
   senior: CustomSenior
   customAttr: CustomAttr
+  customAttrMobile: CustomAttr
   customStyle: CustomStyle
+  customStyleMobile: CustomStyle
   drillFields: ChartViewField[]
   drillFilters: Filter[]
+  sortPriority: ChartViewField[]
   datasetMode: 0 | 1
   datasourceType: string
   totalItems: number
@@ -40,15 +59,34 @@ declare interface Chart {
   resultCount: number
   linkageActive: boolean
   jumpActive: boolean
+  aggregate?: boolean
+  plugin?: CustomPlugin
+  isPlugin: boolean
+  extremumValues?: Map<string, any>
+  filteredData?: any[]
+  container?: string
+  /**
+   * 针对不是序列字段的图表，通过获取分类字段的值作为序列字段
+   */
+  seriesFieldObjs?: any[]
+  flowMapStartName?: Axis[]
+  flowMapEndName?: Axis[]
+  showPosition: string
+
+  extColor: Axis[]
+
+  fontFamily?: string
 }
 declare type CustomAttr = DeepPartial<ChartAttr> | JSONString<DeepPartial<ChartAttr>>
 declare type CustomStyle = DeepPartial<ChartStyle> | JSONString<DeepPartial<ChartStyle>>
 declare type CustomSenior = DeepPartial<ChartSenior> | JSONString<DeepPartial<ChartSenior>>
+declare type CustomPlugin = DeepPartial<ChartPlugin> | JSONString<DeepPartial<ChartPlugin>>
 
-declare type ChartObj = Omit<Chart, 'customAttr' | 'customStyle' | 'senior'> & {
+declare type ChartObj = Omit<Chart, 'customAttr' | 'customStyle' | 'senior' | 'plugin'> & {
   customAttr: ChartAttr
   customStyle: ChartStyle
   senior: ChartSenior
+  plugin?: ChartPlugin
 }
 
 /**
@@ -101,6 +139,17 @@ declare interface SeriesFormatter extends Axis {
    * 轴类型
    */
   axisType: string
+  /**
+   * 显示极值
+   */
+  showExtremum?: boolean
+
+  optionLabel?: string
+  optionShowName?: string
+  /**
+   * 位置
+   */
+  position?: string
 }
 
 declare interface Axis extends ChartViewField {
@@ -116,6 +165,18 @@ declare interface Axis extends ChartViewField {
    * 维度/指标分组类型
    */
   groupType: 'q' | 'd'
+  /**
+   * 排序规则
+   */
+  sort: 'asc' | 'desc' | 'none' | 'custom_sort'
+  /**
+   * 自定义排序项
+   */
+  customSort: string[]
+  /**
+   * 是否隐藏
+   */
+  hide: boolean
 }
 declare interface ChartViewField {
   /**
@@ -138,6 +199,10 @@ declare interface ChartViewField {
    * 字段类型
    */
   deType: number
+  /**
+   * 分组类型
+   */
+  groupType: 'q' | 'd'
 }
 
 declare interface Filter {

@@ -1,6 +1,8 @@
 <template>
   <el-row class="custom-row">
-    <el-row><span class="custom-item-text">文本</span> </el-row>
+    <el-row
+      ><span class="custom-item-text">{{ t('chart.text') }}</span>
+    </el-row>
     <el-row style="margin-top: 8px">
       <el-space wrap>
         <el-form-item class="form-item no-margin-bottom" :class="'form-item-' + themes">
@@ -19,7 +21,7 @@
             style="width: 56px"
             :title="t('chart.text_fontsize')"
             v-model="titleForm.fontSize"
-            :placeholder="'大小'"
+            :placeholder="t('chart.size')"
             size="small"
             @change="changeTitleStyle('fontSize')"
           >
@@ -42,7 +44,7 @@
             @click="checkBold"
           >
             <el-icon>
-              <Icon name="icon_bold_outlined" />
+              <Icon name="icon_bold_outlined"><icon_bold_outlined class="svg-icon" /></Icon>
             </el-icon>
           </div>
         </el-tooltip>
@@ -57,7 +59,7 @@
             @click="checkItalic"
           >
             <el-icon>
-              <Icon name="icon_italic_outlined" />
+              <Icon name="icon_italic_outlined"><icon_italic_outlined class="svg-icon" /></Icon>
             </el-icon>
           </div>
         </el-tooltip>
@@ -74,7 +76,9 @@
             @click="setPosition('left')"
           >
             <el-icon>
-              <Icon name="icon_left-alignment_outlined" />
+              <Icon name="icon_left-alignment_outlined"
+                ><icon_leftAlignment_outlined class="svg-icon"
+              /></Icon>
             </el-icon>
           </div>
         </el-tooltip>
@@ -88,7 +92,9 @@
             @click="setPosition('center')"
           >
             <el-icon>
-              <Icon name="icon_center-alignment_outlined" />
+              <Icon name="icon_center-alignment_outlined"
+                ><icon_centerAlignment_outlined class="svg-icon"
+              /></Icon>
             </el-icon>
           </div>
         </el-tooltip>
@@ -102,7 +108,9 @@
             @click="setPosition('right')"
           >
             <el-icon>
-              <Icon name="icon_right-alignment_outlined" />
+              <Icon name="icon_right-alignment_outlined"
+                ><icon_rightAlignment_outlined class="svg-icon"
+              /></Icon>
             </el-icon>
           </div>
         </el-tooltip>
@@ -112,6 +120,11 @@
 </template>
 
 <script lang="ts" setup>
+import icon_bold_outlined from '@/assets/svg/icon_bold_outlined.svg'
+import icon_italic_outlined from '@/assets/svg/icon_italic_outlined.svg'
+import icon_leftAlignment_outlined from '@/assets/svg/icon_left-alignment_outlined.svg'
+import icon_centerAlignment_outlined from '@/assets/svg/icon_center-alignment_outlined.svg'
+import icon_rightAlignment_outlined from '@/assets/svg/icon_right-alignment_outlined.svg'
 import { computed, reactive, ref } from 'vue'
 import { COLOR_PANEL } from '@/views/chart/components/editor/util/chart'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'

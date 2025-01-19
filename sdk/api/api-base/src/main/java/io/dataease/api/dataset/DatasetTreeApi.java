@@ -1,13 +1,14 @@
 package io.dataease.api.dataset;
 
 import com.github.xiaoymin.knife4j.annotations.ApiSupport;
+import io.dataease.api.dataset.dto.DataSetExportRequest;
 import io.dataease.api.dataset.dto.DatasetNodeDTO;
-import io.dataease.api.dataset.dto.DatasetTableDTO;
-import io.dataease.api.dataset.dto.SqlVariableDetails;
 import io.dataease.api.dataset.union.DatasetGroupInfoDTO;
 import io.dataease.api.dataset.vo.DataSetBarVO;
 import io.dataease.auth.DeApiPath;
 import io.dataease.auth.DePermit;
+import io.dataease.extensions.datasource.dto.DatasetTableDTO;
+import io.dataease.extensions.view.dto.SqlVariableDetails;
 import io.dataease.model.BusiNodeRequest;
 import io.dataease.model.BusiNodeVO;
 import io.swagger.v3.oas.annotations.Operation;
@@ -60,6 +61,10 @@ public interface DatasetTreeApi {
     @PostMapping("move")
     DatasetNodeDTO move(@RequestBody DatasetGroupInfoDTO dto) throws Exception;
 
+    @DePermit({"#p0+':manage'"})
+    @PostMapping("perDelete/{id}")
+    boolean perDelete(@PathVariable("id") Long id);
+
     @Operation(summary = "删除数据集")
     @DePermit({"#p0+':manage'"})
     @PostMapping("delete/{id}")
@@ -92,4 +97,9 @@ public interface DatasetTreeApi {
     @Operation(summary = "带权限查询数据集详情")
     @PostMapping("detailWithPerm")
     List<DatasetTableDTO> detailWithPerm(@RequestBody List<Long> ids) throws Exception;
+
+    @DePermit(value = {"#p0.id+':export'"})
+    @Operation(summary = "数据集导出")
+    @PostMapping("/exportDataset")
+    void exportDataset(@RequestBody DataSetExportRequest request) throws Exception;
 }

@@ -2,11 +2,19 @@ import {
   G2PlotChartView,
   G2PlotDrawOptions
 } from '@/views/chart/components/js/panel/types/impl/g2plot'
-import { Pie as G2Pie, PieOptions } from '@antv/g2plot/esm/plots/pie'
-import { flow, hexColorToRGBA, parseJson } from '@/views/chart/components/js/util'
+import type { Pie as G2Pie, PieOptions } from '@antv/g2plot/esm/plots/pie'
 import {
+  flow,
+  hexColorToRGBA,
+  parseJson,
+  setUpSingleDimensionSeriesColor
+} from '@/views/chart/components/js/util'
+import {
+  configPlotTooltipEvent,
   getPadding,
-  getTooltipSeriesTotalMap
+  getTooltipContainer,
+  getTooltipSeriesTotalMap,
+  TOOLTIP_TPL
 } from '@/views/chart/components/js/panel/common/common_antv'
 import { valueFormatter } from '@/views/chart/components/js/formatter'
 import {
@@ -15,18 +23,22 @@ import {
   PIE_EDITOR_PROPERTY,
   PIE_EDITOR_PROPERTY_INNER
 } from '@/views/chart/components/js/panel/charts/pie/common'
-import { Datum } from '@antv/g2plot/esm/types/common'
+import type { Datum } from '@antv/g2plot/esm/types/common'
 import { add } from 'mathjs'
 import isEmpty from 'lodash-es/isEmpty'
+import { cloneDeep } from 'lodash-es'
 
 const DEFAULT_DATA = []
 export class Pie extends G2PlotChartView<PieOptions, G2Pie> {
   axis: AxisType[] = PIE_AXIS_TYPE
   properties = PIE_EDITOR_PROPERTY
-  propertyInner = PIE_EDITOR_PROPERTY_INNER
+  propertyInner: EditorPropertyInner = {
+    ...PIE_EDITOR_PROPERTY_INNER,
+    'basic-style-selector': ['colors', 'alpha', 'radius', 'topN', 'seriesColor']
+  }
   axisConfig = PIE_AXIS_CONFIG
 
-  drawChart(drawOptions: G2PlotDrawOptions<G2Pie>): G2Pie {
+  async drawChart(drawOptions: G2PlotDrawOptions<G2Pie>): Promise<G2Pie> {
     const { chart, container, action } = drawOptions
     if (!chart.data?.data?.length) {
       return
@@ -45,6 +57,7 @@ export class Pie extends G2PlotChartView<PieOptions, G2Pie> {
       colorField: 'field',
       appendPadding: getPadding(chart),
       color,
+      animation: false,
       pieStyle: {
         lineWidth: 0
       },
@@ -97,12 +110,18 @@ export class Pie extends G2PlotChartView<PieOptions, G2Pie> {
             end: [{ trigger: 'interval:mouseleave', action: 'active-region:hide' }]
           }
         }
-      ]
+      ],
+      meta: {
+        field: {
+          type: 'cat'
+        }
+      }
     }
     const options = this.setupOptions(chart, initOptions)
-
+    const { Pie: G2Pie } = await import('@antv/g2plot/esm/plots/pie')
     const newChart = new G2Pie(container, options)
     newChart.on('interval:click', action)
+    configPlotTooltipEvent(chart, newChart)
     return newChart
   }
 
@@ -114,9 +133,29 @@ export class Pie extends G2PlotChartView<PieOptions, G2Pie> {
         label: false
       }
     }
+    const layout = []
+    let textAlign = undefined
+    if (labelAttr.position === 'inner') {
+      textAlign = 'center'
+      if (labelAttr.fullDisplay) {
+        layout.push({ type: 'limit-in-plot' })
+      } else {
+        layout.push({ type: 'limit-in-canvas' })
+        layout.push({ type: 'hide-overlap' })
+      }
+    } else {
+      if (!labelAttr.fullDisplay) {
+        layout.push({ type: 'limit-in-plot' })
+      }
+    }
+    let labelType = labelAttr.position === 'outer' ? 'spider' : labelAttr.position
+    if (layout.length === 0) {
+      labelType = 'no'
+    }
     const label = {
-      type: labelAttr.position === 'outer' ? 'spider' : labelAttr.position,
-      layout: [{ type: 'limit-in-plot' }],
+      type: labelType,
+      textAlign,
+      layout,
       autoRotate: false,
       style: {
         fill: labelAttr.color,
@@ -202,7 +241,10 @@ export class Pie extends G2PlotChartView<PieOptions, G2Pie> {
           }
         })
         return result
-      }
+      },
+      container: getTooltipContainer(`tooltip-${chart.id}`),
+      itemTpl: TOOLTIP_TPL,
+      enterable: true
     }
     return {
       ...options,
@@ -212,9 +254,37 @@ export class Pie extends G2PlotChartView<PieOptions, G2Pie> {
 
   protected configBasicStyle(chart: Chart, options: PieOptions): PieOptions {
     const customAttr = parseJson(chart.customAttr)
+    const { basicStyle } = customAttr
+    const { data } = options
+    if (data?.length && basicStyle.calcTopN && data.length > basicStyle.topN) {
+      data.sort((a, b) => b.value - a.value)
+      const otherItems = data.splice(basicStyle.topN)
+      const initOtherItem = {
+        ...data[0],
+        dynamicTooltipValue: [],
+        field: basicStyle.topNLabel,
+        name: basicStyle.topNLabel,
+        value: 0
+      }
+      const dynamicTotalMap: Record<string, number> = {}
+      otherItems.reduce((p, n) => {
+        p.value += n.value ?? 0
+        n.dynamicTooltipValue?.forEach(val => {
+          dynamicTotalMap[val.fieldId] = (dynamicTotalMap[val.fieldId] || 0) + val.value
+        })
+        return p
+      }, initOtherItem)
+      for (const key in dynamicTotalMap) {
+        initOtherItem.dynamicTooltipValue.push({
+          fieldId: key,
+          value: dynamicTotalMap[key]
+        })
+      }
+      data.push(initOtherItem)
+    }
     return {
       ...options,
-      radius: customAttr.basicStyle.radius / 100
+      radius: basicStyle.radius / 100
     }
   }
   setupDefaultOptions(chart: ChartObj): ChartObj {
@@ -235,14 +305,29 @@ export class Pie extends G2PlotChartView<PieOptions, G2Pie> {
     return chart
   }
 
+  public setupSeriesColor(chart: ChartObj, data?: any[]): ChartBasicStyle['seriesColor'] {
+    data = cloneDeep(data)
+    const { calcTopN, topN, topNLabel } = chart.customAttr.basicStyle
+    if (data?.length && calcTopN && data.length > topN) {
+      data.sort((a, b) => b.value - a.value)
+      data.splice(topN)
+      data.push({
+        field: topNLabel,
+        value: 0
+      })
+    }
+    return setUpSingleDimensionSeriesColor(chart, data)
+  }
+
   protected setupOptions(chart: Chart, options: PieOptions): PieOptions {
     return flow(
       this.configTheme,
       this.configBasicStyle,
+      this.configSingleDimensionColor,
       this.configLabel,
       this.configTooltip,
       this.configLegend
-    )(chart, options)
+    )(chart, options, {}, this)
   }
 
   constructor(name = 'pie') {
@@ -253,14 +338,15 @@ export class Pie extends G2PlotChartView<PieOptions, G2Pie> {
 export class PieDonut extends Pie {
   propertyInner: EditorPropertyInner = {
     ...PIE_EDITOR_PROPERTY_INNER,
-    'basic-style-selector': ['colors', 'alpha', 'radius', 'innerRadius']
+    'basic-style-selector': ['colors', 'alpha', 'radius', 'innerRadius', 'topN', 'seriesColor']
   }
   protected configBasicStyle(chart: Chart, options: PieOptions): PieOptions {
-    const customAttr = parseJson(chart.customAttr)
+    const tmp = super.configBasicStyle(chart, options)
+    const { basicStyle } = parseJson(chart.customAttr)
     return {
-      ...options,
-      radius: customAttr.basicStyle.radius / 100,
-      innerRadius: customAttr.basicStyle.innerRadius / 100
+      ...tmp,
+      radius: basicStyle.radius / 100,
+      innerRadius: basicStyle.innerRadius / 100
     }
   }
 

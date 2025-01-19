@@ -1,7 +1,20 @@
 <script setup lang="ts">
+import dvFilter from '@/assets/svg/dv-filter.svg'
+import dvMaterial from '@/assets/svg/dv-material.svg'
+import dvMedia from '@/assets/svg/dv-media.svg'
+import dvMoreCom from '@/assets/svg/dv-more-com.svg'
+import dvTab from '@/assets/svg/dv-tab.svg'
+import dvText from '@/assets/svg/dv-text.svg'
+import dvView from '@/assets/svg/dv-view.svg'
+import icon_params_setting from '@/assets/svg/icon_params_setting.svg'
+import icon_copy_filled from '@/assets/svg/icon_copy_filled.svg'
+import icon_left_outlined from '@/assets/svg/icon_left_outlined.svg'
+import icon_undo_outlined from '@/assets/svg/icon_undo_outlined.svg'
+import icon_redo_outlined from '@/assets/svg/icon_redo_outlined.svg'
 import { ElMessage, ElMessageBox } from 'element-plus-secondary'
 import eventBus from '@/utils/eventBus'
-import { ref, nextTick, computed } from 'vue'
+import { ref, nextTick, computed, toRefs, onBeforeUnmount, onMounted } from 'vue'
+import { useEmbedded } from '@/store/modules/embedded'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { snapshotStoreWithOut } from '@/store/modules/data-visualization/snapshot'
 import { useAppStoreWithOut } from '@/store/modules/app'
@@ -13,9 +26,22 @@ import MediaGroup from '@/custom-component/component-group/MediaGroup.vue'
 import TextGroup from '@/custom-component/component-group/TextGroup.vue'
 import CommonGroup from '@/custom-component/component-group/CommonGroup.vue'
 import DeResourceGroupOpt from '@/views/common/DeResourceGroupOpt.vue'
-import { canvasSave } from '@/utils/canvasUtils'
+import { canvasSave, checkCanvasChangePre, initCanvasData } from '@/utils/canvasUtils'
 import { changeSizeWithScale } from '@/utils/changeComponentsSizeWithScale'
 import MoreComGroup from '@/custom-component/component-group/MoreComGroup.vue'
+import { XpackComponent } from '@/components/plugin'
+import { useCache } from '@/hooks/web/useCache'
+import QueryGroup from '@/custom-component/component-group/QueryGroup.vue'
+import ComponentButton from '@/components/visualization/ComponentButton.vue'
+import OuterParamsSet from '@/components/visualization/OuterParamsSet.vue'
+import MultiplexingCanvas from '@/views/common/MultiplexingCanvas.vue'
+import ComponentButtonLabel from '@/components/visualization/ComponentButtonLabel.vue'
+import DeFullscreen from '@/components/visualization/common/DeFullscreen.vue'
+import DeAppApply from '@/views/common/DeAppApply.vue'
+import { useEmitt } from '@/hooks/web/useEmitt'
+import { useUserStoreWithOut } from '@/store/modules/user'
+import TabsGroup from '@/custom-component/component-group/TabsGroup.vue'
+import { useI18n } from '@/hooks/web/useI18n'
 let nameEdit = ref(false)
 let inputName = ref('')
 let nameInput = ref(null)
@@ -23,9 +49,26 @@ const dvMainStore = dvMainStoreWithOut()
 const snapshotStore = snapshotStoreWithOut()
 const { styleChangeTimes, snapshotIndex } = storeToRefs(snapshotStore)
 const resourceGroupOpt = ref(null)
+const resourceAppOpt = ref(null)
 const dvToolbarMain = ref(null)
-const { canvasStyleData, dvInfo, editMode } = storeToRefs(dvMainStore)
+const { componentData, canvasStyleData, canvasViewInfo, dvInfo, editMode, appData } =
+  storeToRefs(dvMainStore)
 let scaleEdit = 100
+const { wsCache } = useCache('localStorage')
+const dvModel = 'dataV'
+const outerParamsSetRef = ref(null)
+const fullScreeRef = ref(null)
+const userStore = useUserStoreWithOut()
+const { t } = useI18n()
+
+const props = defineProps({
+  createType: {
+    type: String,
+    default: 'create'
+  }
+})
+
+const { createType } = toRefs(props)
 
 const closeEditCanvasName = () => {
   nameEdit.value = false
@@ -35,8 +78,8 @@ const closeEditCanvasName = () => {
   if (inputName.value.trim() === dvInfo.value.name) {
     return
   }
-  if (inputName.value.trim().length > 64 || inputName.value.trim().length < 2) {
-    ElMessage.warning('名称字段长度2-64个字符')
+  if (inputName.value.trim().length > 64 || inputName.value.trim().length < 1) {
+    ElMessage.warning('名称字段长度1-64个字符')
     editCanvasName()
     return
   }
@@ -77,20 +120,74 @@ const resourceOptFinish = param => {
 }
 
 const saveCanvasWithCheck = () => {
-  if (dvInfo.value.dataState === 'prepare') {
-    const params = { name: dvInfo.value.name, leaf: true, id: dvInfo.value.pid }
-    resourceGroupOpt.value.optInit('leaf', params, 'newLeaf', true)
+  if (userStore.getOid && wsCache.get('user.oid') && userStore.getOid !== wsCache.get('user.oid')) {
+    ElMessageBox.confirm('已切换至新组织，无权保存其他组织的资源', {
+      confirmButtonType: 'primary',
+      type: 'warning',
+      confirmButtonText: '关闭页面',
+      cancelButtonText: '取消',
+      autofocus: false,
+      showClose: false
+    }).then(() => {
+      window.close()
+    })
     return
   }
-  saveResource()
+  if (dvInfo.value.dataState === 'prepare') {
+    if (appData.value) {
+      // 应用保存
+      const params = {
+        base: {
+          pid: '',
+          name: dvInfo.value.name,
+          datasetFolderPid: null,
+          datasetFolderName: dvInfo.value.name
+        },
+        appData: appData.value
+      }
+      nextTick(() => {
+        resourceAppOpt.value.init(params)
+      })
+    } else {
+      const params = { name: dvInfo.value.name, leaf: true, id: dvInfo.value.pid || '0' }
+      resourceGroupOpt.value.optInit('leaf', params, 'newLeaf', true)
+    }
+    return
+  }
+  checkCanvasChangePre(() => {
+    saveResource()
+  })
 }
 
 const saveResource = () => {
   if (styleChangeTimes.value > 0) {
-    snapshotStore.resetStyleChangeTimes()
-    canvasSave(() => {
-      ElMessage.success('保存成功')
-      window.history.pushState({}, '', `#/dvCanvas?dvId=${dvInfo.value.id}`)
+    eventBus.emit('hideArea-canvas-main')
+    nextTick(() => {
+      canvasSave(() => {
+        snapshotStore.resetStyleChangeTimes()
+        wsCache.delete('DE-DV-CATCH-' + dvInfo.value.id)
+        ElMessage.success(t('commons.save_success'))
+        let url = window.location.href
+        url = url.replace(/\?opt=create/, `?dvId=${dvInfo.value.id}`)
+        if (!embeddedStore.baseUrl) {
+          window.history.replaceState(
+            {
+              path: url
+            },
+            '',
+            url
+          )
+        }
+        if (appData.value) {
+          initCanvasData(dvInfo.value.id, 'dataV', () => {
+            useEmitt().emitter.emit('refresh-dataset-selector')
+            resourceAppOpt.value.close()
+            dvMainStore.setAppDataInfo(null)
+            useEmitt().emitter.emit('calcData-all')
+            snapshotStore.resetSnapshot()
+          })
+        }
+      })
     })
   }
 }
@@ -115,21 +212,51 @@ const backToMain = () => {
     url = url + '?dvId=' + dvInfo.value.id
   }
   if (styleChangeTimes.value > 0) {
-    ElMessageBox.confirm('当前的更改尚未保存，确定退出吗？', {
+    ElMessageBox.confirm(t('visualization.change_save_tips'), {
       confirmButtonType: 'primary',
       type: 'warning',
       autofocus: false,
       showClose: false
     }).then(() => {
-      window.open(url, '_self')
+      backHandler(url)
     })
+  } else {
+    backHandler(url)
+  }
+}
+const embeddedStore = useEmbedded()
+const isEmbedded = computed(() => appStore.getIsDataEaseBi || appStore.getIsIframe)
+
+const backHandler = (url: string) => {
+  if (isEmbedded.value) {
+    embeddedStore.clearState()
+    useEmitt().emitter.emit('changeCurrentComponent', 'ScreenPanel')
+    return
+  }
+  if (window['dataease-embedded-host'] && openHandler?.value) {
+    const pm = {
+      methodName: 'embeddedInteractive',
+      args: {
+        eventName: 'de-dashboard-editor-back',
+        args: 'Just a demo that descript dataease embedded interactive'
+      }
+    }
+    openHandler.value.invokeMethod(pm)
+    return
+  }
+  dvMainStore.canvasStateChange({ key: 'curPointArea', value: 'base' })
+  wsCache.delete('DE-DV-CATCH-' + dvInfo.value.id)
+  wsCache.set('dv-info-id', dvInfo.value.id)
+  if (!!history.state.back) {
+    history.back()
   } else {
     window.open(url, '_self')
   }
 }
+const openHandler = ref(null)
 
 const onDvNameChange = () => {
-  snapshotStore.recordSnapshotCache()
+  snapshotStore.recordSnapshotCache('onDvNameChange')
 }
 
 const getFullScale = () => {
@@ -138,10 +265,45 @@ const getFullScale = () => {
 }
 const appStore = useAppStoreWithOut()
 const isDataEaseBi = computed(() => appStore.getIsDataEaseBi)
+const multiplexingRef = ref(null)
 
-eventBus.on('preview', preview)
-eventBus.on('save', saveCanvasWithCheck)
-eventBus.on('clearCanvas', clearCanvas)
+onMounted(() => {
+  eventBus.on('preview', preview)
+  eventBus.on('save', saveCanvasWithCheck)
+  eventBus.on('clearCanvas', clearCanvas)
+})
+
+onBeforeUnmount(() => {
+  eventBus.off('preview', preview)
+  eventBus.off('save', saveCanvasWithCheck)
+  eventBus.off('clearCanvas', clearCanvas)
+  dvMainStore.setAppDataInfo(null)
+})
+
+const openOuterParamsSet = () => {
+  if (componentData.value.length === 0) {
+    ElMessage.warning(t('components.add_components_first'))
+    return
+  }
+  if (!dvInfo.value.id) {
+    ElMessage.warning(t('components.current_page_first'))
+    return
+  }
+  //设置需要先触发保存
+  canvasSave(() => {
+    outerParamsSetRef.value.optInit()
+  })
+}
+
+const multiplexingCanvasOpen = () => {
+  multiplexingRef.value.dialogInit('dataV')
+}
+
+const isIframe = computed(() => appStore.getIsIframe)
+const fullScreenPreview = () => {
+  dvMainStore.canvasStateChange({ key: 'curPointArea', value: 'base' })
+  fullScreeRef.value.toggleFullscreen()
+}
 </script>
 
 <template>
@@ -156,8 +318,10 @@ eventBus.on('clearCanvas', clearCanvas)
         <div class="middle-area"></div>
       </template>
       <template v-else>
-        <el-icon v-if="!isDataEaseBi" class="custom-el-icon back-icon" @click="backToMain()">
-          <Icon class="toolbar-icon" name="icon_left_outlined" />
+        <el-icon class="custom-el-icon back-icon" @click="backToMain()">
+          <Icon name="icon_left_outlined"
+            ><icon_left_outlined class="svg-icon toolbar-icon"
+          /></Icon>
         </el-icon>
         <div class="left-area">
           <span id="dv-canvas-name" class="name-area" @dblclick="editCanvasName">
@@ -170,7 +334,7 @@ eventBus.on('clearCanvas', clearCanvas)
                 :class="{ 'toolbar-icon-disabled': snapshotIndex < 1 }"
                 @click="undo()"
               >
-                <Icon name="icon_undo_outlined"></Icon>
+                <Icon name="icon_undo_outlined"><icon_undo_outlined class="svg-icon" /></Icon>
               </el-icon>
             </el-tooltip>
             <el-tooltip effect="ndark" :content="$t('commons.reduction')" placement="bottom">
@@ -181,7 +345,7 @@ eventBus.on('clearCanvas', clearCanvas)
                 }"
                 @click="redo()"
               >
-                <Icon name="icon_redo_outlined"></Icon>
+                <Icon name="icon_redo_outlined"><icon_redo_outlined class="svg-icon" /></Icon>
               </el-icon>
             </el-tooltip>
           </div>
@@ -191,26 +355,79 @@ eventBus.on('clearCanvas', clearCanvas)
             show-split-line
             is-label
             :base-width="410"
-            icon-name="dv-view"
-            title="图表"
+            :icon-name="dvView"
+            :title="t('visualization.view')"
           >
             <user-view-group></user-view-group>
           </component-group>
-          <component-group is-label :base-width="115" icon-name="dv-text" title="文本">
+          <component-group
+            :base-width="115"
+            :show-split-line="true"
+            is-label
+            :icon-name="dvFilter"
+            :title="t('visualization.query_component')"
+          >
+            <query-group :dv-model="dvModel"></query-group>
+          </component-group>
+          <component-group
+            is-label
+            :base-width="215"
+            :icon-name="dvText"
+            :title="t('visualization.text_html')"
+          >
             <text-group></text-group>
           </component-group>
-          <component-group is-label :base-width="115" icon-name="dv-media" title="媒体">
+          <component-group
+            is-label
+            placement="bottom"
+            :base-width="328"
+            :icon-name="dvMedia"
+            :title="t('visualization.media')"
+          >
             <media-group></media-group>
           </component-group>
-          <component-group is-label :base-width="115" icon-name="dv-more-com" title="更多">
+          <component-group is-label :base-width="115" :icon-name="dvTab" title="Tab">
+            <tabs-group :dv-model="dvModel"></tabs-group>
+          </component-group>
+          <component-group
+            is-label
+            :base-width="215"
+            :icon-name="dvMoreCom"
+            :title="t('visualization.more')"
+          >
             <more-com-group></more-com-group>
           </component-group>
-          <component-group is-label :base-width="410" icon-name="dv-material" title="素材">
+          <component-group
+            is-label
+            :base-width="410"
+            :icon-name="dvMaterial"
+            :show-split-line="true"
+            :title="t('visualization.source_material')"
+          >
             <common-group></common-group>
           </component-group>
+          <component-button-label
+            :icon-name="icon_copy_filled"
+            :title="t('visualization.multiplexing')"
+            is-label
+            @customClick="multiplexingCanvasOpen"
+          ></component-button-label>
         </div>
       </template>
       <div class="right-area">
+        <el-tooltip
+          effect="dark"
+          :content="t('visualization.external_parameter_settings')"
+          placement="bottom"
+        >
+          <component-button
+            v-show="editMode === 'edit'"
+            :tips="t('visualization.external_parameter_settings')"
+            @custom-click="openOuterParamsSet"
+            :icon-name="icon_params_setting"
+          />
+        </el-tooltip>
+        <div v-show="editMode === 'edit'" class="divider"></div>
         <el-button
           v-if="editMode === 'preview'"
           icon="EditPen"
@@ -218,10 +435,15 @@ eventBus.on('clearCanvas', clearCanvas)
           class="preview-button"
           type="primary"
         >
-          编辑
+          {{ t('visualization.edit') }}
         </el-button>
-        <el-button v-else class="preview-button" @click="preview()" style="float: right">
-          预览
+        <el-button
+          v-else-if="!isIframe"
+          class="preview-button"
+          @click="fullScreenPreview"
+          style="float: right"
+        >
+          {{ t('visualization.preview') }}
         </el-button>
         <el-button
           @click="saveCanvasWithCheck()"
@@ -229,7 +451,7 @@ eventBus.on('clearCanvas', clearCanvas)
           style="float: right; margin-right: 12px"
           type="primary"
         >
-          保存
+          {{ t('visualization.save') }}
         </el-button>
       </div>
     </div>
@@ -251,7 +473,19 @@ eventBus.on('clearCanvas', clearCanvas)
       cur-canvas-type="dataV"
       ref="resourceGroupOpt"
     />
+    <de-app-apply
+      ref="resourceAppOpt"
+      :component-data="componentData"
+      :dv-info="dvInfo"
+      :canvas-view-info="canvasViewInfo"
+      cur-canvas-type="dataV"
+      @saveAppCanvas="saveCanvasWithCheck"
+    ></de-app-apply>
   </div>
+  <de-fullscreen ref="fullScreeRef" show-position="dvEdit"></de-fullscreen>
+  <multiplexing-canvas ref="multiplexingRef"></multiplexing-canvas>
+  <outer-params-set ref="outerParamsSetRef"> </outer-params-set>
+  <XpackComponent ref="openHandler" jsname="L2NvbXBvbmVudC9lbWJlZGRlZC1pZnJhbWUvT3BlbkhhbmRsZXI=" />
 </template>
 
 <style lang="less" scoped>
@@ -360,5 +594,13 @@ eventBus.on('clearCanvas', clearCanvas)
     border-color: #616774;
     background-color: #1e2637;
   }
+}
+
+.divider {
+  background: #ffffff4d;
+  width: 1px;
+  height: 18px;
+  margin-right: 20px;
+  margin-left: 10px;
 }
 </style>

@@ -16,12 +16,14 @@
           width="172"
           height="79"
         />
-        <Icon v-else name="dv-no-img" style="width: 172px; height: 79px" />
+        <Icon v-else name="dv-no-img"
+          ><dvNoImg class="svg-icon" style="width: 172px; height: 79px"
+        /></Icon>
       </div>
       <div class="title-main">
         <div class="title-area">
-          <span style="margin-top: 8px; margin-left: 8px" :title="subjectItem.name">{{
-            subjectItem.name
+          <span style="margin-top: 8px; margin-left: 8px" :title="t(subjectItem.name)">{{
+            t(subjectItem.name)
           }}</span>
         </div>
         <div class="edit-area" v-if="subjectItem.type === 'self'">
@@ -44,6 +46,7 @@
 </template>
 
 <script setup lang="ts">
+import dvNoImg from '@/assets/svg/dv-no-img.svg'
 import { computed, onMounted, reactive, toRefs } from 'vue'
 import { imgUrlTrans } from '@/utils/imgUtils'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
@@ -56,6 +59,7 @@ import { adaptCurThemeCommonStyleAll } from '@/utils/canvasStyle'
 import { useEmitt } from '@/hooks/web/useEmitt'
 const dvMainStore = dvMainStoreWithOut()
 const snapshotStore = snapshotStoreWithOut()
+import { useI18n } from '@/hooks/web/useI18n'
 
 const { canvasStyleData } = storeToRefs(dvMainStore)
 
@@ -64,6 +68,7 @@ const state = reactive({
   subjectItemDetails: null,
   canEdit: false
 })
+const { t } = useI18n()
 
 const props = defineProps({
   subjectItem: {
@@ -80,7 +85,7 @@ const themeSelected = computed(() => {
 })
 const emit = defineEmits(['subjectDelete', 'onSubjectChange', 'subjectEdit'])
 const subjectDelete = () => {
-  ElMessageBox.confirm('确定删除[' + subjectItem.value.name + ']吗?', {
+  ElMessageBox.confirm(t('components.to_delete_', [subjectItem.value.name]), {
     confirmButtonType: 'danger',
     type: 'warning',
     autofocus: false,

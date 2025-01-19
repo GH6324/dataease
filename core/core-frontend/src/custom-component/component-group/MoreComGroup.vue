@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import dbMoreWeb from '@/assets/svg/db-more-web.svg'
 import { toRefs } from 'vue'
 import eventBus from '@/utils/eventBus'
 import DragComponent from '@/custom-component/component-group/DragComponent.vue'
 import { commonHandleDragEnd, commonHandleDragStart } from '@/utils/canvasUtils'
-
+import { useI18n } from '@/hooks/web/useI18n'
+const { t } = useI18n()
 const props = defineProps({
   propValue: {
     type: Array,
@@ -28,8 +30,8 @@ const props = defineProps({
 })
 
 const { dvModel } = toRefs(props)
-const newComponent = () => {
-  eventBus.emit('handleNew', { componentName: 'DeTimeClock', innerType: 'DeTimeClock' })
+const newComponent = params => {
+  eventBus.emit('handleNew', { componentName: params, innerType: params })
 }
 
 const handleDragStart = e => {
@@ -42,17 +44,20 @@ const handleDragEnd = e => {
 </script>
 
 <template>
-  <div
-    class="group"
-    @dragstart="handleDragStart"
-    @dragend="handleDragEnd"
-    v-on:click="newComponent"
-  >
+  <div class="group" @dragstart="handleDragStart" @dragend="handleDragEnd">
     <drag-component
       :themes="themes"
       name="YYYY-MM-DD 08:00:00"
-      label="日期时间"
+      :label="t('visualization.date_time')"
       drag-info="DeTimeClock&DeTimeClock"
+      v-on:click="newComponent('DeTimeClock')"
+    ></drag-component>
+    <drag-component
+      :themes="themes"
+      :icon="dbMoreWeb"
+      :label="t('visualization.web')"
+      drag-info="DeFrame&DeFrame"
+      v-on:click="newComponent('DeFrame')"
     ></drag-component>
   </div>
 </template>
@@ -60,5 +65,6 @@ const handleDragEnd = e => {
 <style lang="less" scoped>
 .group {
   padding: 12px 8px;
+  display: inline-flex;
 }
 </style>

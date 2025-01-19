@@ -1,12 +1,24 @@
 <script lang="ts" setup>
-import { computed, toRefs } from 'vue'
-import { ElIcon } from 'element-plus-secondary'
+import { computed, nextTick, PropType, ref, toRefs } from 'vue'
+import { ElIcon, ElMessage } from 'element-plus-secondary'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { storeToRefs } from 'pinia'
+import { snapshotStoreWithOut } from '@/store/modules/data-visualization/snapshot'
+import Icon from '../icon-custom/src/Icon.vue'
 const dvMainStore = dvMainStoreWithOut()
 const { canvasCollapse } = storeToRefs(dvMainStore)
-
+let componentNameEdit = ref(false)
+let inputComponentName = ref({ id: null, name: null })
+let componentNameInputAttr = ref(null)
+import dvInfoSvg from '@/assets/svg/dv-info.svg'
+import { useI18n } from '@/hooks/web/useI18n'
+const snapshotStore = snapshotStoreWithOut()
+const { t } = useI18n()
 const props = defineProps({
+  element: {
+    required: false,
+    default: {}
+  },
   scrollWidth: {
     required: false,
     type: Number,
@@ -32,18 +44,82 @@ const props = defineProps({
     type: String,
     default: 'defaultSide'
   },
+
+  view: {
+    type: Object as PropType<ChartObj>,
+    required: false
+  },
+  slideIndex: {
+    type: Number,
+    required: false,
+    default: 0
+  },
+  themes: {
+    type: String as PropType<EditorTheme>,
+    default: 'light'
+  },
   title: String
 })
 
-const { width, asidePosition, sideName, themeInfo } = toRefs(props)
+const { width, asidePosition, sideName, themeInfo, view, themes, element } = toRefs(props)
 const collapseChange = () => {
   canvasCollapse.value[sideName.value] = !canvasCollapse.value[sideName.value]
 }
 const widthShow = computed(() => `${canvasCollapse.value[sideName.value] ? 36 : width.value}px`)
 
+const isViewTitle = computed(() => view.value && ['picture-group'].includes(view.value.type))
+
 const slideStyle = computed(() => {
   return { '--de-scroll-width': props.scrollWidth + 'px', width: widthShow.value }
 })
+
+const closeEditComponentName = () => {
+  componentNameEdit.value = false
+  if (props.element.id !== inputComponentName.value.id) {
+    return
+  }
+  if (!inputComponentName.value.name || !inputComponentName.value.name.trim()) {
+    return
+  }
+  if (
+    inputComponentName.value.name.trim() === view.value?.title ||
+    inputComponentName.value.name.trim() === element.value.name
+  ) {
+    return
+  }
+  if (
+    inputComponentName.value.name.trim().length > 64 ||
+    inputComponentName.value.name.trim().length < 2
+  ) {
+    ElMessage.warning('名称字段长度2-64个字符')
+    editComponentName()
+    return
+  }
+  element.value.label = inputComponentName.value.name
+  element.value.name = inputComponentName.value.name
+  if (isViewTitle.value) {
+    view.value.title = inputComponentName.value.name
+  }
+  inputComponentName.value.name = ''
+}
+
+const editComponentName = () => {
+  componentNameEdit.value = true
+  if (isViewTitle.value) {
+    inputComponentName.value.name = view.value.title
+    inputComponentName.value.id = view.value.id
+  } else {
+    inputComponentName.value.name = element.value.name
+    inputComponentName.value.id = element.value.id
+  }
+  nextTick(() => {
+    componentNameInputAttr.value.focus()
+  })
+}
+
+const onComponentNameChange = () => {
+  snapshotStore.recordSnapshotCache('onComponentNameChange')
+}
 </script>
 
 <template>
@@ -55,7 +131,41 @@ const slideStyle = computed(() => {
     :style="slideStyle"
   >
     <el-row align="middle" :class="'title-' + themeInfo" justify="space-between">
-      <span v-if="!canvasCollapse[sideName]">{{ title }}</span>
+      <div
+        :id="'attr-slide-component-name' + slideIndex"
+        v-if="!canvasCollapse[sideName]"
+        class="name-area-attr"
+        style="max-width: 180px; text-overflow: ellipsis; white-space: nowrap"
+        :style="{ width: componentNameEdit ? '300px' : 'auto' }"
+        :class="{ 'component-name-dark': themeInfo === 'dark' }"
+        @dblclick="editComponentName"
+      >
+        {{ isViewTitle ? view.title : title }}
+        <el-popover
+          show-arrow
+          :offset="8"
+          :effect="themes"
+          placement="bottom"
+          width="200"
+          trigger="click"
+        >
+          <template #reference>
+            <span>
+              <el-icon
+                v-show="element && element['id']"
+                style="margin: 2px 0 0 4px; cursor: pointer"
+                ><Icon><dvInfoSvg class="svg-icon" /></Icon
+              ></el-icon>
+            </span>
+          </template>
+          <div style="margin-bottom: 4px; font-size: 14px">
+            {{ t('visualization.component_id') }}
+          </div>
+          <div style="font-size: 14px">
+            {{ element['id'] }}
+          </div>
+        </el-popover>
+      </div>
       <el-icon
         :title="title"
         :class="['custom-icon-' + themeInfo, 'collapse-icon-' + themeInfo]"
@@ -79,6 +189,16 @@ const slideStyle = computed(() => {
     <div class="collapse-title" v-if="canvasCollapse[sideName]">
       <span>{{ title }}</span>
     </div>
+    <Teleport v-if="componentNameEdit" :to="'#attr-slide-component-name' + slideIndex">
+      <input
+        ref="componentNameInputAttr"
+        v-model="inputComponentName.name"
+        width="100%"
+        :effect="themeInfo"
+        @change="onComponentNameChange"
+        @blur="closeEditComponentName"
+      />
+    </Teleport>
   </div>
 </template>
 
@@ -124,6 +244,11 @@ const slideStyle = computed(() => {
     font-weight: 500;
     text-align: center;
     padding: 5px;
+    margin-top: 5px;
+    span {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+    }
   }
   .main-content {
     height: calc(100% - 45px);
@@ -183,5 +308,40 @@ const slideStyle = computed(() => {
 
 .ed-scrollbar__bar.is-vertical {
   width: var(--de-scroll-width);
+}
+
+.name-area-attr {
+  position: relative;
+  line-height: 24px;
+  height: 24px;
+  font-size: 14px !important;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  input {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    outline: none;
+    border: 1px solid #295acc;
+    border-radius: 4px;
+    padding: 0 4px;
+    height: 100%;
+  }
+}
+
+.component-name-dark {
+  input {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    color: @dv-canvas-main-font-color;
+    background-color: #050e21;
+    outline: none;
+    border: 1px solid #295acc;
+    border-radius: 4px;
+    padding: 0 4px;
+    height: 100%;
+  }
 }
 </style>

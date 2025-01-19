@@ -1,22 +1,19 @@
 package io.dataease.datasource.server;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.dataease.api.dataset.dto.DatasetTableDTO;
 import io.dataease.api.dataset.dto.PreviewSqlDTO;
 import io.dataease.api.ds.DatasourceApi;
 import io.dataease.api.ds.vo.*;
+import io.dataease.api.permissions.relation.api.RelationApi;
 import io.dataease.commons.constants.TaskStatus;
-import io.dataease.commons.utils.CommonThreadPool;
-import io.dataease.constant.DataSourceType;
 import io.dataease.constant.LogOT;
 import io.dataease.constant.LogST;
-import io.dataease.dataset.dto.DatasourceSchemaDTO;
 import io.dataease.dataset.manage.DatasetDataManage;
 import io.dataease.dataset.utils.TableUtils;
 import io.dataease.datasource.dao.auto.entity.*;
@@ -31,13 +28,19 @@ import io.dataease.datasource.manage.EngineManage;
 import io.dataease.datasource.provider.ApiUtils;
 import io.dataease.datasource.provider.CalciteProvider;
 import io.dataease.datasource.provider.ExcelUtils;
-import io.dataease.datasource.request.DatasourceRequest;
 import io.dataease.engine.constant.SQLConstants;
 import io.dataease.exception.DEException;
+import io.dataease.extensions.datasource.api.PluginManageApi;
+import io.dataease.extensions.datasource.dto.*;
+import io.dataease.extensions.datasource.factory.ProviderFactory;
+import io.dataease.extensions.datasource.provider.Provider;
+import io.dataease.extensions.datasource.vo.DatasourceConfiguration;
+import io.dataease.extensions.datasource.vo.XpackPluginsDatasourceVO;
 import io.dataease.i18n.Translator;
-import io.dataease.job.sechedule.CheckDsStatusJob;
-import io.dataease.job.sechedule.ScheduleManager;
+import io.dataease.job.schedule.CheckDsStatusJob;
+import io.dataease.job.schedule.ScheduleManager;
 import io.dataease.license.config.XpackInteract;
+import io.dataease.license.utils.LicenseUtil;
 import io.dataease.log.DeLog;
 import io.dataease.model.BusiNodeRequest;
 import io.dataease.model.BusiNodeVO;
@@ -51,6 +54,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.quartz.JobDataMap;
 import org.quartz.JobKey;
 import org.quartz.TriggerKey;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -58,6 +62,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -81,7 +89,6 @@ public class DatasourceServer implements DatasourceApi {
     @Resource
     private TaskLogExtMapper taskLogExtMapper;
     private static final ObjectMapper objectMapper = new ObjectMapper();
-
     @Resource
     private DataSourceManage dataSourceManage;
     @Resource
@@ -92,53 +99,34 @@ public class DatasourceServer implements DatasourceApi {
     private CoreDsFinishPageMapper coreDsFinishPageMapper;
     @Resource
     private DatasetDataManage datasetDataManage;
-
     @Resource
     private ScheduleManager scheduleManager;
     @Resource
     private CoreUserManage coreUserManage;
+    @Autowired(required = false)
+    private PluginManageApi pluginManage;
+    @Autowired(required = false)
+    private RelationApi relationManage;
+
+    public enum UpdateType {
+        all_scope, add_scope
+    }
+
+    private TypeReference<List<ApiDefinition>> listTypeReference = new TypeReference<List<ApiDefinition>>() {
+    };
+    @Resource
+    private CommonThreadPool commonThreadPool;
+    private boolean isUpdatingStatus = false;
+    private static List<Long> syncDsIds = new ArrayList<>();
+
 
     @Override
     public List<DatasourceDTO> query(String keyWord) {
         return null;
     }
 
-    public enum UpdateType {
-        all_scope, add_scope
-    }
-
-    @Resource
-    private CommonThreadPool commonThreadPool;
-
-    private boolean isUpdatingStatus = false;
-
-    private void getParents(Long pid, List<Long> ids) {
-        CoreDatasource parent = datasourceMapper.selectById(pid);// 查找父级folder
-        ids.add(parent.getId());
-        if (parent.getPid() != null && parent.getPid() != 0) {
-            getParents(parent.getPid(), ids);
-        }
-    }
-
-    private void filterDs(List<BusiNodeVO> busiNodeVOS, List<Long> ids, String type, Long id) {
-        for (BusiNodeVO busiNodeVO : busiNodeVOS) {
-            if (busiNodeVO.getType() != null && busiNodeVO.getType().equalsIgnoreCase(type)) {
-                if (id != null) {
-                    if (!busiNodeVO.getId().equals(id)) {
-                        ids.add(busiNodeVO.getId());
-                    }
-                } else {
-                    ids.add(busiNodeVO.getId());
-                }
-            }
-            if (CollectionUtils.isNotEmpty(busiNodeVO.getChildren())) {
-                filterDs(busiNodeVO.getChildren(), ids, type, id);
-            }
-        }
-    }
-
-    public boolean checkRepeat(@RequestBody DatasourceDTO dataSourceDTO) {
-        if (Arrays.asList("API", "Excel", "folder").contains(dataSourceDTO.getType())) {
+    public boolean checkRepeat(@RequestBody BusiDsRequest dataSourceDTO) {
+        if (Arrays.asList("API", "Excel", "folder", "es").contains(dataSourceDTO.getType())) {
             return false;
         }
         BusiNodeRequest request = new BusiNodeRequest();
@@ -191,7 +179,9 @@ public class DatasourceServer implements DatasourceApi {
 
     @DeLog(id = "#p0.id", ot = LogOT.MODIFY, st = LogST.DATASOURCE)
     @Transactional
-    public DatasourceDTO move(DatasourceDTO dataSourceDTO) {
+    public DatasourceDTO move(BusiCreateFolderRequest busiDsRequest) {
+        DatasourceDTO dataSourceDTO = new DatasourceDTO();
+        BeanUtils.copyBean(dataSourceDTO, busiDsRequest);
         if (dataSourceDTO.getPid() == null) {
             DEException.throwException("目录必选！");
         }
@@ -199,9 +189,8 @@ public class DatasourceServer implements DatasourceApi {
             DEException.throwException(Translator.get("i18n_pid_not_eq_id"));
         }
         if (dataSourceDTO.getPid() != 0) {
-            List<Long> ids = new ArrayList<>();
-            getParents(dataSourceDTO.getPid(), ids);
-            if (ids.contains(dataSourceDTO.getId())) {
+            List<Long> pidList = dataSourceManage.getPidList(dataSourceDTO.getPid());
+            if (pidList.contains(dataSourceDTO.getId())) {
                 DEException.throwException(Translator.get("i18n_pid_not_eq_id"));
             }
         }
@@ -210,60 +199,66 @@ public class DatasourceServer implements DatasourceApi {
     }
 
     @Transactional
-    public DatasourceDTO reName(DatasourceDTO dataSourceDTO) {
+    public DatasourceDTO reName(BusiRenameRequest busiDsRequest) {
+        DatasourceDTO dataSourceDTO = new DatasourceDTO();
+        BeanUtils.copyBean(dataSourceDTO, busiDsRequest);
         if (StringUtils.isEmpty(dataSourceDTO.getName())) {
             DEException.throwException("名称不能为空！");
         }
-        CoreDatasource datasource = datasourceMapper.selectById(dataSourceDTO.getId());
+        CoreDatasource datasource = dataSourceManage.getCoreDatasource(dataSourceDTO.getId());
         datasource.setName(dataSourceDTO.getName());
+        dataSourceDTO.setPid(datasource.getPid());
+        dataSourceManage.checkName(dataSourceDTO);
         dataSourceManage.innerEdit(datasource);
         return dataSourceDTO;
     }
 
     @DeLog(id = "#p0.id", pid = "#p0.pid", ot = LogOT.CREATE, st = LogST.DATASOURCE)
     @Transactional
-    public DatasourceDTO createFolder(DatasourceDTO dataSourceDTO) {
+    public DatasourceDTO createFolder(BusiCreateFolderRequest busiDsRequest) {
+        DatasourceDTO dataSourceDTO = new DatasourceDTO();
+        BeanUtils.copyBean(dataSourceDTO, busiDsRequest);
         dataSourceDTO.setCreateTime(System.currentTimeMillis());
         dataSourceDTO.setUpdateTime(System.currentTimeMillis());
         dataSourceDTO.setType(dataSourceDTO.getNodeType());
         dataSourceDTO.setId(IDUtils.snowID());
         dataSourceDTO.setConfiguration("");
-        CoreDatasource coreDatasource = new CoreDatasource();
-        coreDatasource.setTaskStatus(TaskStatus.WaitingForExecution.name());
-        BeanUtils.copyBean(coreDatasource, dataSourceDTO);
-        dataSourceManage.innerSave(coreDatasource);
+        dataSourceManage.innerSave(dataSourceDTO);
         return dataSourceDTO;
     }
 
     @DeLog(id = "#p0.id", pid = "#p0.pid", ot = LogOT.CREATE, st = LogST.DATASOURCE)
     @Transactional
     @Override
-    public DatasourceDTO save(DatasourceDTO dataSourceDTO) throws DEException {
+    public DatasourceDTO save(BusiDsRequest busiDsRequest) throws DEException {
+        DatasourceDTO dataSourceDTO = new DatasourceDTO();
+        BeanUtils.copyBean(dataSourceDTO, busiDsRequest);
         if (dataSourceDTO.getId() != null && dataSourceDTO.getId() > 0) {
-            return update(dataSourceDTO);
+            return update(busiDsRequest);
         }
         if (StringUtils.isNotEmpty(dataSourceDTO.getConfiguration())) {
             dataSourceDTO.setConfiguration(new String(Base64.getDecoder().decode(dataSourceDTO.getConfiguration())));
         }
         preCheckDs(dataSourceDTO);
         dataSourceDTO.setId(IDUtils.snowID());
+        dataSourceDTO.setCreateTime(System.currentTimeMillis());
+        dataSourceDTO.setUpdateTime(System.currentTimeMillis());
+        try {
+            checkDatasourceStatus(dataSourceDTO);
+        } catch (Exception ignore) {
+            dataSourceDTO.setStatus("Error");
+        }
+        dataSourceDTO.setTaskStatus(TaskStatus.WaitingForExecution.name());
+        dataSourceDTO.setCreateBy(AuthUtils.getUser().getUserId().toString());
+        dataSourceDTO.setUpdateBy(AuthUtils.getUser().getUserId());
+
         CoreDatasource coreDatasource = new CoreDatasource();
         BeanUtils.copyBean(coreDatasource, dataSourceDTO);
-        coreDatasource.setCreateTime(System.currentTimeMillis());
-        coreDatasource.setUpdateTime(System.currentTimeMillis());
-        try {
-            checkDatasourceStatus(coreDatasource);
-        } catch (Exception ignore) {
-            coreDatasource.setStatus("Error");
-        }
-        coreDatasource.setTaskStatus(TaskStatus.WaitingForExecution.name());
-        coreDatasource.setCreateBy(AuthUtils.getUser().getUserId().toString());
-        coreDatasource.setUpdateBy(AuthUtils.getUser().getUserId());
-        dataSourceManage.innerSave(coreDatasource);
+        dataSourceManage.innerSave(dataSourceDTO);
 
         if (dataSourceDTO.getType().equals(DatasourceConfiguration.DatasourceType.Excel.name())) {
             DatasourceRequest datasourceRequest = new DatasourceRequest();
-            datasourceRequest.setDatasource(coreDatasource);
+            datasourceRequest.setDatasource(dataSourceDTO);
             List<DatasetTableDTO> tables = ExcelUtils.getTables(datasourceRequest);
             for (DatasetTableDTO table : tables) {
                 datasourceRequest.setTable(table.getTableName());
@@ -271,12 +266,14 @@ public class DatasourceServer implements DatasourceApi {
                 try {
                     datasourceSyncManage.createEngineTable(datasourceRequest.getTable(), tableFields);
                 } catch (Exception e) {
-                    DEException.throwException("Failed to create table " + datasourceRequest.getTable() + ", " + e.getMessage());
+                    if (e.getMessage().toLowerCase().contains("Row size too large".toLowerCase())) {
+                        DEException.throwException("文本内容超出最大支持范围： " + datasourceRequest.getTable() + ", " + e.getMessage());
+                    } else {
+                        DEException.throwException("Failed to create table " + datasourceRequest.getTable() + ", " + e.getMessage());
+                    }
                 }
             }
-            commonThreadPool.addTask(() -> {
-                datasourceSyncManage.extractExcelData(coreDatasource, "all_scope");
-            });
+            datasourceSyncManage.extractExcelData(coreDatasource, "all_scope");
         } else if (dataSourceDTO.getType().equals(DatasourceConfiguration.DatasourceType.API.name())) {
             CoreDatasourceTask coreDatasourceTask = new CoreDatasourceTask();
             BeanUtils.copyBean(coreDatasourceTask, dataSourceDTO.getSyncSetting());
@@ -288,7 +285,7 @@ public class DatasourceServer implements DatasourceApi {
             if (StringUtils.equalsIgnoreCase(coreDatasourceTask.getSyncRate(), RIGHTNOW.toString())) {
                 coreDatasourceTask.setCron(null);
             } else {
-                if (StringUtils.equalsIgnoreCase(coreDatasourceTask.getEndLimit(), "1") && coreDatasourceTask.getStartTime() > coreDatasourceTask.getEndTime()) {
+                if (coreDatasourceTask.getEndTime() != null && coreDatasourceTask.getEndTime() > 0 && coreDatasourceTask.getStartTime() > coreDatasourceTask.getEndTime()) {
                     DEException.throwException("结束时间不能小于开始时间！");
                 }
             }
@@ -296,7 +293,7 @@ public class DatasourceServer implements DatasourceApi {
             datasourceTaskServer.insert(coreDatasourceTask);
             datasourceSyncManage.addSchedule(coreDatasourceTask);
             DatasourceRequest datasourceRequest = new DatasourceRequest();
-            datasourceRequest.setDatasource(coreDatasource);
+            datasourceRequest.setDatasource(dataSourceDTO);
             List<DatasetTableDTO> tables = ApiUtils.getTables(datasourceRequest);
             checkName(tables.stream().map(DatasetTableDTO::getName).collect(Collectors.toList()));
             for (DatasetTableDTO api : tables) {
@@ -318,34 +315,38 @@ public class DatasourceServer implements DatasourceApi {
     @DeLog(id = "#p0.id", ot = LogOT.MODIFY, st = LogST.DATASOURCE)
     @Transactional
     @Override
-    public DatasourceDTO update(DatasourceDTO dataSourceDTO) throws DEException {
+    public DatasourceDTO update(BusiDsRequest busiDsRequest) throws DEException {
+        DatasourceDTO dataSourceDTO = new DatasourceDTO();
+        BeanUtils.copyBean(dataSourceDTO, busiDsRequest);
         Long pk = null;
         if (ObjectUtils.isEmpty(pk = dataSourceDTO.getId())) {
-            return save(dataSourceDTO);
+            return save(busiDsRequest);
         }
-        CoreDatasource sourceData = datasourceMapper.selectById(pk);
+        DatasourceDTO sourceData = dataSourceManage.getDs(pk);
         dataSourceDTO.setConfiguration(new String(Base64.getDecoder().decode(dataSourceDTO.getConfiguration())));
         dataSourceDTO.setPid(sourceData.getPid());
         preCheckDs(dataSourceDTO);
 
+        dataSourceDTO.setUpdateTime(System.currentTimeMillis());
+        dataSourceDTO.setUpdateBy(AuthUtils.getUser().getUserId());
+        try {
+            checkDatasourceStatus(dataSourceDTO);
+        } catch (Exception e) {
+            dataSourceDTO.setStatus("Error");
+        }
+
         CoreDatasource requestDatasource = new CoreDatasource();
         BeanUtils.copyBean(requestDatasource, dataSourceDTO);
-        requestDatasource.setUpdateTime(System.currentTimeMillis());
-        requestDatasource.setUpdateBy(AuthUtils.getUser().getUserId());
-        try {
-            checkDatasourceStatus(requestDatasource);
-        } catch (Exception e) {
-            requestDatasource.setStatus("Error");
-        }
 
         DatasourceRequest sourceTableRequest = new DatasourceRequest();
         sourceTableRequest.setDatasource(sourceData);
         DatasourceRequest datasourceRequest = new DatasourceRequest();
-        datasourceRequest.setDatasource(requestDatasource);
+        datasourceRequest.setDatasource(dataSourceDTO);
         List<String> toCreateTables = new ArrayList<>();
         List<String> toDeleteTables = new ArrayList<>();
         if (dataSourceDTO.getType().equals(DatasourceConfiguration.DatasourceType.API.name())) {
-            List<String> sourceTables = ApiUtils.getTables(sourceTableRequest).stream().map(DatasetTableDTO::getTableName).collect(Collectors.toList());
+            requestDatasource.setEnableDataFill(null);
+            List<String> sourceTables = ApiUtils.getTables(sourceTableRequest).stream().map(DatasetTableDTO::getTableName).toList();
             List<DatasetTableDTO> datasetTableDTOS = ApiUtils.getTables(datasourceRequest);
             List<String> tables = datasetTableDTOS.stream().map(DatasetTableDTO::getTableName).collect(Collectors.toList());
             checkName(datasetTableDTOS.stream().map(DatasetTableDTO::getName).collect(Collectors.toList()));
@@ -373,7 +374,7 @@ public class DatasourceServer implements DatasourceApi {
                 coreDatasourceTask.setStartTime(System.currentTimeMillis() - 20 * 1000);
                 coreDatasourceTask.setCron(null);
             } else {
-                if (StringUtils.equalsIgnoreCase(coreDatasourceTask.getEndLimit(), "1") && coreDatasourceTask.getStartTime() > coreDatasourceTask.getEndTime()) {
+                if (coreDatasourceTask.getEndTime() != null && coreDatasourceTask.getEndTime() > 0 && coreDatasourceTask.getStartTime() > coreDatasourceTask.getEndTime()) {
                     DEException.throwException("结束时间不能小于开始时间！");
                 }
             }
@@ -396,18 +397,19 @@ public class DatasourceServer implements DatasourceApi {
             }
             datasourceSyncManage.deleteSchedule(datasourceTaskServer.selectByDSId(dataSourceDTO.getId()));
             datasourceSyncManage.addSchedule(coreDatasourceTask);
+            dataSourceManage.checkName(dataSourceDTO);
             dataSourceManage.innerEdit(requestDatasource);
         } else if (dataSourceDTO.getType().equals(DatasourceConfiguration.DatasourceType.Excel.name())) {
+            requestDatasource.setEnableDataFill(null);
             List<String> sourceTables = ExcelUtils.getTables(sourceTableRequest).stream().map(DatasetTableDTO::getTableName).collect(Collectors.toList());
             List<String> tables = ExcelUtils.getTables(datasourceRequest).stream().map(DatasetTableDTO::getTableName).collect(Collectors.toList());
-            if (dataSourceDTO.getEditType() == 0) {
+            if (Objects.equals(dataSourceDTO.getEditType(), replace)) {
                 toCreateTables = tables;
-                toDeleteTables = sourceTables;
+                toDeleteTables = sourceTables.stream().filter(s -> tables.contains(s)).collect(Collectors.toList());
                 for (String deleteTable : toDeleteTables) {
                     try {
                         datasourceSyncManage.dropEngineTable(deleteTable);
-                    } catch (Exception e) {
-                        DEException.throwException("Failed to drop table " + deleteTable + ", " + e.getMessage());
+                    } catch (Exception ignore) {
                     }
                 }
                 for (String toCreateTable : toCreateTables) {
@@ -419,48 +421,27 @@ public class DatasourceServer implements DatasourceApi {
                     }
                 }
                 datasourceSyncManage.extractExcelData(requestDatasource, "all_scope");
+                dataSourceManage.checkName(dataSourceDTO);
+                ExcelUtils.mergeSheets(requestDatasource, sourceData);
                 dataSourceManage.innerEdit(requestDatasource);
             } else {
                 datasourceSyncManage.extractExcelData(requestDatasource, "add_scope");
+                ExcelUtils.mergeSheets(requestDatasource, sourceData);
+                dataSourceManage.checkName(dataSourceDTO);
                 dataSourceManage.innerEdit(requestDatasource);
             }
         } else {
+            if (!LicenseUtil.licenseValid()) {
+                requestDatasource.setEnableDataFill(null);
+            }
             checkParams(dataSourceDTO.getConfiguration());
+            dataSourceManage.checkName(dataSourceDTO);
             dataSourceManage.innerEdit(requestDatasource);
             calciteProvider.update(dataSourceDTO);
         }
         return dataSourceDTO;
     }
 
-    private static void checkParams(String configurationStr) {
-        DatasourceConfiguration configuration = JsonUtil.parseObject(configurationStr, DatasourceConfiguration.class);
-        if (configuration.getInitialPoolSize() < configuration.getMinPoolSize()) {
-            DEException.throwException("初始连接数不能小于最小连接数！");
-        }
-        if (configuration.getInitialPoolSize() > configuration.getMaxPoolSize()) {
-            DEException.throwException("初始连接数不能大于最大连接数！");
-        }
-        if (configuration.getMaxPoolSize() < configuration.getMinPoolSize()) {
-            DEException.throwException("最大连接数不能小于最小连接数！");
-        }
-        if (configuration.getQueryTimeout() < 0) {
-            DEException.throwException("查询超时不能小于0！");
-        }
-    }
-
-    private static void checkName(List<String> tables) {
-        for (int i = 0; i < tables.size() - 1; i++) {
-            for (int j = i + 1; j < tables.size(); j++) {
-                if (tables.get(i).equalsIgnoreCase(tables.get(j))) {
-                    DEException.throwException(Translator.get("i18n_table_name_repeat") + tables.get(i));
-                }
-            }
-        }
-    }
-
-    private String excelDataTableName(String name) {
-        return StringUtils.substring(name, 6, name.length() - 11);
-    }
 
     @Override
     public List<DatasourceConfiguration.DatasourceType> datasourceTypes() {
@@ -468,92 +449,116 @@ public class DatasourceServer implements DatasourceApi {
     }
 
     @Override
-    public DatasourceDTO validate(DatasourceDTO dataSourceDTO) throws DEException {
+    public DatasourceDTO validate(BusiDsRequest busiDsRequest) throws DEException {
+        DatasourceDTO dataSourceDTO = new DatasourceDTO();
+        BeanUtils.copyBean(dataSourceDTO, busiDsRequest);
         dataSourceDTO.setConfiguration(new String(Base64.getDecoder().decode(dataSourceDTO.getConfiguration())));
         CoreDatasource coreDatasource = new CoreDatasource();
         BeanUtils.copyBean(coreDatasource, dataSourceDTO);
-        checkDatasourceStatus(coreDatasource);
+        checkDatasourceStatus(dataSourceDTO);
         DatasourceDTO result = new DatasourceDTO();
-        result.setStatus(coreDatasource.getStatus());
+        result.setType(dataSourceDTO.getType());
+        result.setStatus(dataSourceDTO.getStatus());
         return result;
     }
 
     @Override
-    public List<String> getSchema(DatasourceDTO dataSourceDTO) throws DEException {
+    public List<String> getSchema(BusiDsRequest busiDsRequest) throws DEException {
+        DatasourceDTO dataSourceDTO = new DatasourceDTO();
+        BeanUtils.copyBean(dataSourceDTO, busiDsRequest);
         dataSourceDTO.setConfiguration(new String(Base64.getDecoder().decode(dataSourceDTO.getConfiguration())));
         CoreDatasource coreDatasource = new CoreDatasource();
         BeanUtils.copyBean(coreDatasource, dataSourceDTO);
         DatasourceRequest datasourceRequest = new DatasourceRequest();
-        datasourceRequest.setDatasource(coreDatasource);
-        return calciteProvider.getSchema(datasourceRequest);
+        datasourceRequest.setDatasource(dataSourceDTO);
+        Provider provider = ProviderFactory.getProvider(dataSourceDTO.getType());
+        return provider.getSchema(datasourceRequest);
     }
 
+    @Override
+    public DatasourceDTO hidePw(Long datasourceId) throws DEException {
+        return getDatasourceDTOById(datasourceId, true);
+    }
+
+    @Override
+    public DatasourceDTO getSimpleDs(Long datasourceId) throws DEException {
+        CoreDatasource datasource = dataSourceManage.getCoreDatasource(datasourceId);
+        if (datasource == null) {
+            DEException.throwException(Translator.get("i18n_datasource_not_exists"));
+        }
+        if (datasource.getType().equalsIgnoreCase("api")) {
+            datasource.setConfiguration("[]");
+        } else {
+            datasource.setConfiguration("");
+        }
+        datasource.setConfiguration("");
+        DatasourceDTO datasourceDTO = new DatasourceDTO();
+        BeanUtils.copyBean(datasourceDTO, datasource);
+        return datasourceDTO;
+    }
 
     @Override
     public DatasourceDTO get(Long datasourceId) throws DEException {
-        DatasourceDTO datasourceDTO = new DatasourceDTO();
-        CoreDatasource datasource = datasourceMapper.selectById(datasourceId);
-        BeanUtils.copyBean(datasourceDTO, datasource);
-        TypeReference<List<ApiDefinition>> listTypeReference = new TypeReference<List<ApiDefinition>>() {
-        };
-        if (datasourceDTO.getType().equalsIgnoreCase(DatasourceConfiguration.DatasourceType.API.toString())) {
-            List<ApiDefinition> apiDefinitionList = JsonUtil.parseList(datasourceDTO.getConfiguration(), listTypeReference);
-            List<ApiDefinition> apiDefinitionListWithStatus = new ArrayList<>();
-            int success = 0;
-            for (ApiDefinition apiDefinition : apiDefinitionList) {
-                String status = null;
-                if (StringUtils.isNotEmpty(datasourceDTO.getStatus())) {
-                    JsonNode jsonNode = null;
-                    try {
-                        jsonNode = objectMapper.readTree(datasourceDTO.getStatus());
-                    } catch (Exception e) {
-                        DEException.throwException(e);
-                    }
-                    for (JsonNode node : jsonNode) {
-                        if (node.get("name").asText().equals(apiDefinition.getName())) {
-                            status = node.get("status").asText();
-                        }
-                    }
-                    apiDefinition.setStatus(status);
-                }
-                if (StringUtils.isNotEmpty(status) && status.equalsIgnoreCase("Success")) {
-                    success++;
-                }
-                CoreDatasourceTaskLog log = datasourceTaskServer.lastSyncLogForTable(datasourceId, apiDefinition.getDeTableName());
-                if (log != null) {
-                    apiDefinition.setUpdateTime(log.getStartTime());
-                }
-                apiDefinitionListWithStatus.add(apiDefinition);
-            }
-            datasourceDTO.setApiConfigurationStr(new String(Base64.getEncoder().encode(Objects.requireNonNull(JsonUtil.toJSONString(apiDefinitionListWithStatus)).toString().getBytes())));
-            if (success == apiDefinitionList.size()) {
-                datasourceDTO.setStatus("Success");
+        return getDatasourceDTOById(datasourceId, false);
+    }
+
+    @Override
+    public DatasourceDTO innerGet(Long datasourceId) throws DEException {
+        return getDatasourceDTOById(datasourceId, false);
+    }
+
+    @Override
+    public String getName(Long datasourceId) throws DEException {
+        CoreDatasource datasource = dataSourceManage.getCoreDatasource(datasourceId);
+        if (datasource == null) {
+            DEException.throwException(Translator.get("i18n_datasource_not_exists"));
+        }
+        return datasource.getName();
+    }
+
+    @Override
+    public List<DatasourceDTO> innerList(List<Long> ids, List<String> types) throws DEException {
+        List<DatasourceDTO> list = new ArrayList<>();
+        LambdaQueryWrapper<CoreDatasource> queryWrapper = new LambdaQueryWrapper<>();
+        if (ids != null) {
+            if (ids.isEmpty()) {
+                return list;
             } else {
-                if (success > 0 && success < apiDefinitionList.size()) {
-                    datasourceDTO.setStatus("Warning");
-                } else {
-                    datasourceDTO.setStatus("Error");
-                }
-            }
-            CoreDatasourceTask coreDatasourceTask = datasourceTaskServer.selectByDSId(datasourceDTO.getId());
-            TaskDTO taskDTO = new TaskDTO();
-            BeanUtils.copyBean(taskDTO, coreDatasourceTask);
-            datasourceDTO.setSyncSetting(taskDTO);
-
-            CoreDatasourceTask task = datasourceTaskServer.selectByDSId(datasourceDTO.getId());
-            if (task != null) {
-                datasourceDTO.setLastSyncTime(task.getStartTime());
+                queryWrapper.in(CoreDatasource::getId, ids);
             }
         }
-        if (datasourceDTO.getType().equalsIgnoreCase(DatasourceConfiguration.DatasourceType.Excel.toString())) {
-            datasourceDTO.setFileName(ExcelUtils.getFileName(datasource));
-            datasourceDTO.setSize(ExcelUtils.getSize(datasource));
+        if (types != null) {
+            if (types.isEmpty()) {
+                return list;
+            } else {
+                queryWrapper.in(CoreDatasource::getType, types);
+            }
         }
-        datasourceDTO.setConfiguration(new String(Base64.getEncoder().encode(datasourceDTO.getConfiguration().getBytes())));
+        List<CoreDatasource> dsList = datasourceMapper.selectList(queryWrapper);
+        for (CoreDatasource datasource : dsList) {
+            try {
+                list.add(convertCoreDatasource(datasource.getId(), false, datasource));
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        return list;
+    }
 
-        datasourceDTO.setCreator(coreUserManage.getUserName(Long.valueOf(datasourceDTO.getCreateBy())));
-
-        return datasourceDTO;
+    @Override
+    public boolean perDelete(Long id) {
+        if (LicenseUtil.licenseValid()) {
+            try {
+                relationManage.checkAuth();
+            } catch (Exception e) {
+                return false;
+            }
+            Long count = relationManage.getDsResource(id);
+            if (count > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Transactional
@@ -565,13 +570,15 @@ public class DatasourceServer implements DatasourceApi {
     }
 
     public void recursionDel(Long datasourceId) throws DEException {
-        CoreDatasource coreDatasource = datasourceMapper.selectById(datasourceId);
+        CoreDatasource coreDatasource = dataSourceManage.getDatasource(datasourceId);
         if (ObjectUtils.isEmpty(coreDatasource)) {
             return;
         }
+        DatasourceDTO datasourceDTO = new DatasourceDTO();
+        BeanUtils.copyBean(datasourceDTO, coreDatasource);
         if (coreDatasource.getType().equals(DatasourceConfiguration.DatasourceType.Excel.name())) {
             DatasourceRequest datasourceRequest = new DatasourceRequest();
-            datasourceRequest.setDatasource(coreDatasource);
+            datasourceRequest.setDatasource(datasourceDTO);
             List<DatasetTableDTO> tables = ExcelUtils.getTables(datasourceRequest);
             for (DatasetTableDTO table : tables) {
                 datasourceRequest.setTable(table.getTableName());
@@ -584,7 +591,7 @@ public class DatasourceServer implements DatasourceApi {
         }
         if (coreDatasource.getType().equals(DatasourceConfiguration.DatasourceType.API.name())) {
             DatasourceRequest datasourceRequest = new DatasourceRequest();
-            datasourceRequest.setDatasource(coreDatasource);
+            datasourceRequest.setDatasource(datasourceDTO);
             List<DatasetTableDTO> tables = ApiUtils.getTables(datasourceRequest);
             for (DatasetTableDTO api : tables) {
                 datasourceRequest.setTable(api.getTableName());
@@ -620,7 +627,7 @@ public class DatasourceServer implements DatasourceApi {
     @Override
     public DatasourceDTO validate(Long datasourceId) throws DEException {
         CoreDatasource coreDatasource = new CoreDatasource();
-        BeanUtils.copyBean(coreDatasource, datasourceMapper.selectById(datasourceId));
+        BeanUtils.copyBean(coreDatasource, dataSourceManage.getCoreDatasource(datasourceId));
         return validate(coreDatasource);
     }
 
@@ -649,64 +656,6 @@ public class DatasourceServer implements DatasourceApi {
                 cron, new Date(System.currentTimeMillis()), null, new JobDataMap());
     }
 
-    private DatasourceDTO validate(CoreDatasource coreDatasource) {
-        String lastStatus = coreDatasource.getStatus();
-        DatasourceDTO datasourceDTO = new DatasourceDTO();
-        BeanUtils.copyBean(datasourceDTO, coreDatasource);
-        try {
-            checkDatasourceStatus(coreDatasource);
-            if(StringUtils.isNotEmpty(lastStatus) && StringUtils.isNotEmpty(coreDatasource.getStatus()) && lastStatus.equalsIgnoreCase("Error") && coreDatasource.getStatus().equalsIgnoreCase("Success")){
-                calciteProvider.update(datasourceDTO);
-            }
-        } catch (Exception e) {
-            coreDatasource.setStatus("Error");
-            DEException.throwException(e.getMessage());
-        } finally {
-            datasourceDTO.setStatus(coreDatasource.getStatus());
-            QueryWrapper<CoreDatasource> wrapper = new QueryWrapper<>();
-            wrapper.eq("id", coreDatasource.getId());
-            CoreDatasource originData = datasourceMapper.selectById(coreDatasource.getId());
-            String originStatus = originData.getStatus();
-            if (!StringUtils.equals(coreDatasource.getStatus(), originStatus)) {
-                dataSourceManage.innerEditStatus(coreDatasource);
-            }
-        }
-        datasourceDTO.setConfiguration("");
-        return datasourceDTO;
-    }
-
-    private int getExtraFlag(Object typeObj, Object statusObj) {
-        if (ObjectUtils.isNotEmpty(statusObj)) {
-            String status = statusObj.toString();
-            if (typeObj.toString().equalsIgnoreCase("API")) {
-                TypeReference<List<ObjectNode>> listTypeReference = new TypeReference<List<ObjectNode>>() {
-                };
-                List<ObjectNode> apiStatus = JsonUtil.parseList(status, listTypeReference);
-                boolean hasError = false;
-                for (ObjectNode jsonNodes : apiStatus) {
-                    if (jsonNodes.get("status") != null && jsonNodes.get("status").asText().equalsIgnoreCase("Error")) {
-                        hasError = true;
-                        break;
-                    }
-                }
-                if (hasError) {
-                    return -DataSourceType.valueOf(typeObj.toString()).getFlag();
-                } else {
-                    return DataSourceType.valueOf(typeObj.toString()).getFlag();
-                }
-
-            } else {
-                if (StringUtils.equalsIgnoreCase(status, "Error")) {
-                    return -DataSourceType.valueOf(typeObj.toString()).getFlag();
-                } else {
-                    return DataSourceType.valueOf(typeObj.toString()).getFlag();
-                }
-            }
-        } else {
-            return DataSourceType.valueOf(typeObj.toString()).getFlag();
-        }
-    }
-
     @Override
     public List<BusiNodeVO> tree(BusiNodeRequest request) throws DEException {
         return dataSourceManage.tree(request);
@@ -714,9 +663,14 @@ public class DatasourceServer implements DatasourceApi {
 
     @Override
     public List<DatasetTableDTO> getTables(DatasetTableDTO datasetTableDTO) throws DEException {
-        CoreDatasource coreDatasource = datasourceMapper.selectById(datasetTableDTO.getDatasourceId());
+        CoreDatasource coreDatasource = dataSourceManage.getCoreDatasource(datasetTableDTO.getDatasourceId());
+        if (coreDatasource == null) {
+            DEException.throwException("无效数据源！");
+        }
+        DatasourceDTO datasourceDTO = new DatasourceDTO();
+        BeanUtils.copyBean(datasourceDTO, coreDatasource);
         DatasourceRequest datasourceRequest = new DatasourceRequest();
-        datasourceRequest.setDatasource(coreDatasource);
+        datasourceRequest.setDatasource(datasourceDTO);
         if (coreDatasource.getType().equals("API")) {
             List<DatasetTableDTO> datasetTableDTOS = ApiUtils.getTables(datasourceRequest);
             datasetTableDTOS.forEach(datasetTableDTO1 -> {
@@ -731,25 +685,32 @@ public class DatasourceServer implements DatasourceApi {
         if (coreDatasource.getType().equals("Excel")) {
             return ExcelUtils.getTables(datasourceRequest);
         }
-        return calciteProvider.getTables(datasourceRequest);
+        Provider provider = ProviderFactory.getProvider(datasourceDTO.getType());
+        return provider.getTables(datasourceRequest);
     }
 
     @Override
     public List<TableField> getTableField(Map<String, String> req) throws DEException {
         String tableName = req.get("tableName");
         String datasourceId = req.get("datasourceId");
-        CoreDatasource coreDatasource = datasourceMapper.selectById(datasourceId);
+        DatasetTableDTO datasetTableDTO = new DatasetTableDTO();
+        datasetTableDTO.setDatasourceId(Long.valueOf(datasourceId));
+        if (!getTables(datasetTableDTO).stream().map(DatasetTableDTO::getTableName).collect(Collectors.toList()).contains(tableName)) {
+            DEException.throwException("无效的表名！");
+        }
+        CoreDatasource coreDatasource = dataSourceManage.getCoreDatasource(Long.parseLong(datasourceId));
         DatasourceRequest datasourceRequest = new DatasourceRequest();
-        datasourceRequest.setDatasource(coreDatasource);
+        datasourceRequest.setDatasource(transDTO(coreDatasource));
         if (coreDatasource.getType().equals("API") || coreDatasource.getType().equals("Excel")) {
-            datasourceRequest.setDatasource(engineManage.getDeEngine());
+            datasourceRequest.setDatasource(transDTO(engineManage.getDeEngine()));
             DatasourceSchemaDTO datasourceSchemaDTO = new DatasourceSchemaDTO();
             BeanUtils.copyBean(datasourceSchemaDTO, engineManage.getDeEngine());
             datasourceSchemaDTO.setSchemaAlias(String.format(SQLConstants.SCHEMA, datasourceSchemaDTO.getId()));
             datasourceRequest.setDsList(Map.of(datasourceSchemaDTO.getId(), datasourceSchemaDTO));
             datasourceRequest.setQuery(TableUtils.tableName2Sql(datasourceSchemaDTO, tableName) + " LIMIT 0 OFFSET 0");
             datasourceRequest.setTable(tableName);
-            List<TableField> tableFields = (List<TableField>) calciteProvider.fetchTableField(datasourceRequest) ;
+            Provider provider = ProviderFactory.getProvider(datasourceSchemaDTO.getType());
+            List<TableField> tableFields = (List<TableField>) provider.fetchTableField(datasourceRequest);
             return tableFields.stream().filter(tableField -> {
                 return !tableField.getOriginName().equalsIgnoreCase("dataease_uuid");
             }).collect(Collectors.toList());
@@ -761,7 +722,8 @@ public class DatasourceServer implements DatasourceApi {
         datasourceRequest.setDsList(Map.of(datasourceSchemaDTO.getId(), datasourceSchemaDTO));
         datasourceRequest.setQuery(TableUtils.tableName2Sql(datasourceSchemaDTO, tableName) + " LIMIT 0 OFFSET 0");
         datasourceRequest.setTable(tableName);
-        return (List<TableField>) calciteProvider.fetchTableField(datasourceRequest);
+        Provider provider = ProviderFactory.getProvider(datasourceSchemaDTO.getType());
+        return (List<TableField>) provider.fetchTableField(datasourceRequest);
     }
 
     @Override
@@ -776,44 +738,75 @@ public class DatasourceServer implements DatasourceApi {
     public void syncApiDs(Map<String, String> req) throws Exception {
         Long datasourceId = Long.valueOf(req.get("datasourceId"));
         CoreDatasourceTask coreDatasourceTask = datasourceTaskServer.selectByDSId(datasourceId);
-        CoreDatasource coreDatasource = datasourceMapper.selectById(datasourceId);
+        CoreDatasource coreDatasource = dataSourceManage.getCoreDatasource(datasourceId);
         DatasourceServer.UpdateType updateType = DatasourceServer.UpdateType.valueOf(coreDatasourceTask.getUpdateType());
         datasourceSyncManage.extractedData(null, coreDatasource, updateType, MANUAL.toString());
     }
 
+    public static <T> List<T> deepCopy(List<T> originalList) {
+        try {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            ObjectOutputStream oos = new ObjectOutputStream(bos);
+            oos.writeObject(originalList);
+            oos.close();
+
+            ByteArrayInputStream bis = new ByteArrayInputStream(bos.toByteArray());
+            ObjectInputStream ois = new ObjectInputStream(bis);
+            List<T> newList = (List<T>) ois.readObject();
+            ois.close();
+
+            return newList;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private static final Integer replace = 0;
+    private static final Integer append = 1;
+
     public ExcelFileData excelUpload(@RequestParam("file") MultipartFile file, @RequestParam("id") long datasourceId, @RequestParam("editType") Integer editType) throws DEException {
+        CoreDatasource coreDatasource = null;
+        if (ObjectUtils.isNotEmpty(datasourceId) && 0L != datasourceId) {
+            coreDatasource = dataSourceManage.getCoreDatasource(datasourceId);
+        }
         ExcelUtils excelUtils = new ExcelUtils();
         ExcelFileData excelFileData = excelUtils.excelSaveAndParse(file);
-        if (editType == 1 || editType == 0) { //按照excel sheet 名称匹配
-            CoreDatasource coreDatasource = datasourceMapper.selectById(datasourceId);
+
+        if (Objects.equals(editType, append)) { //按照excel sheet 名称匹配，替换：0；追加：1
             if (coreDatasource != null) {
                 DatasourceRequest datasourceRequest = new DatasourceRequest();
-                datasourceRequest.setDatasource(coreDatasource);
+                datasourceRequest.setDatasource(transDTO(coreDatasource));
                 List<DatasetTableDTO> datasetTableDTOS = ExcelUtils.getTables(datasourceRequest);
                 List<ExcelSheetData> excelSheetDataList = new ArrayList<>();
                 for (ExcelSheetData sheet : excelFileData.getSheets()) {
                     for (DatasetTableDTO datasetTableDTO : datasetTableDTOS) {
-                        if (excelDataTableName(datasetTableDTO.getTableName()).equals(sheet.getTableName()) || isCsv(file.getOriginalFilename())) {
-                            List<String> fieldNames = sheet.getFields().stream().map(TableField::getName).collect(Collectors.toList());
-                            List<String> fieldTypes = sheet.getFields().stream().map(TableField::getFieldType).collect(Collectors.toList());
-                            Collections.sort(fieldNames);
-                            Collections.sort(fieldTypes);
+                        if (excelDataTableName(datasetTableDTO.getTableName()).equals(sheet.getTableName())){
+                            List<TableField> newTableFields = sheet.getFields();
                             datasourceRequest.setTable(datasetTableDTO.getTableName());
-                            List<String> oldFieldNames = ExcelUtils.getTableFields(datasourceRequest).stream().map(TableField::getName).collect(Collectors.toList());
-                            List<String> oldFieldTypes = ExcelUtils.getTableFields(datasourceRequest).stream().map(TableField::getFieldType).collect(Collectors.toList());
-                            Collections.sort(oldFieldNames);
-                            Collections.sort(oldFieldTypes);
-                            if (fieldNames.equals(oldFieldNames) && fieldTypes.equals(oldFieldTypes)) {
+                            List<TableField> oldTableFields = ExcelUtils.getTableFields(datasourceRequest);
+                            if (isEqual(newTableFields, oldTableFields)) {
                                 sheet.setDeTableName(datasetTableDTO.getTableName());
                                 excelSheetDataList.add(sheet);
                             }
                         }
                     }
                 }
-                if (CollectionUtils.isEmpty(excelSheetDataList) || excelSheetDataList.size() != datasetTableDTOS.size()) {
-                    DEException.throwException("上传文件与源文件不一致，请检查文件!");
-                }
                 excelFileData.setSheets(excelSheetDataList);
+            }
+        } else {
+            // 替换
+            if (coreDatasource != null) {
+                DatasourceRequest datasourceRequest = new DatasourceRequest();
+                datasourceRequest.setDatasource(transDTO(coreDatasource));
+                List<DatasetTableDTO> datasetTableDTOS = ExcelUtils.getTables(datasourceRequest);
+                for (ExcelSheetData sheet : excelFileData.getSheets()) {
+                    for (DatasetTableDTO datasetTableDTO : datasetTableDTOS) {
+                        if (excelDataTableName(datasetTableDTO.getTableName()).equals(sheet.getTableName())){
+                            sheet.setDeTableName(datasetTableDTO.getTableName());
+                        }
+                    }
+                }
             }
         }
 
@@ -829,6 +822,53 @@ public class DatasourceServer implements DatasourceApi {
         return excelFileData;
     }
 
+    private boolean isEqual(List<TableField> newTableFields, List<TableField> oldTableFields) {
+        if (CollectionUtils.isEmpty(newTableFields) || CollectionUtils.isEmpty(oldTableFields)) {
+            return false;
+        }
+        boolean isHistory = oldTableFields.stream().filter(tableField -> !tableField.isChecked()).collect(Collectors.toList()).size() == oldTableFields.size();
+        if (isHistory) {
+            oldTableFields.forEach(tableField -> tableField.setChecked(true));
+        }
+        newTableFields.forEach(tableField -> tableField.setChecked(false));
+        for (TableField oldField : oldTableFields) {
+            if (!oldField.isChecked()) {
+                continue;
+            }
+            boolean find = false;
+            for (TableField newField : newTableFields) {
+                if (oldField.getName().equals(newField.getName())) {
+                    find = true;
+                    newField.setChecked(oldField.isChecked());
+                    newField.setPrimaryKey(oldField.isPrimaryKey());
+                    newField.setLength(oldField.getLength());
+                    break;
+                }
+            }
+            if (!find) {
+                return find;
+            }
+        }
+        return true;
+    }
+
+    private void mergeFields(List<TableField> oldFields, List<TableField> newFields) {
+        newFields.forEach(tableField -> tableField.setChecked(false));
+        boolean isHistory = oldFields.stream().filter(tableField -> !tableField.isChecked()).collect(Collectors.toList()).size() == oldFields.size();
+        if (isHistory) {
+            oldFields.forEach(tableField -> tableField.setChecked(true));
+        }
+        for (TableField newField : newFields) {
+            for (TableField oldField : oldFields) {
+                if (oldField.getName().equals(newField.getName())) {
+                    newField.setChecked(oldField.isChecked());
+                    newField.setPrimaryKey(oldField.isPrimaryKey());
+                    newField.setLength(oldField.getLength());
+                }
+            }
+        }
+    }
+
     private boolean isCsv(String fileName) {
         String suffix = fileName.substring(fileName.lastIndexOf(".") + 1);
         return suffix.equalsIgnoreCase("csv");
@@ -836,7 +876,8 @@ public class DatasourceServer implements DatasourceApi {
 
     public ApiDefinition checkApiDatasource(Map<String, String> request) throws DEException {
         ApiDefinition apiDefinition = JsonUtil.parseObject(new String(java.util.Base64.getDecoder().decode(request.get("data"))), ApiDefinition.class);
-        String response = ApiUtils.execHttpRequest(apiDefinition, 10);
+        List<ApiDefinition> paramsList = JsonUtil.parseList(new String(java.util.Base64.getDecoder().decode(request.get("paramsList"))), listTypeReference);
+        String response = ApiUtils.execHttpRequest(true, apiDefinition, apiDefinition.getApiQueryTimeout() == null || apiDefinition.getApiQueryTimeout() <= 0 ? 10 : apiDefinition.getApiQueryTimeout(), paramsList);
         if (request.keySet().contains("type") && request.get("type").equals("apiStructure")) {
             apiDefinition.setShowApiStructure(true);
         }
@@ -849,12 +890,18 @@ public class DatasourceServer implements DatasourceApi {
     }
 
     private void preCheckDs(DatasourceDTO datasource) throws DEException {
-        if (!datasourceTypes().stream().map(DatasourceConfiguration.DatasourceType::getType).toList().contains(datasource.getType())) {
+        List<String> list = datasourceTypes().stream().map(DatasourceConfiguration.DatasourceType::getType).collect(Collectors.toList());
+        if (LicenseUtil.licenseValid()) {
+            List<XpackPluginsDatasourceVO> xpackPluginsDatasourceVOS = pluginManage.queryPluginDs();
+            xpackPluginsDatasourceVOS.forEach(ele -> list.add(ele.getType()));
+        }
+
+        if (!list.contains(datasource.getType())) {
             DEException.throwException("Datasource type not supported.");
         }
     }
 
-    public void checkDatasourceStatus(CoreDatasource coreDatasource) {
+    public void checkDatasourceStatus(DatasourceDTO coreDatasource) {
         if (coreDatasource.getType().equals(DatasourceConfiguration.DatasourceType.Excel.name()) || coreDatasource.getType().equals(DatasourceConfiguration.DatasourceType.folder.name())) {
             return;
         }
@@ -865,7 +912,8 @@ public class DatasourceServer implements DatasourceApi {
             if (coreDatasource.getType().equals("API")) {
                 status = ApiUtils.checkStatus(datasourceRequest);
             } else {
-                status = calciteProvider.checkStatus(datasourceRequest);
+                Provider provider = ProviderFactory.getProvider(coreDatasource.getType());
+                status = provider.checkStatus(datasourceRequest);
             }
             coreDatasource.setStatus(status);
         } catch (Exception e) {
@@ -878,7 +926,7 @@ public class DatasourceServer implements DatasourceApi {
     }
 
     @Override
-    public Map<String, Object> previewDataWithLimit(Map<String, Object> req) {
+    public Map<String, Object> previewDataWithLimit(Map<String, Object> req) throws DEException {
         String tableName = req.get("table").toString();
         Long id = Long.valueOf(req.get("id").toString());
         if (ObjectUtils.isEmpty(tableName) || ObjectUtils.isEmpty(id)) {
@@ -912,16 +960,14 @@ public class DatasourceServer implements DatasourceApi {
     }
 
     public IPage<CoreDatasourceTaskLogDTO> listSyncRecord(int goPage, int pageSize, Long dsId) {
-
-
         QueryWrapper<CoreDatasourceTaskLogDTO> wrapper = new QueryWrapper<>();
         wrapper.eq("ds_id", dsId);
         wrapper.orderByDesc("start_time");
         Page<CoreDatasourceTaskLogDTO> page = new Page<>(goPage, pageSize);
         IPage<CoreDatasourceTaskLogDTO> pager = taskLogExtMapper.pager(page, wrapper);
-        CoreDatasource coreDatasource = datasourceMapper.selectById(dsId);
+        CoreDatasource coreDatasource = dataSourceManage.getCoreDatasource(dsId);
         DatasourceRequest datasourceRequest = new DatasourceRequest();
-        datasourceRequest.setDatasource(coreDatasource);
+        datasourceRequest.setDatasource(transDTO(coreDatasource));
         List<DatasetTableDTO> datasetTableDTOS = ApiUtils.getTables(datasourceRequest);
         for (int i = 0; i < pager.getRecords().size(); i++) {
             for (int i1 = 0; i1 < datasetTableDTOS.size(); i1++) {
@@ -939,13 +985,18 @@ public class DatasourceServer implements DatasourceApi {
         wrapper.notIn("type", Arrays.asList("Excel", "folder"));
         List<CoreDatasource> datasources = datasourceMapper.selectList(wrapper);
         datasources.forEach(datasource -> {
-            commonThreadPool.addTask(() -> {
-                try {
-                    validate(datasource);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            });
+            if (!syncDsIds.contains(datasource.getId())) {
+                syncDsIds.add(datasource.getId());
+                commonThreadPool.addTask(() -> {
+                    try {
+                        LicenseUtil.validate();
+                        validate(datasource);
+                    } catch (Exception e) {
+                    } finally {
+                        syncDsIds.removeIf(id -> id.equals(datasource.getId()));
+                    }
+                });
+            }
         });
     }
 
@@ -1005,5 +1056,189 @@ public class DatasourceServer implements DatasourceApi {
         CoreDsFinishPage coreDsFinishPage = new CoreDsFinishPage();
         coreDsFinishPage.setId(AuthUtils.getUser().getUserId());
         coreDsFinishPageMapper.insert(coreDsFinishPage);
+    }
+
+    private DatasourceDTO transDTO(CoreDatasource record) {
+        DatasourceDTO datasourceDTO = new DatasourceDTO();
+        BeanUtils.copyBean(datasourceDTO, record);
+        return datasourceDTO;
+    }
+
+
+    private void filterDs(List<BusiNodeVO> busiNodeVOS, List<Long> ids, String type, Long id) {
+        for (BusiNodeVO busiNodeVO : busiNodeVOS) {
+            if (busiNodeVO.getType() != null && busiNodeVO.getType().equalsIgnoreCase(type)) {
+                if (id != null) {
+                    if (!busiNodeVO.getId().equals(id)) {
+                        ids.add(busiNodeVO.getId());
+                    }
+                } else {
+                    ids.add(busiNodeVO.getId());
+                }
+            }
+            if (CollectionUtils.isNotEmpty(busiNodeVO.getChildren())) {
+                filterDs(busiNodeVO.getChildren(), ids, type, id);
+            }
+        }
+    }
+
+    private static void checkParams(String configurationStr) {
+        DatasourceConfiguration configuration = JsonUtil.parseObject(configurationStr, DatasourceConfiguration.class);
+        if (configuration.getInitialPoolSize() < configuration.getMinPoolSize()) {
+            DEException.throwException("初始连接数不能小于最小连接数！");
+        }
+        if (configuration.getInitialPoolSize() > configuration.getMaxPoolSize()) {
+            DEException.throwException("初始连接数不能大于最大连接数！");
+        }
+        if (configuration.getMaxPoolSize() < configuration.getMinPoolSize()) {
+            DEException.throwException("最大连接数不能小于最小连接数！");
+        }
+        if (configuration.getQueryTimeout() < 0) {
+            DEException.throwException("查询超时不能小于0！");
+        }
+    }
+
+    private static void checkName(List<String> tables) {
+        for (int i = 0; i < tables.size() - 1; i++) {
+            for (int j = i + 1; j < tables.size(); j++) {
+                if (tables.get(i).equalsIgnoreCase(tables.get(j))) {
+                    DEException.throwException(Translator.get("i18n_table_name_repeat") + tables.get(i));
+                }
+            }
+        }
+    }
+
+    private String excelDataTableName(String name) {
+        return StringUtils.substring(name, 6, name.length() - 11);
+    }
+
+    private DatasourceDTO getDatasourceDTOById(Long datasourceId, boolean hidePw) throws DEException {
+        CoreDatasource datasource = dataSourceManage.getCoreDatasource(datasourceId);
+        if (datasource == null) {
+            DEException.throwException(Translator.get("i18n_datasource_not_exists"));
+        }
+        return convertCoreDatasource(datasourceId, hidePw, datasource);
+    }
+
+    private DatasourceDTO convertCoreDatasource(Long datasourceId, boolean hidePw, CoreDatasource datasource) {
+        DatasourceDTO datasourceDTO = new DatasourceDTO();
+        BeanUtils.copyBean(datasourceDTO, datasource);
+
+        if (datasourceDTO.getType().equalsIgnoreCase(DatasourceConfiguration.DatasourceType.API.toString())) {
+            List<ApiDefinition> apiDefinitionList = JsonUtil.parseList(datasourceDTO.getConfiguration(), listTypeReference);
+            List<ApiDefinition> apiDefinitionListWithStatus = new ArrayList<>();
+            List<ApiDefinition> params = new ArrayList<>();
+            int success = 0;
+            for (ApiDefinition apiDefinition : apiDefinitionList) {
+                String status = null;
+                if (StringUtils.isNotEmpty(datasourceDTO.getStatus())) {
+                    JsonNode jsonNode = null;
+                    try {
+                        jsonNode = objectMapper.readTree(datasourceDTO.getStatus());
+                    } catch (Exception e) {
+                        DEException.throwException(e);
+                    }
+                    for (JsonNode node : jsonNode) {
+                        if (node.get("name").asText().equals(apiDefinition.getName())) {
+                            status = node.get("status").asText();
+                        }
+                    }
+                    apiDefinition.setStatus(status);
+                }
+                if (StringUtils.isNotEmpty(status) && status.equalsIgnoreCase("Success")) {
+                    success++;
+                }
+                CoreDatasourceTaskLog log = datasourceTaskServer.lastSyncLogForTable(datasourceId, apiDefinition.getDeTableName());
+                if (log != null) {
+                    apiDefinition.setUpdateTime(log.getStartTime());
+                }
+
+
+                if (StringUtils.isEmpty(apiDefinition.getType()) || apiDefinition.getType().equalsIgnoreCase("table")) {
+                    apiDefinitionListWithStatus.add(apiDefinition);
+                } else {
+                    params.add(apiDefinition);
+                }
+            }
+            if (CollectionUtils.isNotEmpty(params)) {
+                datasourceDTO.setParamsStr(RsaUtils.symmetricEncrypt(JsonUtil.toJSONString(params).toString()));
+            }
+            if (CollectionUtils.isNotEmpty(apiDefinitionListWithStatus)) {
+                datasourceDTO.setApiConfigurationStr(RsaUtils.symmetricEncrypt(JsonUtil.toJSONString(apiDefinitionListWithStatus).toString()));
+            }
+            if (success == apiDefinitionList.size()) {
+                datasourceDTO.setStatus("Success");
+            } else {
+                if (success > 0 && success < apiDefinitionList.size()) {
+                    datasourceDTO.setStatus("Warning");
+                } else {
+                    datasourceDTO.setStatus("Error");
+                }
+            }
+            CoreDatasourceTask coreDatasourceTask = datasourceTaskServer.selectByDSId(datasourceDTO.getId());
+            TaskDTO taskDTO = new TaskDTO();
+            BeanUtils.copyBean(taskDTO, coreDatasourceTask);
+            datasourceDTO.setSyncSetting(taskDTO);
+            CoreDatasourceTask task = datasourceTaskServer.selectByDSId(datasourceDTO.getId());
+            if (task != null) {
+                datasourceDTO.setLastSyncTime(task.getStartTime());
+            }
+        } else {
+            if (hidePw) {
+                Provider provider = ProviderFactory.getProvider(datasourceDTO.getType());
+                provider.hidePW(datasourceDTO);
+            }
+        }
+        if (datasourceDTO.getType().equalsIgnoreCase(DatasourceConfiguration.DatasourceType.Excel.toString())) {
+            datasourceDTO.setFileName(ExcelUtils.getFileName(datasource));
+            datasourceDTO.setSize(ExcelUtils.getSize(datasource));
+        }
+        datasourceDTO.setConfiguration(RsaUtils.symmetricEncrypt(datasourceDTO.getConfiguration()));
+        datasourceDTO.setCreator(coreUserManage.getUserName(Long.valueOf(datasourceDTO.getCreateBy())));
+        return datasourceDTO;
+    }
+
+    private DatasourceDTO validate(CoreDatasource coreDatasource) {
+        DatasourceDTO datasourceDTO = new DatasourceDTO();
+        BeanUtils.copyBean(datasourceDTO, coreDatasource);
+        try {
+            checkDatasourceStatus(datasourceDTO);
+            if (!Arrays.asList("API", "Excel", "folder").contains(coreDatasource.getType())) {
+                calciteProvider.updateDsPoolAfterCheckStatus(datasourceDTO);
+            }
+        } catch (DEException e) {
+            datasourceDTO.setStatus("Error");
+            DEException.throwException(e.getMessage());
+        } catch (Exception e) {
+            datasourceDTO.setStatus("Error");
+            DEException.throwException(e.getMessage());
+        } finally {
+            coreDatasource.setStatus(datasourceDTO.getStatus());
+            dataSourceManage.innerEditStatus(coreDatasource);
+        }
+        datasourceDTO.setConfiguration("");
+        return datasourceDTO;
+    }
+
+    @Override
+    public DsSimpleVO simple(Long id) {
+        if (ObjectUtils.isEmpty(id)) DEException.throwException("id is null");
+        CoreDatasource coreDatasource = dataSourceManage.getCoreDatasource(id);
+        if (ObjectUtils.isEmpty(coreDatasource)) return null;
+        DsSimpleVO vo = new DsSimpleVO();
+        vo.setName(coreDatasource.getName());
+        vo.setType(coreDatasource.getType());
+        vo.setDescription(coreDatasource.getDescription());
+        String configuration = coreDatasource.getConfiguration();
+        DatasourceConfiguration config = null;
+        String host = null;
+        if (StringUtils.isBlank(configuration)
+                || StringUtils.equalsIgnoreCase("[]", configuration)
+                || ObjectUtils.isEmpty(config = JsonUtil.parseObject(configuration, DatasourceConfiguration.class))
+                || StringUtils.isBlank(host = config.getHost())) {
+            return vo;
+        }
+        vo.setHost(host);
+        return vo;
     }
 }

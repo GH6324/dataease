@@ -1,7 +1,13 @@
 <script lang="ts" setup>
+import icon_app_outlined from '@/assets/svg/icon_app_outlined.svg'
+import icon_dashboard_outlined from '@/assets/svg/icon_dashboard_outlined.svg'
+import icon_database_outlined from '@/assets/svg/icon_database_outlined.svg'
+import icon_operationAnalysis_outlined from '@/assets/svg/icon_operation-analysis_outlined.svg'
+import userImg from '@/assets/svg/user-img.svg'
+import icon_template_colorful from '@/assets/svg/icon_template_colorful.svg'
+import no_result from '@/assets/svg/no_result.svg'
 import { useI18n } from '@/hooks/web/useI18n'
 import { ref, shallowRef, computed, reactive, watch } from 'vue'
-
 import { usePermissionStoreWithOut } from '@/store/modules/permission'
 import { useRequestStoreWithOut } from '@/store/modules/request'
 import { interactiveStoreWithOut } from '@/store/modules/interactive'
@@ -11,9 +17,16 @@ import { useRouter } from 'vue-router'
 import { searchMarketRecommend } from '@/api/templateMarket'
 import TemplateBranchItem from '@/views/workbranch/TemplateBranchItem.vue'
 import { ElMessage } from 'element-plus-secondary'
-import { decompression } from '@/api/visualization/dataVisualization'
 import { useCache } from '@/hooks/web/useCache'
 import DeResourceCreateOptV2 from '@/views/common/DeResourceCreateOptV2.vue'
+import { Base64 } from 'js-base64'
+import { useEmbedded } from '@/store/modules/embedded'
+import { useAppStoreWithOut } from '@/store/modules/app'
+import { useShareStoreWithOut } from '@/store/modules/share'
+import { queryShareBaseApi } from '@/api/visualization/dataVisualization'
+
+const shareStore = useShareStoreWithOut()
+
 const userStore = useUserStoreWithOut()
 const interactiveStore = interactiveStoreWithOut()
 const permissionStore = usePermissionStoreWithOut()
@@ -25,25 +38,27 @@ const { wsCache } = useCache()
 const { push } = useRouter()
 const router = useRouter()
 const resourceCreateOpt = ref(null)
-
+const embeddedStore = useEmbedded()
+const appStore = useAppStoreWithOut()
+const openType = wsCache.get('open-backend') === '1' ? '_self' : '_blank'
 const quickCreationList = shallowRef([
   {
-    icon: 'icon_dashboard_outlined',
+    icon: icon_dashboard_outlined,
     name: 'panel',
     color: '#3370ff'
   },
   {
-    icon: 'icon_operation-analysis_outlined',
+    icon: icon_operationAnalysis_outlined,
     name: 'screen',
     color: '#00d6b9'
   },
   {
-    icon: 'icon_app_outlined',
+    icon: icon_app_outlined,
     name: 'dataset',
     color: '#16c0ff'
   },
   {
-    icon: 'icon_database_outlined',
+    icon: icon_database_outlined,
     name: 'datasource',
     color: '#7f3bf6'
   }
@@ -75,7 +90,7 @@ const activeTabChange = value => {
 
 const tabBtnList = [
   {
-    name: '推荐仪表板',
+    name: t('work_branch.recommended_dashboard'),
     value: 'PANEL'
   },
   {
@@ -96,6 +111,7 @@ const state = reactive({
   loading: false,
   dvCreateForm: {
     resourceName: null,
+    templateId: null,
     name: null,
     pid: null,
     nodeType: 'panel',
@@ -149,8 +165,10 @@ const fillCardInfo = () => {
     if (key !== '3') {
       busiCountCardList.value.push(busiDataMap.value[key])
     }
-    quickCreationList.value[key]['menuAuth'] = busiDataMap.value[key]['menuAuth']
-    quickCreationList.value[key]['anyManage'] = busiDataMap.value[key]['anyManage']
+    if (quickCreationList.value[key]) {
+      quickCreationList.value[key]['menuAuth'] = busiDataMap.value[key]['menuAuth']
+      quickCreationList.value[key]['anyManage'] = busiDataMap.value[key]['anyManage']
+    }
   }
 }
 const quickCreate = (flag: number, hasAuth: boolean) => {
@@ -174,24 +192,25 @@ const quickCreate = (flag: number, hasAuth: boolean) => {
       break
   }
 }
+
 const createPanel = () => {
   const baseUrl = '#/dashboard?opt=create'
-  window.open(baseUrl, '_blank')
+  window.open(baseUrl, openType)
 }
 
 const createScreen = () => {
   const baseUrl = '#/dvCanvas?opt=create'
-  window.open(baseUrl, '_blank')
+  window.open(baseUrl, openType)
 }
 const createDataset = () => {
   let routeData = router.resolve({
     path: '/dataset-form'
   })
-  window.open(routeData.href, '_blank')
+  window.open(routeData.href, openType)
 }
 const createDatasource = () => {
   const baseUrl = '#/data/datasource?opt=create'
-  window.open(baseUrl, '_blank')
+  window.open(baseUrl, openType)
 }
 
 const templatePreview = previewId => {
@@ -201,32 +220,57 @@ const templatePreview = previewId => {
 
 const templateApply = template => {
   state.dvCreateForm.name = template.title
-  state.dvCreateForm.templateUrl = template.metas.theme_repo
-  state.dvCreateForm.resourceName = template.id
+  state.dvCreateForm.nodeType = template.templateType
+  if (template.source === 'market') {
+    state.dvCreateForm.newFrom = 'new_market_template'
+    state.dvCreateForm.templateUrl = template.metas.theme_repo
+    state.dvCreateForm.resourceName = template.id
+  } else {
+    state.dvCreateForm.newFrom = 'new_inner_template'
+    state.dvCreateForm.templateId = template.id
+  }
   apply()
 }
+const isDataEaseBi = computed(() => appStore.getIsDataEaseBi)
 
 const apply = () => {
-  if (!state.dvCreateForm.templateUrl) {
-    ElMessage.warning('未获取模板下载链接请联系模板市场官方')
+  if (state.dvCreateForm.newFrom === 'new_market_template' && !state.dvCreateForm.templateUrl) {
+    ElMessage.warning(t('work_branch.template_market_official'))
     return false
   }
-  state.loading = true
-  decompression(state.dvCreateForm)
-    .then(response => {
-      state.loading = false
-      const templateData = response.data
-      // do create
-      wsCache.set(`de-template-data`, JSON.stringify(templateData))
-      const baseUrl =
-        templateData.type === 'dataV'
-          ? '#/dvCanvas?opt=create&createType=template'
-          : '#/dashboard?opt=create&createType=template'
-      window.open(baseUrl, '_blank')
-    })
-    .catch(() => {
-      state.loading = false
-    })
+  const templateTemplate = {
+    newFrom: state.dvCreateForm.newFrom,
+    templateUrl: state.dvCreateForm.templateUrl,
+    resourceName: state.dvCreateForm.resourceName,
+    templateId: state.dvCreateForm.templateId
+  }
+  const baseUrl =
+    (['dataV', 'SCREEN'].includes(state.dvCreateForm.nodeType)
+      ? '#/dvCanvas?opt=create&createType=template'
+      : '#/dashboard?opt=create&createType=template') +
+    '&templateParams=' +
+    encodeURIComponent(Base64.encode(JSON.stringify(templateTemplate)))
+  let newWindow = null
+  let embeddedBaseUrl = ''
+  if (isDataEaseBi.value) {
+    embeddedBaseUrl = embeddedStore.baseUrl
+  }
+  if (state.pid) {
+    newWindow = window.open(embeddedBaseUrl + baseUrl + `&pid=${state.pid}`, openType)
+  } else {
+    newWindow = window.open(embeddedBaseUrl + baseUrl, openType)
+  }
+  initOpenHandler(newWindow)
+}
+const openHandler = ref(null)
+const initOpenHandler = newWindow => {
+  if (openHandler?.value) {
+    const pm = {
+      methodName: 'initOpenHandler',
+      args: newWindow
+    }
+    openHandler.value.invokeMethod(pm)
+  }
 }
 
 const toTemplateMarket = () => {
@@ -243,8 +287,19 @@ const toTemplateMarketAdd = () => {
   }
 }
 
+const loadShareBase = () => {
+  queryShareBaseApi().then(res => {
+    const param = {
+      shareDisable: res.data?.disable,
+      sharePeRequire: res.data?.peRequire
+    }
+    shareStore.setData(param)
+  })
+}
+
 fillCardInfo()
 initMarketTemplate()
+loadShareBase()
 </script>
 
 <template>
@@ -252,7 +307,7 @@ initMarketTemplate()
     <div class="info-quick-creation">
       <div class="user-info">
         <el-icon class="main-color user-icon-container">
-          <Icon name="user-img" />
+          <Icon name="user-img"><userImg class="svg-icon" /></Icon>
         </el-icon>
         <div class="info">
           <div class="name-role flex-align-center">
@@ -275,7 +330,7 @@ initMarketTemplate()
       </div>
 
       <div class="quick-creation">
-        <span class="label"> 快速创建 </span>
+        <span class="label"> {{ t('work_branch.create_quickly') }} </span>
         <div class="item-creation">
           <div
             :key="ele.name"
@@ -290,13 +345,13 @@ initMarketTemplate()
               v-if="!ele['menuAuth'] || !ele['anyManage']"
               class="box-item"
               effect="dark"
-              content="缺少创建权限"
+              :content="t('work_branch.template_market_official')"
               placement="top"
             >
               <div class="empty-tooltip-container" />
             </el-tooltip>
             <el-icon class="main-color" :style="{ backgroundColor: ele.color }">
-              <Icon :name="ele.icon" />
+              <Icon><component class="svg-icon" :is="ele.icon"></component></Icon>
             </el-icon>
             <span class="name">
               {{ t(`auth.${ele.name}`) }}
@@ -313,25 +368,27 @@ initMarketTemplate()
               v-if="!(havePanelAuth || haveScreenAuth)"
               class="box-item"
               effect="dark"
-              content="缺少创建权限"
+              :content="t('work_branch.permission_to_create')"
               placement="top"
             >
               <div class="empty-tooltip-container-template" />
             </el-tooltip>
             <el-icon class="main-color-quick template-create">
-              <Icon name="icon_template_colorful" />
+              <Icon name="icon_template_colorful"><icon_template_colorful class="svg-icon" /></Icon>
             </el-icon>
-            <span class="name">使用模板新建</span>
+            <span class="name">{{ t('work_branch.new_using_template') }}</span>
           </div>
         </div>
       </div>
     </div>
     <div class="template-market-dashboard">
-      <div class="template-market">
+      <div class="template-market" :style="{ paddingBottom: expandFold !== 'fold' ? '24px' : 0 }">
         <div class="label">
-          模板中心
+          {{ t('work_branch.template_center') }}
           <div class="expand-all">
-            <button class="all flex-center" @click="toTemplateMarket">查看全部</button>
+            <button class="all flex-center" @click="toTemplateMarket">
+              {{ t('work_branch.view_all') }}
+            </button>
             <el-divider direction="vertical" />
             <button @click="handleExpandFold" class="expand flex-center">
               {{ t(`visualization.${expandFold}`) }}
@@ -365,9 +422,11 @@ initMarketTemplate()
           </div>
           <el-row v-show="state.networkStatus && !state.hasResult" class="template-empty">
             <div style="text-align: center">
-              <Icon name="no_result" class="no-result"></Icon>
+              <Icon name="no_result" class="no-result"
+                ><no_result class="svg-icon no-result"
+              /></Icon>
               <br />
-              <span class="no-result-tips">没有找到相关模板</span>
+              <span class="no-result-tips">{{ t('work_branch.relevant_templates_found') }}</span>
             </div>
           </el-row>
           <el-row v-show="!state.networkStatus" class="template-empty">
@@ -431,7 +490,7 @@ initMarketTemplate()
         .name-role {
           margin-bottom: 4px;
           color: #1f2329;
-          font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+          font-family: var(--de-custom_font, 'PingFang');
           font-style: normal;
           .name {
             font-size: 16px;
@@ -461,7 +520,7 @@ initMarketTemplate()
       }
 
       .item {
-        font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+        font-family: var(--de-custom_font, 'PingFang');
         font-style: normal;
         display: flex;
         flex-direction: column;
@@ -473,6 +532,7 @@ initMarketTemplate()
           color: #646a73;
           font-weight: 400;
           line-height: 22px;
+          font-size: 14px;
         }
         .num {
           margin-top: 4px;
@@ -498,7 +558,7 @@ initMarketTemplate()
       .label {
         color: #1f2329;
         font-feature-settings: 'clig' off, 'liga' off;
-        font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+        font-family: var(--de-custom_font, 'PingFang');
         font-size: 16px;
         font-style: normal;
         font-weight: 500;
@@ -510,8 +570,8 @@ initMarketTemplate()
         justify-content: space-between;
         flex-wrap: wrap;
         .item {
-          padding: 16px;
-          width: 148px;
+          padding: 12px;
+          width: 150px;
           margin-top: 16px;
           border-radius: 4px;
           border: 1px solid #dee0e3;
@@ -532,7 +592,7 @@ initMarketTemplate()
 
           .name {
             color: #1f2329;
-            font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+            font-family: var(--de-custom_font, 'PingFang');
             font-size: 14px;
             font-style: normal;
             font-weight: 400;
@@ -584,13 +644,13 @@ initMarketTemplate()
     height: 100%;
 
     .template-market {
-      padding: 24px;
+      padding: 24px 24px 0;
       background: #fff;
       border-radius: 4px;
       .label {
         color: #1f2329;
         font-feature-settings: 'clig' off, 'liga' off;
-        font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+        font-family: var(--de-custom_font, 'PingFang');
         font-size: 16px;
         font-style: normal;
         font-weight: 500;
@@ -604,6 +664,10 @@ initMarketTemplate()
           font-weight: 400;
           line-height: 22px;
           border-radius: 4px;
+
+          button {
+            cursor: pointer;
+          }
 
           .flex-center {
             padding: 0 4px;
@@ -635,7 +699,7 @@ initMarketTemplate()
           display: inline-flex;
           align-items: center;
           padding: 0 8px;
-          font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+          font-family: var(--de-custom_font, 'PingFang');
           font-size: 12px;
           font-style: normal;
           font-weight: 400;
@@ -659,6 +723,7 @@ initMarketTemplate()
         display: flex;
         margin-left: -16px;
         overflow-x: auto;
+        padding-bottom: 24px;
       }
     }
   }

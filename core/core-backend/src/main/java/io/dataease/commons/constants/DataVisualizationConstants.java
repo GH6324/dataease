@@ -3,6 +3,16 @@ package io.dataease.commons.constants;
 public class DataVisualizationConstants {
 
     //新建仪表板来源
+    public static final class QUERY_SOURCE {
+
+        // 定时报告
+        public static final String REPORT = "report";
+
+        // 主工程
+        public static final String MAIN = "main";
+    }
+
+    //新建仪表板来源
     public static final class NEW_PANEL_FROM {
 
         // 直接新建
@@ -47,6 +57,8 @@ public class DataVisualizationConstants {
         public static final String MOVE = "move";
         //重命名
         public static final String RENAME = "rename";
+
+        public static final String EDIT = "edit";
         //复制
         public static final String COPY = "copy";
     }

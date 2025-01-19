@@ -1,5 +1,6 @@
 export const MAP_EDITOR_PROPERTY: EditorProperty[] = [
   'background-overall-component',
+  'border-style',
   'basic-style-selector',
   'title-selector',
   'label-selector',
@@ -12,7 +13,8 @@ export const MAP_EDITOR_PROPERTY: EditorProperty[] = [
 
 export const MAP_EDITOR_PROPERTY_INNER: EditorPropertyInner = {
   'background-overall-component': ['all'],
-  'basic-style-selector': ['colors', 'alpha', 'areaBorderColor', 'suspension'],
+  'border-style': ['all'],
+  'basic-style-selector': ['colors', 'alpha', 'areaBorderColor', 'zoom'],
   'title-selector': [
     'title',
     'fontSize',
@@ -34,8 +36,9 @@ export const MAP_EDITOR_PROPERTY_INNER: EditorPropertyInner = {
     'showDimension',
     'showQuota'
   ],
-  'tooltip-selector': ['color', 'fontSize', 'backgroundColor', 'tooltipFormatter'],
-  'function-cfg': ['emptyDataStrategy']
+  'tooltip-selector': ['color', 'fontSize', 'backgroundColor', 'seriesTooltipFormatter', 'show'],
+  'function-cfg': ['emptyDataStrategy'],
+  'map-mapping': ['']
 }
 
 export const MAP_AXIS_TYPE: AxisType[] = [

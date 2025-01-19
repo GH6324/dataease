@@ -1,4 +1,6 @@
 <script lang="tsx" setup>
+import icon_add_outlined from '@/assets/svg/icon_add_outlined.svg'
+import icon_deleteTrash_outlined from '@/assets/svg/icon_delete-trash_outlined.svg'
 import { reactive } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { COLOR_PANEL } from '../../../util/chart'
@@ -24,6 +26,7 @@ const thresholdObj = {
   field: '0',
   value: '0',
   color: '#ff0000ff',
+  backgroundColor: '#fff',
   min: '0',
   max: '1'
 }
@@ -102,7 +105,7 @@ init()
   <el-col>
     <el-button class="circle-button" circle style="margin-bottom: 10px" @click="addThreshold">
       <template #icon>
-        <Icon name="icon_add_outlined"></Icon>
+        <Icon name="icon_add_outlined"><icon_add_outlined class="svg-icon" /></Icon>
       </template>
     </el-button>
     <div @keydown.stop @keyup.stop style="max-height: 50vh; overflow-y: auto">
@@ -126,7 +129,7 @@ init()
             </el-select>
           </el-form-item>
         </el-col>
-        <el-col :span="9" style="text-align: center">
+        <el-col :span="8" style="text-align: center">
           <el-form-item class="form-item" v-if="item.term !== 'between'">
             <el-input-number
               controls-position="right"
@@ -175,7 +178,7 @@ init()
             @change="changeThreshold"
           />
         </div>
-        <!--        <div style="display: flex; align-items: center; justify-content: center; margin-left: 8px">
+        <div style="display: flex; align-items: center; justify-content: center; margin-left: 8px">
           <div class="color-title">{{ t('chart.backgroundColor') }}</div>
           <el-color-picker
             is-custom
@@ -186,7 +189,7 @@ init()
             :predefine="predefineColors"
             @change="changeThreshold"
           />
-        </div>-->
+        </div>
         <div style="display: flex; align-items: center; justify-content: center; margin-left: 8px">
           <el-button
             class="circle-button"
@@ -196,7 +199,9 @@ init()
             @click="removeThreshold(index)"
           >
             <template #icon>
-              <Icon name="icon_delete-trash_outlined"></Icon>
+              <Icon name="icon_delete-trash_outlined"
+                ><icon_deleteTrash_outlined class="svg-icon"
+              /></Icon>
             </template>
           </el-button>
         </div>

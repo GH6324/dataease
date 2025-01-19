@@ -1,5 +1,13 @@
 <script lang="ts" setup>
+import icon_letterSpacing_outlined from '@/assets/svg/icon_letter-spacing_outlined.svg'
+import icon_bold_outlined from '@/assets/svg/icon_bold_outlined.svg'
+import icon_italic_outlined from '@/assets/svg/icon_italic_outlined.svg'
+import icon_leftAlignment_outlined from '@/assets/svg/icon_left-alignment_outlined.svg'
+import icon_centerAlignment_outlined from '@/assets/svg/icon_center-alignment_outlined.svg'
+import icon_rightAlignment_outlined from '@/assets/svg/icon_right-alignment_outlined.svg'
+import icon_edit_outlined from '@/assets/svg/icon_edit_outlined.svg'
 import { PropType, computed, onMounted, reactive, toRefs, watch, nextTick, ref } from 'vue'
+import { useAppearanceStoreWithOut } from '@/store/modules/appearance'
 import { useI18n } from '@/hooks/web/useI18n'
 import {
   COLOR_PANEL,
@@ -13,7 +21,7 @@ import { cloneDeep, defaultsDeep } from 'lodash-es'
 import { ElButton, ElIcon } from 'element-plus-secondary'
 import Icon from '@/components/icon-custom/src/Icon.vue'
 const dvMainStore = dvMainStoreWithOut()
-const { batchOptStatus } = storeToRefs(dvMainStore)
+const { batchOptStatus, mobileInPc } = storeToRefs(dvMainStore)
 
 const { t } = useI18n()
 
@@ -30,13 +38,18 @@ const props = defineProps({
     type: Array<string>
   }
 })
-
+const appearanceStore = useAppearanceStoreWithOut()
 const emit = defineEmits(['onTextChange'])
 const toolTip = computed(() => {
   return props.themes === 'dark' ? 'ndark' : 'dark'
 })
 const predefineColors = COLOR_PANEL
-const fontFamily = CHART_FONT_FAMILY
+const fontFamily = CHART_FONT_FAMILY.concat(
+  appearanceStore.fontList.map(ele => ({
+    name: ele.name,
+    value: ele.name
+  }))
+)
 const fontLetterSpace = CHART_FONT_LETTER_SPACE
 
 const state = reactive({
@@ -48,6 +61,12 @@ const { chart } = toRefs(props)
 const fontSizeList = computed(() => {
   const arr = []
   for (let i = 10; i <= 40; i = i + 2) {
+    arr.push({
+      name: i + '',
+      value: i
+    })
+  }
+  for (let i = 50; i <= 200; i = i + 10) {
     arr.push({
       name: i + '',
       value: i
@@ -118,7 +137,7 @@ watch(
         :label="t('chart.title')"
         class="form-item"
         :class="'form-item-' + themes"
-        v-if="!batchOptStatus"
+        v-if="!batchOptStatus && !mobileInPc"
       >
         <el-input
           :effect="themes"
@@ -164,7 +183,7 @@ watch(
           />
         </el-form-item>
         <el-form-item class="form-item" :class="'form-item-' + themes" style="padding: 0 4px">
-          <el-tooltip content="字号" :effect="toolTip" placement="top">
+          <el-tooltip :content="t('chart.font_size')" :effect="toolTip" placement="top">
             <el-select
               style="width: 56px"
               :effect="themes"
@@ -192,7 +211,9 @@ watch(
           >
             <template #prefix>
               <el-icon>
-                <Icon name="icon_letter-spacing_outlined" />
+                <Icon name="icon_letter-spacing_outlined"
+                  ><icon_letterSpacing_outlined class="svg-icon"
+                /></Icon>
               </el-icon>
             </template>
             <el-option
@@ -222,7 +243,7 @@ watch(
                 :class="{ dark: themes === 'dark', active: state.titleForm.isBolder }"
               >
                 <el-icon>
-                  <Icon name="icon_bold_outlined" />
+                  <Icon name="icon_bold_outlined"><icon_bold_outlined class="svg-icon" /></Icon>
                 </el-icon>
               </div>
             </el-tooltip>
@@ -245,7 +266,7 @@ watch(
                 :class="{ dark: themes === 'dark', active: state.titleForm.isItalic }"
               >
                 <el-icon>
-                  <Icon name="icon_italic_outlined" />
+                  <Icon name="icon_italic_outlined"><icon_italic_outlined class="svg-icon" /></Icon>
                 </el-icon>
               </div>
             </el-tooltip>
@@ -271,7 +292,9 @@ watch(
                   :class="{ dark: themes === 'dark', active: state.titleForm.hPosition === 'left' }"
                 >
                   <el-icon>
-                    <Icon name="icon_left-alignment_outlined" />
+                    <Icon name="icon_left-alignment_outlined"
+                      ><icon_leftAlignment_outlined class="svg-icon"
+                    /></Icon>
                   </el-icon>
                 </div>
               </el-tooltip>
@@ -289,7 +312,9 @@ watch(
                   }"
                 >
                   <el-icon>
-                    <Icon name="icon_center-alignment_outlined" />
+                    <Icon name="icon_center-alignment_outlined"
+                      ><icon_centerAlignment_outlined class="svg-icon"
+                    /></Icon>
                   </el-icon>
                 </div>
               </el-tooltip>
@@ -307,7 +332,9 @@ watch(
                   }"
                 >
                   <el-icon>
-                    <Icon name="icon_right-alignment_outlined" />
+                    <Icon name="icon_right-alignment_outlined"
+                      ><icon_rightAlignment_outlined class="svg-icon"
+                    /></Icon>
                   </el-icon>
                 </div>
               </el-tooltip>
@@ -343,7 +370,7 @@ watch(
         </label>
         <el-button text @click="openEditRemark" :effect="themes">
           <el-icon size="14px">
-            <Icon name="icon_edit_outlined" />
+            <Icon name="icon_edit_outlined"><icon_edit_outlined class="svg-icon" /></Icon>
           </el-icon>
         </el-button>
       </el-form-item>
@@ -362,7 +389,7 @@ watch(
             type="textarea"
             autosize
             v-model="tempRemark"
-            :maxlength="50"
+            :maxlength="512"
             clearable
             :placeholder="t('chart.remark_placeholder')"
           />
@@ -479,7 +506,7 @@ watch(
 }
 .remark-label {
   color: var(--N600, #646a73);
-  font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+  font-family: var(--de-custom_font, 'PingFang');
   font-size: 12px;
   font-style: normal;
   font-weight: 400;

@@ -2,12 +2,16 @@
 import { computed, nextTick, onMounted, ref, toRefs } from 'vue'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { storeToRefs } from 'pinia'
-import { styleData, selectKey, optionMap, horizontalPosition } from '@/utils/attr'
 import ComponentPosition from '@/components/visualization/common/ComponentPosition.vue'
 import BackgroundOverallCommon from '@/components/visualization/component-background/BackgroundOverallCommon.vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import elementResizeDetectorMaker from 'element-resize-detector'
 import { snapshotStoreWithOut } from '@/store/modules/data-visualization/snapshot'
+import CommonStyleSet from '@/custom-component/common/CommonStyleSet.vue'
+import CommonEvent from '@/custom-component/common/CommonEvent.vue'
+import CarouselSetting from '@/custom-component/common/CarouselSetting.vue'
+import CommonBorderSetting from '@/custom-component/common/CommonBorderSetting.vue'
+import CollapseSwitchItem from '../../components/collapse-switch-item/src/CollapseSwitchItem.vue'
 const snapshotStore = snapshotStoreWithOut()
 
 const { t } = useI18n()
@@ -30,71 +34,74 @@ const props = withDefaults(
   }
 )
 
-const { themes, element, showStyle } = toRefs(props)
+const { themes, element } = toRefs(props)
 const dvMainStore = dvMainStoreWithOut()
-const { dvInfo } = storeToRefs(dvMainStore)
+const { dvInfo, batchOptStatus, mobileInPc } = storeToRefs(dvMainStore)
 const activeName = ref(element.value.collapseName)
-
-const styleKeys = computed(() => {
-  if (element.value) {
-    const curComponentStyleKeys = Object.keys(element.value.style)
-    return styleData.filter(item => curComponentStyleKeys.includes(item.key))
-  } else {
-    return []
-  }
-})
 
 const onChange = () => {
   element.value.collapseName = activeName
 }
 
-const isIncludesColor = str => {
-  return str.toLowerCase().includes('color')
-}
+const positionComponentShow = computed(() => {
+  return !batchOptStatus.value && !dashboardActive.value
+})
+
 const dashboardActive = computed(() => {
   return dvInfo.value.type === 'dashboard'
 })
 
 const onBackgroundChange = val => {
   element.value.commonBackground = val
+  snapshotStore.recordSnapshotCacheToMobile('commonBackground')
   emits('onAttrChange', { custom: 'commonBackground' })
 }
 
-const onStyleAttrChange = (value, key) => {
-  snapshotStore.recordSnapshotCache()
+const onStyleAttrChange = ({ key, value }) => {
+  snapshotStore.recordSnapshotCacheToMobile('style')
   emits('onAttrChange', { custom: 'style', property: key, value: value })
 }
 
 const containerRef = ref()
 const containerWidth = ref()
 
-const colSpan = computed(() => {
-  if (containerWidth.value <= 240) {
-    return 24
-  } else {
-    return 12
-  }
+const borderSettingShow = computed(() => {
+  return !!element.value.style['borderStyle']
 })
 
-const colorPickerWidth = computed(() => {
-  if (containerWidth.value <= 280) {
-    return 125
-  } else if (containerWidth.value <= 240) {
-    return 108
-  } else {
-    return 197
-  }
+// 暂时关闭
+const eventsShow = computed(() => {
+  return (
+    ['Picture', 'CanvasIcon', 'CircleShape', 'SvgTriangle', 'RectShape', 'ScrollText'].includes(
+      element.value.component
+    ) || element.value.innerType === 'rich-text'
+  )
+})
+
+const carouselShow = computed(() => {
+  return element.value.component === 'DeTabs' && element.value.carousel && !mobileInPc.value
 })
 
 const backgroundCustomShow = computed(() => {
   return (
     dashboardActive.value ||
     (!dashboardActive.value &&
-      !['CanvasBoard', 'CanvasIcon', 'Picture', 'CircleShape', 'RectShape'].includes(
-        element.value.component
-      ))
+      !['CanvasBoard', 'CanvasIcon', 'CircleShape', 'RectShape'].includes(element.value.component))
   )
 })
+const tabTitleShow = computed(() => {
+  return element.value && element.value.style && element.value.component === 'DeTabs'
+})
+
+const styleShow = computed(() => {
+  return (
+    element.value &&
+    element.value.style &&
+    element.value.component !== 'DeTabs' &&
+    Object.keys(element.value.style).length > 0
+  )
+})
+
 onMounted(() => {
   const erd = elementResizeDetectorMaker()
   containerWidth.value = containerRef.value?.offsetWidth
@@ -104,24 +111,22 @@ onMounted(() => {
     })
   })
 })
-const stopEvent = e => {
-  if (e && e.code === 'Enter') {
-    e.stopPropagation()
-    e.preventDefault()
-  }
-}
 </script>
 
 <template>
   <div class="v-common-attr" ref="containerRef">
     <el-collapse v-model="activeName" @change="onChange()">
-      <el-collapse-item :effect="themes" title="位置" name="position" v-if="!dashboardActive">
-        <component-position :themes="themes" />
-      </el-collapse-item>
-
       <el-collapse-item
         :effect="themes"
-        title="背景"
+        :title="t('visualization.position')"
+        name="position"
+        v-if="positionComponentShow"
+      >
+        <component-position :themes="themes" />
+      </el-collapse-item>
+      <el-collapse-item
+        :effect="themes"
+        :title="t('visualization.background')"
         name="background"
         v-if="element && backgroundCustomShow"
       >
@@ -135,128 +140,61 @@ const stopEvent = e => {
         />
       </el-collapse-item>
       <slot></slot>
+      <collapse-switch-item
+        v-if="tabTitleShow"
+        v-model="element.style.showTabTitle"
+        @modelChange="val => onStyleAttrChange({ key: 'showTabTitle', value: val })"
+        :themes="themes"
+        :title="t('visualization.tab_title')"
+        name="tabTitle"
+        class="common-style-area"
+      >
+        <common-style-set
+          @onStyleAttrChange="onStyleAttrChange"
+          :themes="themes"
+          :element="element"
+        ></common-style-set>
+      </collapse-switch-item>
       <el-collapse-item
-        v-if="showStyle"
+        v-if="styleShow"
         :effect="themes"
-        title="样式"
+        :title="t('visualization.style')"
         name="style"
         class="common-style-area"
       >
-        <el-form label-position="top">
-          <el-row :gutter="8">
-            <el-col
-              :span="colSpan"
-              v-for="({ key, label, min, max, step }, index) in styleKeys"
-              :key="index"
-            >
-              <el-form-item class="form-item" :class="'form-item-' + themes" :label="label">
-                <el-color-picker
-                  v-if="isIncludesColor(key)"
-                  v-model="element.style[key]"
-                  :trigger-width="colorPickerWidth"
-                  :themes="themes"
-                  size="small"
-                  show-alpha
-                  is-custom
-                  @change="onStyleAttrChange($event, key)"
-                />
-                <el-radio-group
-                  :effect="themes"
-                  style="width: 100%"
-                  class="icon-radio-group"
-                  v-else-if="horizontalPosition.includes(key)"
-                  v-model="element.style[key]"
-                  @change="onStyleAttrChange($event, key)"
-                >
-                  <el-radio :effect="themes" label="left">
-                    <el-tooltip effect="dark" placement="top">
-                      <template #content>
-                        {{ t('chart.text_pos_left') }}
-                      </template>
-                      <div
-                        class="icon-btn"
-                        :class="{
-                          dark: themes === 'dark',
-                          active: element.style[key] === 'left'
-                        }"
-                      >
-                        <el-icon>
-                          <Icon name="filter-h-left" />
-                        </el-icon>
-                      </div>
-                    </el-tooltip>
-                  </el-radio>
-                  <el-radio :effect="themes" label="center">
-                    <el-tooltip effect="dark" placement="top">
-                      <template #content>
-                        {{ t('chart.text_pos_center') }}
-                      </template>
-                      <div
-                        class="icon-btn"
-                        :class="{
-                          dark: themes === 'dark',
-                          active: element.style[key] === 'center'
-                        }"
-                      >
-                        <el-icon>
-                          <Icon name="filter-h-center" />
-                        </el-icon>
-                      </div>
-                    </el-tooltip>
-                  </el-radio>
-                  <el-radio :effect="themes" label="right">
-                    <el-tooltip effect="dark" placement="top">
-                      <template #content>
-                        {{ t('chart.text_pos_right') }}
-                      </template>
-                      <div
-                        class="icon-btn"
-                        :class="{
-                          dark: themes === 'dark',
-                          active: element.style[key] === 'right'
-                        }"
-                      >
-                        <el-icon>
-                          <Icon name="filter-h-right" />
-                        </el-icon>
-                      </div>
-                    </el-tooltip>
-                  </el-radio>
-                </el-radio-group>
-                <el-select
-                  v-else-if="selectKey.includes(key)"
-                  style="width: 100%"
-                  size="small"
-                  :effect="themes"
-                  v-model="element.style[key]"
-                  @change="onStyleAttrChange($event, key)"
-                >
-                  <el-option
-                    v-for="item in optionMap[key]"
-                    :key="item.value"
-                    :label="item.label"
-                    :value="item.value"
-                  ></el-option>
-                </el-select>
-                <el-input-number
-                  @keydown="stopEvent"
-                  @keyup="stopEvent"
-                  v-else
-                  size="middle"
-                  style="width: 100%"
-                  controls-position="right"
-                  :min="min"
-                  :max="max"
-                  :step="step"
-                  :effect="themes"
-                  v-model="element.style[key]"
-                  @change="onStyleAttrChange($event, key)"
-                />
-              </el-form-item>
-            </el-col>
-          </el-row>
-        </el-form>
+        <common-style-set
+          @onStyleAttrChange="onStyleAttrChange"
+          :themes="themes"
+          :element="element"
+        ></common-style-set>
       </el-collapse-item>
+      <el-collapse-item
+        v-if="element && element.events && eventsShow"
+        :effect="themes"
+        :title="t('visualization.event')"
+        name="events"
+        class="common-style-area"
+      >
+        <common-event :themes="themes" :events-info="element.events"></common-event>
+      </el-collapse-item>
+      <collapse-switch-item
+        v-if="element && borderSettingShow"
+        v-model="element.style.borderActive"
+        @modelChange="val => onStyleAttrChange({ key: 'borderActive', value: val })"
+        :themes="themes"
+        :title="t('visualization.board')"
+        name="borderSetting"
+        class="common-style-area"
+      >
+        <common-border-setting
+          :style-info="element.style"
+          :themes="themes"
+          @onStyleAttrChange="onStyleAttrChange"
+        ></common-border-setting>
+      </collapse-switch-item>
+      <slot name="threshold" />
+      <slot name="carousel" />
+      <CarouselSetting v-if="carouselShow" :element="element" :themes="themes"></CarouselSetting>
     </el-collapse>
   </div>
 </template>

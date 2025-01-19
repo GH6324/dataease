@@ -1,17 +1,32 @@
 <script lang="ts" setup>
+import icon_letterSpacing_outlined from '@/assets/svg/icon_letter-spacing_outlined.svg'
+import icon_bold_outlined from '@/assets/svg/icon_bold_outlined.svg'
+import icon_italic_outlined from '@/assets/svg/icon_italic_outlined.svg'
+import icon_leftAlignment_outlined from '@/assets/svg/icon_left-alignment_outlined.svg'
+import icon_centerAlignment_outlined from '@/assets/svg/icon_center-alignment_outlined.svg'
+import icon_rightAlignment_outlined from '@/assets/svg/icon_right-alignment_outlined.svg'
+import icon_topAlign_outlined from '@/assets/svg/icon_top-align_outlined.svg'
+import icon_verticalAlign_outlined from '@/assets/svg/icon_vertical-align_outlined.svg'
+import icon_bottomAlign_outlined from '@/assets/svg/icon_bottom-align_outlined.svg'
 import { PropType, computed, onMounted, reactive, watch, nextTick } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import {
   COLOR_PANEL,
-  CHART_FONT_FAMILY,
   CHART_FONT_LETTER_SPACE,
   DEFAULT_INDICATOR_STYLE,
-  DEFAULT_BASIC_STYLE
+  DEFAULT_BASIC_STYLE,
+  CHART_FONT_FAMILY_ORIGIN
 } from '@/views/chart/components/editor/util/chart'
 import { cloneDeep, defaultsDeep } from 'lodash-es'
 import { ElIcon, ElInput } from 'element-plus-secondary'
 import Icon from '@/components/icon-custom/src/Icon.vue'
 import { hexColorToRGBA } from '@/views/chart/components/js/util'
+import { storeToRefs } from 'pinia'
+import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
+import { useAppearanceStoreWithOut } from '@/store/modules/appearance'
+const dvMainStore = dvMainStoreWithOut()
+const { batchOptStatus } = storeToRefs(dvMainStore)
+const appearanceStore = useAppearanceStoreWithOut()
 
 const { t } = useI18n()
 
@@ -34,7 +49,12 @@ const toolTip = computed(() => {
   return props.themes === 'dark' ? 'ndark' : 'dark'
 })
 const predefineColors = COLOR_PANEL
-const fontFamily = CHART_FONT_FAMILY
+const fontFamily = CHART_FONT_FAMILY_ORIGIN.concat(
+  appearanceStore.fontList.map(ele => ({
+    name: ele.name,
+    value: ele.name
+  }))
+)
 const fontLetterSpace = CHART_FONT_LETTER_SPACE
 
 const state = reactive({
@@ -53,7 +73,7 @@ const fontSizeList = computed(() => {
   return arr
 })
 
-const changeTitleStyle = prop => {
+const changeLabelTitleStyleStyle = prop => {
   emit('onIndicatorChange', state.indicatorValueForm, prop)
 }
 
@@ -70,14 +90,6 @@ const init = () => {
     cloneDeep(props.chart?.customAttr?.indicator),
     cloneDeep(DEFAULT_INDICATOR_STYLE)
   )
-
-  if (state.basicStyleForm.alpha !== undefined) {
-    const color = hexColorToRGBA(state.basicStyleForm.colors[0], state.basicStyleForm.alpha)
-    const suffixColor = hexColorToRGBA(state.basicStyleForm.colors[1], state.basicStyleForm.alpha)
-
-    customText.color = color
-    customText.suffixColor = suffixColor
-  }
 
   state.indicatorValueForm = cloneDeep(customText)
 
@@ -125,7 +137,7 @@ defineExpose({ getFormData })
           :effect="themes"
           v-model="state.indicatorValueForm.fontFamily"
           :placeholder="t('chart.font_family')"
-          @change="changeTitleStyle('fontFamily')"
+          @change="changeLabelTitleStyleStyle('fontFamily')"
         >
           <el-option
             v-for="option in fontFamily"
@@ -143,20 +155,20 @@ defineExpose({ getFormData })
             v-model="state.indicatorValueForm.color"
             class="color-picker-style"
             :predefine="predefineColors"
-            @change="changeTitleStyle('color')"
+            @change="changeLabelTitleStyleStyle('color')"
             show-alpha
             is-custom
           />
         </el-form-item>
         <el-form-item class="form-item" :class="'form-item-' + themes" style="padding: 0 4px">
-          <el-tooltip content="字号" :effect="toolTip" placement="top">
+          <el-tooltip :content="t('chart.font_size')" :effect="toolTip" placement="top">
             <el-select
               style="width: 56px"
               :effect="themes"
               v-model="state.indicatorValueForm.fontSize"
               :placeholder="t('chart.text_fontsize')"
               size="small"
-              @change="changeTitleStyle('fontSize')"
+              @change="changeLabelTitleStyleStyle('fontSize')"
             >
               <el-option
                 v-for="option in fontSizeList"
@@ -173,11 +185,13 @@ defineExpose({ getFormData })
             :effect="themes"
             v-model="state.indicatorValueForm.letterSpace"
             :placeholder="t('chart.quota_letter_space')"
-            @change="changeTitleStyle('letterSpace')"
+            @change="changeLabelTitleStyleStyle('letterSpace')"
           >
             <template #prefix>
               <el-icon>
-                <Icon name="icon_letter-spacing_outlined" />
+                <Icon name="icon_letter-spacing_outlined"
+                  ><icon_letterSpacing_outlined class="svg-icon"
+                /></Icon>
               </el-icon>
             </template>
             <el-option
@@ -196,7 +210,7 @@ defineExpose({ getFormData })
             :effect="themes"
             class="icon-checkbox"
             v-model="state.indicatorValueForm.isBolder"
-            @change="changeTitleStyle('isBolder')"
+            @change="changeLabelTitleStyleStyle('isBolder')"
           >
             <el-tooltip :effect="toolTip" placement="top">
               <template #content>
@@ -207,7 +221,7 @@ defineExpose({ getFormData })
                 :class="{ dark: themes === 'dark', active: state.indicatorValueForm.isBolder }"
               >
                 <el-icon>
-                  <Icon name="icon_bold_outlined" />
+                  <Icon name="icon_bold_outlined"><icon_bold_outlined class="svg-icon" /></Icon>
                 </el-icon>
               </div>
             </el-tooltip>
@@ -219,7 +233,7 @@ defineExpose({ getFormData })
             :effect="themes"
             class="icon-checkbox"
             v-model="state.indicatorValueForm.isItalic"
-            @change="changeTitleStyle('isItalic')"
+            @change="changeLabelTitleStyleStyle('isItalic')"
           >
             <el-tooltip :effect="toolTip" placement="top">
               <template #content>
@@ -230,7 +244,7 @@ defineExpose({ getFormData })
                 :class="{ dark: themes === 'dark', active: state.indicatorValueForm.isItalic }"
               >
                 <el-icon>
-                  <Icon name="icon_italic_outlined" />
+                  <Icon name="icon_italic_outlined"><icon_italic_outlined class="svg-icon" /></Icon>
                 </el-icon>
               </div>
             </el-tooltip>
@@ -244,7 +258,7 @@ defineExpose({ getFormData })
             :effect="themes"
             class="icon-radio-group"
             v-model="state.indicatorValueForm.hPosition"
-            @change="changeTitleStyle('hPosition')"
+            @change="changeLabelTitleStyleStyle('hPosition')"
           >
             <el-radio :effect="themes" label="left">
               <el-tooltip :effect="toolTip" placement="top">
@@ -259,7 +273,9 @@ defineExpose({ getFormData })
                   }"
                 >
                   <el-icon>
-                    <Icon name="icon_left-alignment_outlined" />
+                    <Icon name="icon_left-alignment_outlined"
+                      ><icon_leftAlignment_outlined class="svg-icon"
+                    /></Icon>
                   </el-icon>
                 </div>
               </el-tooltip>
@@ -277,7 +293,9 @@ defineExpose({ getFormData })
                   }"
                 >
                   <el-icon>
-                    <Icon name="icon_center-alignment_outlined" />
+                    <Icon name="icon_center-alignment_outlined"
+                      ><icon_centerAlignment_outlined class="svg-icon"
+                    /></Icon>
                   </el-icon>
                 </div>
               </el-tooltip>
@@ -295,7 +313,9 @@ defineExpose({ getFormData })
                   }"
                 >
                   <el-icon>
-                    <Icon name="icon_right-alignment_outlined" />
+                    <Icon name="icon_right-alignment_outlined"
+                      ><icon_rightAlignment_outlined class="svg-icon"
+                    /></Icon>
                   </el-icon>
                 </div>
               </el-tooltip>
@@ -309,7 +329,7 @@ defineExpose({ getFormData })
           :effect="themes"
           class="icon-radio-group"
           v-model="state.indicatorValueForm.vPosition"
-          @change="changeTitleStyle('vPosition')"
+          @change="changeLabelTitleStyleStyle('vPosition')"
         >
           <el-radio label="top">
             <el-tooltip :effect="toolTip" placement="top">
@@ -324,7 +344,9 @@ defineExpose({ getFormData })
                 }"
               >
                 <el-icon>
-                  <Icon name="icon_top-align_outlined" />
+                  <Icon name="icon_top-align_outlined"
+                    ><icon_topAlign_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </div>
             </el-tooltip>
@@ -342,7 +364,9 @@ defineExpose({ getFormData })
                 }"
               >
                 <el-icon>
-                  <Icon name="icon_vertical-align_outlined" />
+                  <Icon name="icon_vertical-align_outlined"
+                    ><icon_verticalAlign_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </div>
             </el-tooltip>
@@ -360,7 +384,9 @@ defineExpose({ getFormData })
                 }"
               >
                 <el-icon>
-                  <Icon name="icon_bottom-align_outlined" />
+                  <Icon name="icon_bottom-align_outlined"
+                    ><icon_bottomAlign_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </div>
             </el-tooltip>
@@ -373,7 +399,7 @@ defineExpose({ getFormData })
           size="small"
           :effect="themes"
           v-model="state.indicatorValueForm.fontShadow"
-          @change="changeTitleStyle('fontShadow')"
+          @change="changeLabelTitleStyleStyle('fontShadow')"
         >
           {{ t('chart.font_shadow') }}
         </el-checkbox>
@@ -386,7 +412,7 @@ defineExpose({ getFormData })
           size="small"
           :effect="themes"
           v-model="state.indicatorValueForm.suffixEnable"
-          @change="changeTitleStyle('suffixEnable')"
+          @change="changeLabelTitleStyleStyle('suffixEnable')"
         >
           {{ t('chart.indicator_suffix') }}
         </el-checkbox>
@@ -395,11 +421,12 @@ defineExpose({ getFormData })
       <div style="padding-left: 22px">
         <el-form-item class="form-item" :class="'form-item-' + themes">
           <el-input
-            :disabled="!state.indicatorValueForm.suffixEnable"
             v-model="state.indicatorValueForm.suffix"
-            :placeholder="t('chart.indicator_suffix_placeholder')"
             maxlength="10"
-            @change="changeTitleStyle('suffix')"
+            :effect="themes"
+            :disabled="!state.indicatorValueForm.suffixEnable"
+            :placeholder="t('chart.indicator_suffix_placeholder')"
+            @change="changeLabelTitleStyleStyle('suffix')"
           />
         </el-form-item>
 
@@ -409,7 +436,7 @@ defineExpose({ getFormData })
             :effect="themes"
             v-model="state.indicatorValueForm.suffixFontFamily"
             :placeholder="t('chart.font_family')"
-            @change="changeTitleStyle('suffixFontFamily')"
+            @change="changeLabelTitleStyleStyle('suffixFontFamily')"
           >
             <el-option
               v-for="option in fontFamily"
@@ -428,13 +455,13 @@ defineExpose({ getFormData })
               v-model="state.indicatorValueForm.suffixColor"
               class="color-picker-style"
               :predefine="predefineColors"
-              @change="changeTitleStyle('suffixColor')"
+              @change="changeLabelTitleStyleStyle('suffixColor')"
               is-custom
               show-alpha
             />
           </el-form-item>
           <el-form-item class="form-item" :class="'form-item-' + themes" style="padding: 0 4px">
-            <el-tooltip content="字号" :effect="toolTip" placement="top">
+            <el-tooltip :content="t('chart.font_size')" :effect="toolTip" placement="top">
               <el-select
                 :disabled="!state.indicatorValueForm.suffixEnable"
                 style="width: 56px"
@@ -442,7 +469,7 @@ defineExpose({ getFormData })
                 v-model="state.indicatorValueForm.suffixFontSize"
                 :placeholder="t('chart.text_fontsize')"
                 size="small"
-                @change="changeTitleStyle('suffixFontSize')"
+                @change="changeLabelTitleStyleStyle('suffixFontSize')"
               >
                 <el-option
                   v-for="option in fontSizeList"
@@ -461,11 +488,13 @@ defineExpose({ getFormData })
               :effect="themes"
               v-model="state.indicatorValueForm.suffixLetterSpace"
               :placeholder="t('chart.quota_letter_space')"
-              @change="changeTitleStyle('suffixLetterSpace')"
+              @change="changeLabelTitleStyleStyle('suffixLetterSpace')"
             >
               <template #prefix>
                 <el-icon>
-                  <Icon name="icon_letter-spacing_outlined" />
+                  <Icon name="icon_letter-spacing_outlined"
+                    ><icon_letterSpacing_outlined class="svg-icon"
+                  /></Icon>
                 </el-icon>
               </template>
               <el-option
@@ -485,7 +514,7 @@ defineExpose({ getFormData })
               :effect="themes"
               class="icon-checkbox"
               v-model="state.indicatorValueForm.suffixIsBolder"
-              @change="changeTitleStyle('suffixIsBolder')"
+              @change="changeLabelTitleStyleStyle('suffixIsBolder')"
             >
               <el-tooltip :effect="toolTip" placement="top">
                 <template #content>
@@ -499,7 +528,7 @@ defineExpose({ getFormData })
                   }"
                 >
                   <el-icon>
-                    <Icon name="icon_bold_outlined" />
+                    <Icon name="icon_bold_outlined"><icon_bold_outlined class="svg-icon" /></Icon>
                   </el-icon>
                 </div>
               </el-tooltip>
@@ -512,7 +541,7 @@ defineExpose({ getFormData })
               :effect="themes"
               class="icon-checkbox"
               v-model="state.indicatorValueForm.suffixIsItalic"
-              @change="changeTitleStyle('suffixIsItalic')"
+              @change="changeLabelTitleStyleStyle('suffixIsItalic')"
             >
               <el-tooltip :effect="toolTip" placement="top">
                 <template #content>
@@ -526,7 +555,9 @@ defineExpose({ getFormData })
                   }"
                 >
                   <el-icon>
-                    <Icon name="icon_italic_outlined" />
+                    <Icon name="icon_italic_outlined"
+                      ><icon_italic_outlined class="svg-icon"
+                    /></Icon>
                   </el-icon>
                 </div>
               </el-tooltip>
@@ -540,7 +571,7 @@ defineExpose({ getFormData })
             size="small"
             :effect="themes"
             v-model="state.indicatorValueForm.suffixFontShadow"
-            @change="changeTitleStyle('suffixFontShadow')"
+            @change="changeLabelTitleStyleStyle('suffixFontShadow')"
           >
             {{ t('chart.font_shadow') }}
           </el-checkbox>
@@ -651,7 +682,7 @@ defineExpose({ getFormData })
 }
 .remark-label {
   color: var(--N600, #646a73);
-  font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+  font-family: var(--de-custom_font, 'PingFang');
   font-size: 12px;
   font-style: normal;
   font-weight: 400;

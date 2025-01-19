@@ -1,18 +1,21 @@
 <script lang="ts" setup>
 import { useI18n } from '@/hooks/web/useI18n'
-import { PropType, toRefs, nextTick, watch, ref } from 'vue'
+import { PropType, toRefs, nextTick, watch, ref, computed } from 'vue'
 import MiscSelector from '@/views/chart/components/editor/editor-style/components/MiscSelector.vue'
 import LabelSelector from '@/views/chart/components/editor/editor-style/components/LabelSelector.vue'
 import TooltipSelector from '@/views/chart/components/editor/editor-style/components/TooltipSelector.vue'
 import XAxisSelector from '@/views/chart/components/editor/editor-style/components/XAxisSelector.vue'
 import YAxisSelector from '@/views/chart/components/editor/editor-style/components/YAxisSelector.vue'
+import DualYAxisSelector from '@/views/chart/components/editor/editor-style/components/DualYAxisSelector.vue'
 import TitleSelector from '@/views/chart/components/editor/editor-style/components/TitleSelector.vue'
 import LegendSelector from '@/views/chart/components/editor/editor-style/components/LegendSelector.vue'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { storeToRefs } from 'pinia'
 import CollapseSwitchItem from '@/components/collapse-switch-item/src/CollapseSwitchItem.vue'
-import { ElCollapseItem } from 'element-plus-secondary'
+import { ElCollapse, ElCollapseItem } from 'element-plus-secondary'
 import BasicStyleSelector from '@/views/chart/components/editor/editor-style/components/BasicStyleSelector.vue'
+import SymbolicStyleSelector from '@/views/chart/components/editor/editor-style/components/SymbolicStyleSelector.vue'
+import DualBasicStyleSelector from '@/views/chart/components/editor/editor-style/components/DualBasicStyleSelector.vue'
 import ComponentPosition from '@/components/visualization/common/ComponentPosition.vue'
 import BackgroundOverallCommon from '@/components/visualization/component-background/BackgroundOverallCommon.vue'
 import TableHeaderSelector from '@/views/chart/components/editor/editor-style/components/table/TableHeaderSelector.vue'
@@ -21,9 +24,16 @@ import TableTotalSelector from '@/views/chart/components/editor/editor-style/com
 import MiscStyleSelector from '@/views/chart/components/editor/editor-style/components/MiscStyleSelector.vue'
 import IndicatorValueSelector from '@/views/chart/components/editor/editor-style/components/IndicatorValueSelector.vue'
 import IndicatorNameSelector from '@/views/chart/components/editor/editor-style/components/IndicatorNameSelector.vue'
+import QuadrantSelector from '@/views/chart/components/editor/editor-style/components/QuadrantSelector.vue'
+import FlowMapLineSelector from '@/views/chart/components/editor/editor-style/components/FlowMapLineSelector.vue'
+import FlowMapPointSelector from '@/views/chart/components/editor/editor-style/components/FlowMapPointSelector.vue'
+import CommonEvent from '@/custom-component/common/CommonEvent.vue'
+import CommonBorderSetting from '@/custom-component/common/CommonBorderSetting.vue'
+import { snapshotStoreWithOut } from '@/store/modules/data-visualization/snapshot'
+const snapshotStore = snapshotStoreWithOut()
 
 const dvMainStore = dvMainStoreWithOut()
-const { dvInfo } = storeToRefs(dvMainStore)
+const { dvInfo, batchOptStatus, mobileInPc } = storeToRefs(dvMainStore)
 const { t } = useI18n()
 
 const state = {
@@ -34,6 +44,10 @@ const state = {
 
 const props = defineProps({
   commonBackgroundPop: {
+    type: Object,
+    required: false
+  },
+  commonBorderPop: {
     type: Object,
     required: false
   },
@@ -66,10 +80,29 @@ const props = defineProps({
     default: () => {
       return {}
     }
+  },
+  selectorSpec: {
+    type: Object as PropType<EditorSelectorSpec>,
+    required: false,
+    default: () => {
+      return {}
+    }
+  },
+  allFields: {
+    type: Array,
+    required: true
   }
 })
 
-const { chart, themes, properties, propertyInnerAll, commonBackgroundPop } = toRefs(props)
+const {
+  chart,
+  themes,
+  properties,
+  propertyInnerAll,
+  commonBackgroundPop,
+  commonBorderPop,
+  selectorSpec
+} = toRefs(props)
 const emit = defineEmits([
   'onColorChange',
   'onMiscChange',
@@ -77,21 +110,30 @@ const emit = defineEmits([
   'onTooltipChange',
   'onChangeXAxisForm',
   'onChangeYAxisForm',
+  'onChangeYAxisExtForm',
   'onTextChange',
   'onLegendChange',
   'onBasicStyleChange',
   'onBackgroundChange',
+  'onStyleAttrChange',
   'onTableHeaderChange',
   'onTableCellChange',
   'onTableTotalChange',
   'onChangeMiscStyleForm',
   'onExtTooltipChange',
   'onIndicatorChange',
-  'onIndicatorNameChange'
+  'onIndicatorNameChange',
+  'onChangeQuadrantForm',
+  'onChangeFlowMapLineForm',
+  'onChangeFlowMapPointForm'
 ])
 
 const indicatorValueRef = ref()
 const indicatorNameRef = ref()
+
+const positionComponentShow = computed(() => {
+  return !batchOptStatus.value && dvInfo.value.type !== 'dashboard'
+})
 
 const showProperties = (property: EditorProperty) => properties.value?.includes(property)
 
@@ -112,7 +154,15 @@ const onChangeXAxisForm = (val, prop) => {
 }
 
 const onChangeYAxisForm = (val, prop) => {
+  if (prop === 'show' && chart.value.type.includes('chart-mix')) {
+    chart.value.customStyle.yAxisExt.show = val.show
+    onChangeYAxisExtForm(chart.value.customStyle.yAxisExt, 'show')
+  }
   state.initReady && emit('onChangeYAxisForm', val, prop)
+}
+
+const onChangeYAxisExtForm = (val, prop) => {
+  state.initReady && emit('onChangeYAxisExtForm', val, prop)
 }
 
 const onTextChange = (val, prop) => {
@@ -143,7 +193,22 @@ const onBasicStyleChange = (val, prop) => {
 }
 
 const onBackgroundChange = (val, prop) => {
+  snapshotStore.recordSnapshotCache('onBackgroundChange')
   state.initReady && emit('onBackgroundChange', val, prop)
+}
+
+const onActiveChange = val => {
+  snapshotStore.recordSnapshotCache('onActiveChange')
+  state.initReady &&
+    emit('onStyleAttrChange', {
+      custom: 'style',
+      property: 'active',
+      value: commonBorderPop.value.borderActive
+    })
+}
+
+const onStyleAttrChange = ({ key, value }) => {
+  state.initReady && emit('onStyleAttrChange', { custom: 'style', property: key, value: value })
 }
 
 const onTableHeaderChange = (val, prop) => {
@@ -161,6 +226,15 @@ const onChangeMiscStyleForm = (val, prop) => {
 
 const onExtTooltipChange = val => {
   emit('onExtTooltipChange', val)
+}
+const onChangeQuadrantForm = val => {
+  emit('onChangeQuadrantForm', val)
+}
+const onChangeFlowMapLineForm = (val, prop) => {
+  emit('onChangeFlowMapLineForm', val, prop)
+}
+const onChangeFlowMapPointForm = val => {
+  emit('onChangeFlowMapPointForm', val)
 }
 watch(
   () => props.chart.id,
@@ -182,8 +256,8 @@ watch(
           <el-collapse-item
             :effect="themes"
             name="position"
-            :title="'位置'"
-            v-if="dvInfo.type !== 'dashboard'"
+            :title="t('visualization.position')"
+            v-if="positionComponentShow"
           >
             <component-position :themes="themes" />
           </el-collapse-item>
@@ -198,6 +272,21 @@ watch(
               :themes="themes"
               :chart="chart"
               @onBasicStyleChange="onBasicStyleChange"
+              @onMiscChange="onMiscChange"
+            />
+          </el-collapse-item>
+          <el-collapse-item
+            :effect="themes"
+            name="basicStyle"
+            :title="t('chart.basic_style')"
+            v-if="showProperties('dual-basic-style-selector')"
+          >
+            <DualBasicStyleSelector
+              :property-inner="propertyInnerAll['dual-basic-style-selector']"
+              :themes="themes"
+              :chart="chart"
+              @onBasicStyleChange="onBasicStyleChange"
+              @onMiscChange="onMiscChange"
             />
           </el-collapse-item>
           <collapse-switch-item
@@ -232,12 +321,13 @@ watch(
               :themes="themes"
               :chart="chart"
               @onLegendChange="onLegendChange"
+              @onMiscChange="onMiscChange"
             />
           </collapse-switch-item>
           <el-collapse-item
             :effect="themes"
             name="background"
-            title="背景"
+            :title="t('visualization.background')"
             v-if="showProperties('background-overall-component') && commonBackgroundPop"
           >
             <background-overall-common
@@ -247,11 +337,41 @@ watch(
               component-position="component"
             />
           </el-collapse-item>
+          <collapse-switch-item
+            v-if="showProperties('border-style') && commonBorderPop && !batchOptStatus"
+            v-model="commonBorderPop.borderActive"
+            @modelChange="val => onActiveChange(val)"
+            :themes="themes"
+            :title="t('visualization.board')"
+            name="borderSetting"
+            class="common-style-area"
+          >
+            <common-border-setting
+              :style-info="commonBorderPop"
+              :themes="themes"
+              @onStyleAttrChange="onStyleAttrChange"
+            ></common-border-setting>
+          </collapse-switch-item>
+
+          <el-collapse-item
+            :effect="themes"
+            name="symbolicStyle"
+            :title="t('chart.symbolic')"
+            v-if="showProperties('symbolic-style-selector')"
+          >
+            <SymbolicStyleSelector
+              :property-inner="propertyInnerAll['symbolic-style-selector']"
+              :themes="themes"
+              :chart="chart"
+              @onBasicStyleChange="onBasicStyleChange"
+              @onMiscChange="onMiscChange"
+            />
+          </el-collapse-item>
           <el-collapse-item
             :effect="themes"
             v-if="showProperties('indicator-value-selector')"
             name="indicator-value"
-            title="指标值"
+            :title="t('chart.indicator_value')"
           >
             <indicator-value-selector
               ref="indicatorValueRef"
@@ -269,7 +389,7 @@ watch(
             v-if="showProperties('indicator-name-selector')"
             :change-model="chart.customAttr.indicatorName"
             @modelChange="val => onIndicatorNameChange(val, 'show')"
-            title="指标名称"
+            :title="t('visualization.indicator_name')"
             name="indicator-name"
           >
             <indicator-name-selector
@@ -286,7 +406,7 @@ watch(
             :effect="themes"
             v-if="showProperties('misc-selector') && !chart.type.includes('mix')"
             name="size"
-            title="大小"
+            :title="t('visualization.component_size')"
           >
             <misc-selector
               :property-inner="propertyInnerAll['misc-selector']"
@@ -294,6 +414,7 @@ watch(
               class="attr-selector"
               :chart="chart"
               :quota-fields="props.quotaData"
+              :mobile-in-pc="mobileInPc"
               @onMiscChange="onMiscChange"
             />
           </el-collapse-item>
@@ -301,7 +422,7 @@ watch(
             :effect="themes"
             v-if="showProperties('misc-style-selector')"
             name="size"
-            title="大小"
+            :title="selectorSpec['misc-style-selector']?.title || t('chart.tooltip_axis')"
           >
             <misc-style-selector
               :property-inner="propertyInnerAll['misc-style-selector']"
@@ -317,8 +438,8 @@ watch(
             v-if="showProperties('label-selector')"
             v-model="chart.customAttr.label.show"
             :change-model="chart.customAttr.label"
-            @modelChange="val => onLabelChange(val, 'show')"
-            :title="$t('chart.label')"
+            @modelChange="val => onLabelChange({ data: val }, 'show')"
+            :title="t('chart.label')"
             name="label"
           >
             <label-selector
@@ -326,32 +447,43 @@ watch(
               :themes="themes"
               class="attr-selector"
               :chart="chart"
+              :all-fields="props.allFields"
               @onLabelChange="onLabelChange"
             />
           </collapse-switch-item>
+          <!-- tooltip 为鼠标悬停 移动端table看不到效果 不再单独配置 -->
           <collapse-switch-item
-            :themes="themes"
-            v-if="showProperties('tooltip-selector')"
+            v-if="
+              showProperties('tooltip-selector') &&
+              (!mobileInPc || (mobileInPc && chart.type.indexOf('table') === -1))
+            "
             v-model="chart.customAttr.tooltip.show"
+            :themes="themes"
             :change-model="chart.customAttr.tooltip"
-            @modelChange="val => onTooltipChange({ data: val }, 'show')"
+            :title="t('chart.tooltip')"
+            :show-switch="propertyInnerAll['tooltip-selector'].includes('show')"
             name="tooltip"
-            :title="$t('chart.tooltip')"
+            @modelChange="val => onTooltipChange({ data: val }, 'show')"
           >
             <tooltip-selector
               class="attr-selector"
               :property-inner="propertyInnerAll['tooltip-selector']"
               :themes="themes"
               :chart="chart"
+              :all-fields="props.allFields"
               @onTooltipChange="onTooltipChange"
               @onExtTooltipChange="onExtTooltipChange"
             />
           </collapse-switch-item>
-          <el-collapse-item
-            :effect="themes"
-            name="tableHeader"
-            :title="t('chart.table_header')"
+          <collapse-switch-item
             v-if="showProperties('table-header-selector')"
+            v-model="chart.customAttr.tableHeader.showTableHeader"
+            :change-model="chart.customAttr.tableHeader"
+            :effect="themes"
+            :title="t('chart.table_header')"
+            :show-switch="propertyInnerAll['table-header-selector'].includes('showTableHeader')"
+            name="tableHeader"
+            @modelChange="val => onTableHeaderChange(val, 'showTableHeader')"
           >
             <table-header-selector
               :property-inner="propertyInnerAll['table-header-selector']"
@@ -359,7 +491,7 @@ watch(
               :chart="chart"
               @onTableHeaderChange="onTableHeaderChange"
             />
-          </el-collapse-item>
+          </collapse-switch-item>
           <el-collapse-item
             :effect="themes"
             name="tableCell"
@@ -386,6 +518,49 @@ watch(
               @onTableTotalChange="onTableTotalChange"
             />
           </el-collapse-item>
+          <el-collapse-item
+            :effect="themes"
+            name="quadrant"
+            :title="t('chart.quadrant')"
+            v-if="showProperties('quadrant-selector')"
+          >
+            <quadrant-selector
+              class="attr-selector"
+              :property-inner="propertyInnerAll['quadrant-selector']"
+              :themes="themes"
+              :chart="chart"
+              @onChangeQuadrantForm="onChangeQuadrantForm"
+            />
+          </el-collapse-item>
+          <el-collapse-item
+            :effect="themes"
+            name="flowMapLineSelector"
+            :title="t('chart.line')"
+            v-if="showProperties('flow-map-line-selector')"
+          >
+            <flow-map-line-selector
+              class="attr-selector"
+              :property-inner="propertyInnerAll['flow-map-line-selector']"
+              :themes="themes"
+              :chart="chart"
+              @onChangeFlowMapLineForm="onChangeFlowMapLineForm"
+              @onBasicStyleChange="onBasicStyleChange"
+            />
+          </el-collapse-item>
+          <el-collapse-item
+            :effect="themes"
+            name="flowMapPointSelector"
+            :title="t('visualization.component_annotation')"
+            v-if="showProperties('flow-map-point-selector')"
+          >
+            <flow-map-point-selector
+              class="attr-selector"
+              :property-inner="propertyInnerAll['flow-map-point-selector']"
+              :themes="themes"
+              :chart="chart"
+              @onChangeFlowMapPointForm="onChangeFlowMapPointForm"
+            />
+          </el-collapse-item>
         </el-collapse>
 
         <el-collapse v-model="state.styleActiveNames" class="style-collapse">
@@ -396,7 +571,7 @@ watch(
             :change-model="chart.customStyle.xAxis"
             @modelChange="val => onChangeXAxisForm(val, 'show')"
             name="xAxis"
-            :title="t('chart.xAxis')"
+            :title="selectorSpec['x-axis-selector']?.title || t('chart.xAxis')"
           >
             <x-axis-selector
               class="attr-selector"
@@ -413,7 +588,7 @@ watch(
             :change-model="chart.customStyle.yAxis"
             @modelChange="val => onChangeYAxisForm(val, 'show')"
             name="yAxis"
-            :title="$t('chart.yAxis')"
+            :title="t('chart.yAxis')"
           >
             <y-axis-selector
               class="attr-selector"
@@ -421,6 +596,25 @@ watch(
               :themes="themes"
               :chart="chart"
               @onChangeYAxisForm="onChangeYAxisForm"
+            />
+          </collapse-switch-item>
+
+          <collapse-switch-item
+            :themes="themes"
+            v-if="showProperties('dual-y-axis-selector')"
+            v-model="chart.customStyle.yAxis.show"
+            :change-model="chart.customStyle.yAxis"
+            @modelChange="val => onChangeYAxisForm(val, 'show')"
+            name="yAxis"
+            :title="selectorSpec['dual-y-axis-selector']?.title ?? t('chart.yAxis')"
+          >
+            <dual-y-axis-selector
+              class="attr-selector"
+              :property-inner="propertyInnerAll['dual-y-axis-selector']"
+              :themes="themes"
+              :chart="chart"
+              @onChangeYAxisForm="onChangeYAxisForm"
+              @onChangeYAxisExtForm="onChangeYAxisExtForm"
             />
           </collapse-switch-item>
         </el-collapse>

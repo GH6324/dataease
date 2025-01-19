@@ -1,4 +1,5 @@
 import request from '@/config/axios'
+import { nameTrim } from '@/utils/utils'
 
 export interface DatasetOrFolder {
   name: string
@@ -86,12 +87,20 @@ export const latestUse = async (data = {}) => {
 export const validateById = (id: number) => request.get({ url: '/datasource/validate/' + id })
 
 export const save = async (data = {}): Promise<Dataset> => {
+  nameTrim(data)
   return request.post({ url: '/datasource/save', data }).then(res => {
     return res?.data
   })
 }
 
+export const perDeleteDatasource = async (id): Promise<boolean> => {
+  return request.post({ url: `/datasource/perDelete/${id}`, data: {} }).then(res => {
+    return res?.data
+  })
+}
+
 export const update = async (data = {}): Promise<Dataset> => {
+  nameTrim(data)
   return request.post({ url: '/datasource/update', data }).then(res => {
     return res?.data
   })
@@ -104,12 +113,14 @@ export const move = async (data = {}): Promise<Dataset> => {
 }
 
 export const reName = async (data = {}): Promise<Dataset> => {
+  nameTrim(data)
   return request.post({ url: '/datasource/reName', data }).then(res => {
     return res?.data
   })
 }
 
 export const createFolder = async (data = {}): Promise<Dataset> => {
+  nameTrim(data)
   return request.post({ url: '/datasource/createFolder', data }).then(res => {
     return res?.data
   })
@@ -147,11 +158,16 @@ export const deleteById = (id: number) => request.get({ url: '/datasource/delete
 
 export const getById = (id: number) => request.get({ url: '/datasource/get/' + id })
 
+export const getHidePwById = (id: number) => request.get({ url: '/datasource/hidePw/' + id })
+
+export const getSimpleDs = (id: number) => request.get({ url: '/datasource/getSimpleDs/' + id })
+
 export const uploadFile = async (data): Promise<IResponse> => {
   return request
     .post({
       url: '/datasource/uploadFile',
       data,
+      loading: true,
       headersType: 'multipart/form-data;'
     })
     .then(res => {
@@ -163,3 +179,5 @@ export const listSyncRecord = (page: number, limit: number, dsId: number | strin
   request.post({ url: '/datasource/listSyncRecord/' + dsId + '/' + page + '/' + limit })
 
 export const getDeEngine = () => request.get({ url: '/engine/getEngine' })
+
+export const supportSetKey = () => request.get({ url: '/engine/supportSetKey' })

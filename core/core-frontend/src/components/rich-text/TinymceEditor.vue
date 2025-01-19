@@ -24,11 +24,13 @@ import 'tinymce/plugins/contextmenu' // contextmenu
 import 'tinymce/plugins/directionality'
 import 'tinymce/plugins/nonbreaking'
 import 'tinymce/plugins/pagebreak'
+import { propTypes } from '@/utils/propTypes'
 const props = defineProps({
-  modelValue: String
+  modelValue: String,
+  inline: propTypes.bool.def(true)
 })
 const myValue = ref()
-const { modelValue } = toRefs(props)
+const { modelValue, inline } = toRefs(props)
 myValue.value = modelValue
 watch(
   () => props.modelValue,
@@ -58,21 +60,19 @@ const init = ref({
     'advlist autolink link image lists charmap  media wordcount table contextmenu directionality pagebreak', // 插件
   // 工具栏
   toolbar:
-    'undo redo |fontselect fontsizeselect |forecolor backcolor bold italic |underline strikethrough link| formatselect |' +
+    'undo redo |fontselect fontsizeselect |forecolor backcolor bold italic |underline strikethrough link lineheight| formatselect |' +
     'alignleft aligncenter alignright | bullist numlist |' +
-    ' blockquote subscript superscript removeformat | table image media | fullscreen ' +
-    '| bdmap indent2em lineheight formatpainter axupimgs',
+    ' blockquote subscript superscript removeformat | table image media ',
   toolbar_location: '/',
   font_formats:
-    '阿里巴巴普惠体=阿里巴巴普惠体 3.0 55 Regular L3;微软雅黑=Microsoft YaHei;宋体=SimSun;黑体=SimHei;仿宋=FangSong;华文黑体=STHeiti;华文楷体=STKaiti;华文宋体=STSong;华文仿宋=STFangsong;Andale Mono=andale mono,times;Arial=arial,helvetica,sans-serif;Arial Black=arial black,avant garde;Book Antiqua=book antiqua,palatino;Comic Sans MS=comic sans ms,sans-serif;Courier New=courier new,courier;Georgia=georgia,palatino;Helvetica=helvetica;Impact=impact,chicago;Symbol=symbol;Tahoma=tahoma,arial,helvetica,sans-serif;Terminal=terminal,monaco;Times New Roman=times new roman,times;Trebuchet MS=trebuchet ms,geneva;Verdana=verdana,geneva;Webdings=webdings;Wingdings=wingdings',
+    '微软雅黑=Microsoft YaHei;宋体=SimSun;黑体=SimHei;仿宋=FangSong;华文黑体=STHeiti;华文楷体=STKaiti;华文宋体=STSong;华文仿宋=STFangsong;Andale Mono=andale mono,times;Arial=arial,helvetica,sans-serif;Arial Black=arial black,avant garde;Book Antiqua=book antiqua,palatino;Comic Sans MS=comic sans ms,sans-serif;Courier New=courier new,courier;Georgia=georgia,palatino;Helvetica=helvetica;Impact=impact,chicago;Symbol=symbol;Tahoma=tahoma,arial,helvetica,sans-serif;Terminal=terminal,monaco;Times New Roman=times new roman,times;Trebuchet MS=trebuchet ms,geneva;Verdana=verdana,geneva;Webdings=webdings;Wingdings=wingdings',
   fontsize_formats: '12px 14px 16px 18px 20px 22px 24px 28px 32px 36px 48px 56px 72px', // 字体大小
   menubar: false,
   placeholder: '',
   outer_placeholder: '双击输入文字',
-  inline: true,
-  branding: false
+  inline: inline.value,
+  branding: true
 })
-
 tinymce.init({})
 </script>
 
@@ -100,6 +100,41 @@ tinymce.init({})
     overflow-y: auto;
     outline: none !important;
     border: none !important;
+  }
+}
+
+.tox {
+  border-radius: 4px !important;
+  border-bottom: 1px solid #ccc !important;
+  z-index: 1000;
+}
+.tox-tbtn {
+  height: auto !important;
+}
+.tox-collection__item-label {
+  p {
+    color: #1a1a1a !important;
+  }
+  h1 {
+    color: #1a1a1a !important;
+  }
+  h2 {
+    color: #1a1a1a !important;
+  }
+  h3 {
+    color: #1a1a1a !important;
+  }
+  h4 {
+    color: #1a1a1a !important;
+  }
+  h5 {
+    color: #1a1a1a !important;
+  }
+  h6 {
+    color: #1a1a1a !important;
+  }
+  pre {
+    color: #1a1a1a !important;
   }
 }
 </style>

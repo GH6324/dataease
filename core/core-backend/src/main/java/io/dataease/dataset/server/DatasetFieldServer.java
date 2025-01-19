@@ -6,7 +6,7 @@ import io.dataease.api.dataset.engine.SQLFunctionDTO;
 import io.dataease.api.dataset.engine.SQLFunctionsEnum;
 import io.dataease.dataset.manage.DatasetDataManage;
 import io.dataease.dataset.manage.DatasetTableFieldManage;
-import io.dataease.dto.dataset.DatasetTableFieldDTO;
+import io.dataease.extensions.datasource.dto.DatasetTableFieldDTO;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -44,6 +44,11 @@ public class DatasetFieldServer implements DatasetTableApi {
     }
 
     @Override
+    public Map<String, List<DatasetTableFieldDTO>> listByDsIds(List<Long> ids) {
+        return datasetTableFieldManage.selectByDatasetGroupIds(ids);
+    }
+
+    @Override
     public void delete(Long id) {
         datasetTableFieldManage.deleteById(id);
     }
@@ -54,13 +59,18 @@ public class DatasetFieldServer implements DatasetTableApi {
     }
 
     @Override
+    public Map<String, List<DatasetTableFieldDTO>> copilotFields(Long id) throws Exception {
+        return datasetTableFieldManage.copilotFields(id);
+    }
+
+    @Override
     public List<DatasetTableFieldDTO> listFieldsWithPermissions(Long id) {
-        return datasetTableFieldManage.listFieldsWithPermissions(id);
+        return datasetTableFieldManage.listFieldsWithPermissionsRemoveAgg(id);
     }
 
     @Override
     public List<String> multFieldValuesForPermissions(@RequestBody MultFieldValuesRequest multFieldValuesRequest) throws Exception {
-        return datasetDataManage.getFieldEnum(multFieldValuesRequest.getFieldIds());
+        return datasetDataManage.getFieldEnum(multFieldValuesRequest);
     }
 
     @Override

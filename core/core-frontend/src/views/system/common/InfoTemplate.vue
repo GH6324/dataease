@@ -5,13 +5,14 @@
         <span>{{ curTitle }}</span>
       </div>
       <div>
-        <el-button type="primary" @click="edit">{{ t('commons.edit') }}</el-button>
-        <el-button v-if="showValidate" type="primary" @click="check">{{
+        <el-button v-if="testConnectText" secondary @click="check">{{ testConnectText }}</el-button>
+        <el-button v-if="showValidate" secondary @click="check">{{
           t('datasource.validate')
         }}</el-button>
+        <el-button type="primary" @click="edit">{{ t('commons.edit') }}</el-button>
       </div>
     </div>
-    <div class="info-template-content">
+    <div class="info-template-content clearfix">
       <div class="info-content-item" v-for="item in settingList" :key="item.pkey">
         <div class="info-item-label">
           <span>{{ t(item.pkey) }}</span>
@@ -21,12 +22,16 @@
             :content="tooltipItem[item.pkey]"
             placement="top"
           >
-            <el-icon class="info-tips"><Icon name="dv-info"></Icon></el-icon>
+            <el-icon class="info-tips"
+              ><Icon name="dv-info"><dvInfo class="svg-icon" /></Icon
+            ></el-icon>
           </el-tooltip>
         </div>
         <div class="info-item-content">
           <div class="info-item-pwd" v-if="item.type === 'pwd'">
-            <span>{{ pwdItem[item.pkey]['hidden'] ? '********' : item.pval }}</span>
+            <span class="info-item-pwd-span">{{
+              pwdItem[item.pkey]['hidden'] ? '********' : item.pval
+            }}</span>
 
             <el-tooltip
               v-if="props.copyList.includes(item.pkey)"
@@ -36,25 +41,32 @@
             >
               <el-button text @click="copyVal(item.pval)" class="setting-tip-btn">
                 <template #icon>
-                  <Icon name="de-copy"></Icon>
+                  <Icon name="de-copy"><deCopy class="svg-icon" /></Icon>
                 </template>
               </el-button>
             </el-tooltip>
 
             <el-tooltip
               effect="dark"
-              :content="pwdItem[item.pkey]['hidden'] ? '点击显示' : '点击隐藏'"
+              :content="
+                pwdItem[item.pkey]['hidden'] ? t('system.click_to_show') : t('system.click_to_hide')
+              "
               placement="top"
             >
               <el-button text @click="switchPwd(item.pkey)" class="setting-tip-btn">
                 <template #icon>
-                  <Icon :name="pwdItem[item.pkey]['hidden'] ? 'eye' : 'eye-open'"></Icon>
+                  <Icon
+                    ><component
+                      class="svg-icon"
+                      :is="pwdItem[item.pkey]['hidden'] ? eye : eyeOpen"
+                    ></component
+                  ></Icon>
                 </template>
               </el-button>
             </el-tooltip>
           </div>
           <span v-else-if="item.pkey.includes('basic.dsIntervalTime')">
-            <span>{{ item.pval + ' ' + executeTime + '执行一次' }}</span>
+            <span>{{ item.pval + ' ' + executeTime + t('common.every_exec') }}</span>
           </span>
           <span v-else>
             <span>{{ item.pval }}</span>
@@ -66,7 +78,7 @@
             >
               <el-button text @click="copyVal(item.pval)" class="setting-tip-btn">
                 <template #icon>
-                  <Icon name="de-copy"></Icon>
+                  <Icon name="de-copy"><deCopy class="svg-icon" /></Icon>
                 </template>
               </el-button>
             </el-tooltip>
@@ -77,6 +89,10 @@
   </div>
 </template>
 <script lang="ts" setup>
+import eye from '@/assets/svg/eye.svg'
+import eyeOpen from '@/assets/svg/eye-open.svg'
+import dvInfo from '@/assets/svg/dv-info.svg'
+import deCopy from '@/assets/svg/de-copy.svg'
 import { ref, defineProps, PropType, computed } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { SettingRecord, ToolTipRecord } from './SettingTemplate'
@@ -99,7 +115,7 @@ const props = defineProps({
   },
   settingTitle: {
     type: String,
-    default: '基础设置'
+    default: ''
   },
   hideHead: {
     type: Boolean,
@@ -109,14 +125,18 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  testConnectText: {
+    type: String,
+    default: null
+  },
   copyList: {
     type: Array as PropType<string[]>,
     default: () => []
   }
 })
-const executeTime = ref('0分0秒')
+const executeTime = ref(t('system.and_0_seconds'))
 const curTitle = computed(() => {
-  return props.settingTitle
+  return props.settingTitle || t('system.basic_settings')
 })
 const copyVal = async val => {
   try {
@@ -141,8 +161,8 @@ const loadList = () => {
 
 const getExecuteTime = val => {
   const options = [
-    { value: 'minute', label: '分钟（执行时间：0秒）' },
-    { value: 'hour', label: '小时（执行时间：0分0秒）' }
+    { value: 'minute', label: t('system.time_0_seconds') },
+    { value: 'hour', label: t('system.and_0_seconds_de') }
   ]
   return options.filter(item => item.value === val)[0].label
 }
@@ -202,7 +222,9 @@ formatLabel()
   }
 }
 .info-template-container {
-  padding: 24px;
+  padding: 24px 24px 8px 24px;
+  background: var(--ContentBG, #ffffff);
+  border-radius: 4px;
   .info-template-header {
     display: flex;
     margin-top: -4px;
@@ -218,12 +240,12 @@ formatLabel()
   }
   .info-template-content {
     width: 100%;
-    margin: 8px 0;
+    margin-top: 12px;
     .info-content-item {
       width: 50%;
-      height: 48px;
       float: left;
       margin-bottom: 16px;
+      min-height: 46px;
       .info-item-label {
         height: 22px;
         line-height: 22px;
@@ -240,7 +262,6 @@ formatLabel()
       }
       .info-item-content {
         line-height: 22px;
-        height: 22px;
         span {
           font-size: 14px;
           color: #1f2329;
@@ -250,15 +271,26 @@ formatLabel()
         .info-item-pwd {
           height: 22px;
           line-height: 22px;
-
+          width: 100%;
           display: flex;
           align-items: center;
           i {
             margin-left: 2px;
           }
+          .info-item-pwd-span {
+            max-width: calc(100% - 84px);
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+          }
         }
       }
     }
+  }
+  .clearfix::after {
+    content: '';
+    display: table;
+    clear: both;
   }
 }
 </style>

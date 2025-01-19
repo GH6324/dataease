@@ -44,7 +44,7 @@ defineExpose({
 </script>
 
 <template>
-  <div class="filter">
+  <div class="draw-filter_base">
     <span>{{ title }}</span>
     <div class="filter-item">
       <el-select
@@ -68,23 +68,21 @@ defineExpose({
   </div>
 </template>
 <style lang="less" scope>
-.filter {
-  display: flex;
-  min-height: 46px;
+.draw-filter_base {
+  margin-bottom: 16px;
 
   > :nth-child(1) {
     color: var(--deTextSecondary, #1f2329);
-    font-family: '阿里巴巴普惠体 3.0 55 Regular L3';
+    font-family: var(--de-custom_font, 'PingFang');
     font-style: normal;
     font-weight: 400;
     font-size: 14px;
-    line-height: 24px;
+    line-height: 22px;
     white-space: nowrap;
-    width: 116px;
   }
 
   .filter-item {
-    flex: 1;
+    margin-top: 8px;
   }
 }
 </style>

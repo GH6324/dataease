@@ -5,25 +5,25 @@ import { snapshotStoreWithOut } from '@/store/modules/data-visualization/snapsho
 
 import { storeToRefs } from 'pinia'
 import { ElIcon, ElMessage } from 'element-plus-secondary'
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch, PropType, reactive, toRefs, computed } from 'vue'
 import { beforeUploadCheck, uploadFileResult } from '@/api/staticResource'
 import { imgUrlTrans } from '@/utils/imgUtils'
 import eventBus from '@/utils/eventBus'
 import ImgViewDialog from '@/custom-component/ImgViewDialog.vue'
+import { useI18n } from '@/hooks/web/useI18n'
+const { t } = useI18n()
 
-withDefaults(
-  defineProps<{
-    themes?: EditorTheme
-  }>(),
-  {
-    themes: 'dark'
+const props = defineProps({
+  themes: {
+    type: String as PropType<EditorTheme>,
+    default: 'dark'
   }
-)
+})
 
 const dvMainStore = dvMainStoreWithOut()
 const snapshotStore = snapshotStoreWithOut()
 
-const { curComponent } = storeToRefs(dvMainStore)
+const { curComponent, mobileInPc } = storeToRefs(dvMainStore)
 
 const fileList = ref([])
 const dialogImageUrl = ref('')
@@ -31,6 +31,7 @@ const dialogVisible = ref(false)
 const uploadDisabled = ref(false)
 const files = ref(null)
 const maxImageSize = 15000000
+const state = reactive({})
 
 const handlePictureCardPreview = file => {
   dialogImageUrl.value = file.url
@@ -41,13 +42,17 @@ const handleRemove = (_, fileList) => {
   uploadDisabled.value = false
   curComponent.value.propValue.url = null
   fileList.value = []
-  snapshotStore.recordSnapshotCache()
+  snapshotStore.recordSnapshotCache('handleRemove')
 }
 async function upload(file) {
   uploadFileResult(file.file, fileUrl => {
-    snapshotStore.recordSnapshotCache()
+    snapshotStore.recordSnapshotCache('pic-upload')
     curComponent.value.propValue.url = fileUrl
   })
+}
+
+const onStyleChange = () => {
+  snapshotStore.recordSnapshotCache('pic-onStyleChange')
 }
 
 const goFile = () => {
@@ -58,9 +63,10 @@ const reUpload = e => {
   const file = e.target.files[0]
   if (file.size > maxImageSize) {
     sizeMessage()
+    return
   }
   uploadFileResult(file, fileUrl => {
-    snapshotStore.recordSnapshotCache()
+    snapshotStore.recordSnapshotCache('uploadFileResult')
     curComponent.value.propValue.url = fileUrl
     fileList.value = [{ url: imgUrlTrans(curComponent.value.propValue.url) }]
   })
@@ -76,6 +82,10 @@ const init = () => {
     fileList.value = []
   }
 }
+
+const toolTip = computed(() => {
+  return props.themes === 'dark' ? 'ndark' : 'dark'
+})
 
 watch(
   () => curComponent.value.propValue.url,
@@ -99,7 +109,7 @@ onBeforeUnmount(() => {
       id="input"
       ref="files"
       type="file"
-      accept=".jpeg,.jpg,.png,.gif"
+      accept=".jpeg,.jpg,.png,.gif,.svg"
       hidden
       @click="
         e => {
@@ -114,7 +124,12 @@ onBeforeUnmount(() => {
       :background-color-picker-width="197"
       :background-border-select-width="197"
     >
-      <el-collapse-item :effect="themes" title="图片" name="picture">
+      <el-collapse-item
+        :effect="themes"
+        :title="t('visualization.picture')"
+        name="picture"
+        v-show="!mobileInPc"
+      >
         <el-row class="img-area" :class="`img-area_${themes}`">
           <el-col style="width: 130px !important">
             <el-upload
@@ -135,14 +150,14 @@ onBeforeUnmount(() => {
             <img-view-dialog v-model="dialogVisible" :image-url="dialogImageUrl"></img-view-dialog>
           </el-col>
         </el-row>
-        <el-row style="margin-bottom: 16px">
+        <el-row>
           <span
             style="margin-top: 2px"
             v-if="!curComponent.propValue.url"
             class="image-hint"
             :class="`image-hint_${themes}`"
           >
-            支持JPG、PNG、GIF
+            {{ t('visualization.pic_upload_tips2') }}
           </span>
 
           <el-button
@@ -152,8 +167,35 @@ onBeforeUnmount(() => {
             text
             @click="goFile"
           >
-            重新上传
+            {{ t('visualization.re_upload') }}
           </el-button>
+        </el-row>
+        <el-row class="pic-adaptor">
+          <el-form-item
+            v-if="curComponent.style.adaptation"
+            class="form-item"
+            :label="t('visualization.pic_adaptor_type')"
+            size="small"
+            :effect="themes"
+            :class="'form-item-' + themes"
+          >
+            <el-radio-group
+              size="small"
+              v-model="curComponent.style.adaptation"
+              @change="onStyleChange"
+              :effect="themes"
+            >
+              <el-radio label="adaptation" :effect="themes">{{
+                t('visualization.pic_adaptation')
+              }}</el-radio>
+              <el-radio label="original" :effect="themes">{{
+                t('visualization.pic_original')
+              }}</el-radio>
+              <el-radio label="equiratio" :effect="themes">{{
+                t('visualization.pic_equiratio')
+              }}</el-radio>
+            </el-radio-group>
+          </el-form-item>
         </el-row>
       </el-collapse-item>
     </CommonAttr>
@@ -219,7 +261,6 @@ onBeforeUnmount(() => {
 .img-area {
   height: 80px;
   width: 80px;
-  margin-top: 10px;
   overflow: hidden;
 
   &.img-area_dark {
@@ -264,5 +305,60 @@ onBeforeUnmount(() => {
   size: 14px;
   line-height: 22px;
   font-weight: 400;
+}
+
+.pic-adaptor {
+  margin: 8px 0 16px 0;
+  :deep(.ed-form-item__content) {
+    margin-top: 8px !important;
+  }
+}
+
+.form-item-dark {
+  .ed-radio {
+    margin-right: 4px !important;
+  }
+}
+
+.drag-data {
+  padding-top: 8px;
+  padding-bottom: 16px;
+
+  .tree-btn {
+    width: 100%;
+    margin-top: 8px;
+    background: #fff;
+    height: 32px;
+    border-radius: 4px;
+    border: 1px solid #dcdfe6;
+    display: flex;
+    color: #cccccc;
+    align-items: center;
+    cursor: pointer;
+    justify-content: center;
+    font-size: 12px;
+    &.tree-btn--dark {
+      background: rgba(235, 235, 235, 0.05);
+      border-color: #5f5f5f;
+    }
+
+    &.active {
+      color: #3370ff;
+      border-color: #3370ff;
+    }
+  }
+
+  &.no-top-border {
+    border-top: none !important;
+  }
+  &.no-top-padding {
+    padding-top: 0 !important;
+  }
+  &:nth-child(n + 2) {
+    border-top: 1px solid @side-outline-border-color;
+  }
+  &:first-child {
+    border-top: none !important;
+  }
 }
 </style>

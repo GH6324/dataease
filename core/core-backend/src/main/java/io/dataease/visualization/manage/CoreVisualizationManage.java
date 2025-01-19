@@ -48,7 +48,7 @@ public class CoreVisualizationManage {
     @Resource
     private CoreOptRecentManage coreOptRecentManage;
 
-    @XpackInteract(value = "visualizationResourceTree", replace = true)
+    @XpackInteract(value = "visualizationResourceTree", replace = true, invalid = true)
     public List<BusiNodeVO> tree(BusiNodeRequest request) {
         List<VisualizationNodeBO> nodes = new ArrayList<>();
         if (ObjectUtils.isEmpty(request.getLeaf()) || !request.getLeaf()) {
@@ -59,6 +59,10 @@ public class CoreVisualizationManage {
         queryWrapper.ne("pid", -1);
         queryWrapper.eq(ObjectUtils.isNotEmpty(request.getLeaf()), "node_type", ObjectUtils.isNotEmpty(request.getLeaf()) && request.getLeaf() ? "leaf" : "folder");
         queryWrapper.eq("type", request.getBusiFlag());
+        String info = CommunityUtils.getInfo();
+        if (StringUtils.isNotBlank(info)) {
+            queryWrapper.notExists(String.format(info, "data_visualization_info.id"));
+        }
         queryWrapper.orderByDesc("create_time");
         List<VisualizationNodePO> pos = extMapper.queryNodes(queryWrapper);
         if (CollectionUtils.isNotEmpty(pos)) {
@@ -89,7 +93,11 @@ public class CoreVisualizationManage {
                 });
             }
         }
-        extMapper.batchDel(delIds, System.currentTimeMillis(), AuthUtils.getUser().getUserId());
+        // 删除可视化资源
+        extDataVisualizationMapper.deleteDataVBatch(delIds);
+        // 删除图表信息
+        extDataVisualizationMapper.deleteViewsBatch(delIds);
+
         coreOptRecentManage.saveOpt(id, OptConstants.OPT_RESOURCE_TYPE.VISUALIZATION, OptConstants.OPT_TYPE.DELETE);
     }
 
@@ -109,6 +117,7 @@ public class CoreVisualizationManage {
 
     @XpackInteract(value = "visualizationResourceTree", before = false)
     public Long innerSave(DataVisualizationInfo visualizationInfo) {
+        visualizationInfo.setVersion(3);
         return preInnerSave(visualizationInfo);
     }
 
@@ -132,6 +141,7 @@ public class CoreVisualizationManage {
     public void innerEdit(DataVisualizationInfo visualizationInfo) {
         visualizationInfo.setUpdateTime(System.currentTimeMillis());
         visualizationInfo.setUpdateBy(AuthUtils.getUser().getUserId().toString());
+        visualizationInfo.setVersion(3);
         mapper.updateById(visualizationInfo);
         coreOptRecentManage.saveOpt(visualizationInfo.getId(), OptConstants.OPT_RESOURCE_TYPE.VISUALIZATION, OptConstants.OPT_TYPE.UPDATE);
     }
@@ -145,14 +155,14 @@ public class CoreVisualizationManage {
     }
 
     private VisualizationNodeBO convert(VisualizationNodePO po) {
-        return new VisualizationNodeBO(po.getId(), po.getName(), StringUtils.equals(po.getNodeType(), "leaf"), 7, po.getPid(), 0);
+        return new VisualizationNodeBO(po.getId(), po.getName(), StringUtils.equals(po.getNodeType(), "leaf"), 9, po.getPid(), po.getExtraFlag());
     }
 
     public CoreVisualizationManage proxy() {
         return CommonBeanFactory.getBean(this.getClass());
     }
 
-    @XpackInteract(value = "perFilterManage", recursion = true)
+    @XpackInteract(value = "perFilterManage", recursion = true, invalid = true)
     public IPage<VisualizationResourceVO> query(int pageNum, int pageSize, VisualizationWorkbranchQueryRequest request) {
         IPage<VisualizationResourcePO> visualizationResourcePOPageIPage = proxy().queryVisualizationPage(pageNum, pageSize, request);
         if (ObjectUtils.isEmpty(visualizationResourcePOPageIPage)) {
@@ -176,7 +186,7 @@ public class CoreVisualizationManage {
                 new VisualizationResourceVO(
                         po.getId(), po.getResourceId(), po.getName(),
                         po.getType(), String.valueOf(po.getCreator()), String.valueOf(po.getLastEditor()), po.getLastEditTime(),
-                        po.getFavorite(), 9)).toList();
+                        po.getFavorite(), 9, po.getExtFlag())).toList();
     }
 
     public IPage<VisualizationResourcePO> queryVisualizationPage(int goPage, int pageSize, VisualizationWorkbranchQueryRequest request) {
@@ -189,11 +199,12 @@ public class CoreVisualizationManage {
             }
             queryWrapper.eq("dvResource.type", request.getType());
         }
-        if (StringUtils.isNotBlank(request.getKeyword())) {
-            queryWrapper.like("dvResource.name", request.getKeyword());
+        String info = CommunityUtils.getInfo();
+        if (StringUtils.isNotBlank(info)) {
+            queryWrapper.notExists(String.format(info, "core_opt_recent.resource_id"));
         }
         queryWrapper.orderBy(true, request.isAsc(), "core_opt_recent.time");
         Page<VisualizationResourcePO> page = new Page<>(goPage, pageSize);
-        return extDataVisualizationMapper.findRecent(page, uid, queryWrapper);
+        return extDataVisualizationMapper.findRecent(page, uid, request.getKeyword(), queryWrapper);
     }
 }

@@ -10,7 +10,7 @@ import elementResizeDetectorMaker from 'element-resize-detector'
 import { getCanvasStyle, syncShapeItemStyle } from '@/utils/style'
 import { adaptCurThemeCommonStyle } from '@/utils/canvasStyle'
 import CanvasCore from '@/components/data-visualization/canvas/CanvasCore.vue'
-import { isMainCanvas } from '@/utils/canvasUtils'
+import { isMainCanvas, isDashboard } from '@/utils/canvasUtils'
 
 // change-begin
 const props = defineProps({
@@ -34,22 +34,51 @@ const props = defineProps({
   canvasActive: {
     type: Boolean,
     default: true
+  },
+  outerScale: {
+    type: Number,
+    required: false,
+    default: 1
+  },
+  // 仪表板字体
+  fontFamily: {
+    type: String,
+    required: false,
+    default: 'inherit'
+  },
+  // 画布位置
+  canvasPosition: {
+    type: String,
+    required: false,
+    default: 'main'
   }
 })
-const { canvasStyleData, componentData, canvasViewInfo, canvasId, canvasActive } = toRefs(props)
+const {
+  canvasStyleData,
+  componentData,
+  canvasViewInfo,
+  canvasId,
+  canvasActive,
+  outerScale,
+  canvasPosition
+} = toRefs(props)
 const domId = ref('de-canvas-' + canvasId.value)
 // change-end
 
 const dvMainStore = dvMainStoreWithOut()
 const snapshotStore = snapshotStoreWithOut()
-const { pcMatrixCount, curOriginThemes } = storeToRefs(dvMainStore)
+const { pcMatrixCount, curOriginThemes, mobileInPc } = storeToRefs(dvMainStore)
 const canvasOut = ref(null)
 const canvasInner = ref(null)
 const canvasInitStatus = ref(false)
+const scaleWidth = ref(100)
+const scaleHeight = ref(100)
+const scaleMin = ref(100)
 
 const state = reactive({
   screenWidth: 1920,
-  screenHeight: 1080
+  screenHeight: 1080,
+  curScrollTop: 0
 })
 
 //仪表板矩阵信息适配，
@@ -73,12 +102,12 @@ const editStyle = computed(() => {
 
 // 通过实时监听的方式直接添加组件
 const handleNewFromCanvasMain = newComponentInfo => {
-  const { componentName, innerType } = newComponentInfo
+  const { componentName, innerType, staticMap } = newComponentInfo
   if (componentName) {
-    const component = findNewComponentFromList(componentName, innerType, curOriginThemes)
+    const component = findNewComponentFromList(componentName, innerType, curOriginThemes, staticMap)
     syncShapeItemStyle(component, baseWidth.value, baseHeight.value)
     component.id = guid()
-    component.y = 200
+    component.y = undefined
     component.x = cyGridster.value.findPositionX(component)
     dvMainStore.addComponent({
       component: component,
@@ -88,7 +117,9 @@ const handleNewFromCanvasMain = newComponentInfo => {
     adaptCurThemeCommonStyle(component)
     nextTick(() => {
       cyGridster.value.addItemBox(component) //在适当的时候初始化布局组件
-      scrollTo(component.y)
+      nextTick(() => {
+        scrollTo(component.y)
+      })
     })
     snapshotStore.recordSnapshotCache('renderChart', component.id)
   }
@@ -124,22 +155,30 @@ const handleMouseDown = e => {
   }
 }
 
+const canvasInitImmediately = () => {
+  cyGridster.value.canvasInit()
+}
+
 const canvasInit = (isFistLoad = true) => {
-  renderState.value = true
-  setTimeout(function () {
-    if (canvasOut.value) {
-      dashboardCanvasSizeInit()
-      nextTick(() => {
-        cyGridster.value.canvasInit() //在适当的时候初始化布局组件
-        cyGridster.value.afterInitOk(function () {
-          renderState.value = false
+  if (canvasActive.value || canvasPosition.value === 'tab') {
+    renderState.value = true
+    setTimeout(function () {
+      if (canvasOut.value) {
+        dashboardCanvasSizeInit()
+        nextTick(() => {
+          cyGridster.value.canvasInit() //在适当的时候初始化布局组件
+          cyGridster.value.afterInitOk(function () {
+            renderState.value = false
+          })
         })
-      })
-    }
-    // afterInit
-    dvMainStore.setDataPrepareState(true)
-    isFistLoad && snapshotStore.recordSnapshotCache('renderChart')
-  }, 500)
+      }
+      // afterInit
+      dvMainStore.setDataPrepareState(true)
+      if (isMainCanvas(canvasId.value) && isFistLoad) {
+        snapshotStore.recordSnapshotCache('renderChart')
+      }
+    }, 500)
+  }
 }
 
 const canvasSizeInit = () => {
@@ -149,7 +188,26 @@ const canvasSizeInit = () => {
       dashboardCanvasSizeInit()
       nextTick(() => {
         cyGridster.value.canvasSizeInit() //在适当的时候初始化布局组件
+        // 缩放比例变化
+        scaleInit()
       })
+    }
+  })
+}
+
+const scaleInit = () => {
+  nextTick(() => {
+    if (canvasOut.value) {
+      //div容器获取tableBox.value.clientWidth
+      let canvasWidth = canvasOut.value.clientWidth
+      let canvasHeight = canvasOut.value.clientHeight
+      scaleWidth.value = Math.floor((canvasWidth * 100) / canvasStyleData.value.width)
+      scaleHeight.value = Math.floor((canvasHeight * 100) / canvasStyleData.value.height)
+      scaleMin.value = Math.min(scaleWidth.value, scaleHeight.value)
+      if (isDashboard() && isMainCanvas(canvasId.value)) {
+        const offset = mobileInPc.value ? 4 : 1
+        dvMainStore.setCanvasStyleScale(scaleMin.value * offset)
+      }
     }
   })
 }
@@ -186,6 +244,7 @@ const moveOutFromTab = component => {
       componentData: componentData.value
     })
     addItemBox(component)
+    canvasInit()
   }, 500)
 }
 
@@ -199,6 +258,7 @@ onMounted(() => {
   canvasInit()
   if (isMainCanvas(canvasId.value)) {
     eventBus.on('handleNew', handleNewFromCanvasMain)
+    eventBus.on('event-canvas-size-init', canvasSizeInit)
   }
   eventBus.on('moveOutFromTab-' + canvasId.value, moveOutFromTab)
   eventBus.on('matrix-canvasInit', canvasInit)
@@ -207,6 +267,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (isMainCanvas(canvasId.value)) {
     eventBus.off('handleNew', handleNewFromCanvasMain)
+    eventBus.off('event-canvas-size-init', canvasSizeInit)
   }
   eventBus.off('moveOutFromTab-' + canvasId.value, moveOutFromTab)
   eventBus.off('matrix-canvasInit', canvasInit)
@@ -225,7 +286,14 @@ const scrollTo = y => {
       top: (y - 1) * baseHeight.value,
       behavior: 'smooth'
     })
+    cyGridster.value?.watermarkUpdate()
   })
+}
+
+const scrollCanvas = () => {
+  if (isMainCanvas(canvasId.value)) {
+    dvMainStore.mainScrollTop = canvasInner.value.scrollTop
+  }
 }
 
 watch(
@@ -239,6 +307,8 @@ watch(
 
 defineExpose({
   addItemBox,
+  canvasInit,
+  canvasInitImmediately,
   getBaseMatrixSize
 })
 </script>
@@ -254,10 +324,12 @@ defineExpose({
       :id="domId"
       ref="canvasInner"
       class="db-canvas"
+      :class="{ 'db-canvas-dashboard': !isDashboard() }"
       :style="editStyle"
       @drop="handleDrop"
       @dragover="handleDragOver"
       @mousedown="handleMouseDown"
+      @scroll="scrollCanvas"
     >
       <canvas-core
         ref="cyGridster"
@@ -270,13 +342,17 @@ defineExpose({
         :base-margin-top="baseMarginTop"
         :base-width="baseWidth"
         :base-height="baseHeight"
+        :font-family="fontFamily"
         @scrollCanvasToTop="scrollTo(1)"
       ></canvas-core>
     </div>
   </div>
 </template>
 
-<style lang="less">
+<style lang="less" scoped>
+.db-canvas-dashboard {
+  padding: 0 !important;
+}
 .content {
   width: 100%;
   height: 100%;
@@ -287,10 +363,9 @@ defineExpose({
     width: 100%;
     height: 100%;
   }
-}
-
-&::-webkit-scrollbar {
-  display: none;
+  ::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .render-active {

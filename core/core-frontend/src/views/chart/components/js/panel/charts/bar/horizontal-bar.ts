@@ -2,19 +2,32 @@ import {
   G2PlotChartView,
   G2PlotDrawOptions
 } from '@/views/chart/components/js/panel/types/impl/g2plot'
-import { Bar, BarOptions } from '@antv/g2plot/esm/plots/bar'
-import { getPadding, setGradientColor } from '@/views/chart/components/js/panel/common/common_antv'
+import type { Bar, BarOptions } from '@antv/g2plot/esm/plots/bar'
+import {
+  configAxisLabelLengthLimit,
+  configPlotTooltipEvent,
+  getPadding,
+  getTooltipContainer,
+  setGradientColor,
+  TOOLTIP_TPL
+} from '@/views/chart/components/js/panel/common/common_antv'
 import { cloneDeep } from 'lodash-es'
-import { flow, hexColorToRGBA, parseJson } from '@/views/chart/components/js/util'
+import {
+  flow,
+  hexColorToRGBA,
+  parseJson,
+  setUpStackSeriesColor
+} from '@/views/chart/components/js/util'
 import { valueFormatter } from '@/views/chart/components/js/formatter'
 import {
   BAR_AXIS_TYPE,
   BAR_EDITOR_PROPERTY,
   BAR_EDITOR_PROPERTY_INNER
 } from '@/views/chart/components/js/panel/charts/bar/common'
-import { Datum } from '@antv/g2plot/esm/types/common'
+import type { Datum } from '@antv/g2plot/esm/types/common'
 import { useI18n } from '@/hooks/web/useI18n'
-import { DEFAULT_LABEL } from '@/views/chart/components/editor/util/chart'
+import { DEFAULT_BASIC_STYLE, DEFAULT_LABEL } from '@/views/chart/components/editor/util/chart'
+import { Group } from '@antv/g-canvas'
 
 const { t } = useI18n()
 const DEFAULT_DATA = []
@@ -25,6 +38,10 @@ const DEFAULT_DATA = []
 export class HorizontalBar extends G2PlotChartView<BarOptions, Bar> {
   axisConfig = {
     ...this['axisConfig'],
+    xAxis: {
+      name: `${t('chart.drag_block_type_axis')} / ${t('chart.dimension')}`,
+      type: 'd'
+    },
     yAxis: {
       name: `${t('chart.drag_block_value_axis')} / ${t('chart.quota')}`,
       type: 'q'
@@ -33,9 +50,25 @@ export class HorizontalBar extends G2PlotChartView<BarOptions, Bar> {
   properties = BAR_EDITOR_PROPERTY
   propertyInner = {
     ...BAR_EDITOR_PROPERTY_INNER,
+    'basic-style-selector': [...BAR_EDITOR_PROPERTY_INNER['basic-style-selector'], 'seriesColor'],
     'label-selector': ['hPosition', 'seriesLabelFormatter'],
-    'tooltip-selector': ['fontSize', 'color', 'backgroundColor', 'seriesTooltipFormatter'],
-    'x-axis-selector': [...BAR_EDITOR_PROPERTY_INNER['x-axis-selector'], 'axisLabelFormatter']
+    'tooltip-selector': ['fontSize', 'color', 'backgroundColor', 'seriesTooltipFormatter', 'show'],
+    'x-axis-selector': [
+      ...BAR_EDITOR_PROPERTY_INNER['x-axis-selector'],
+      'axisLabelFormatter',
+      'axisValue'
+    ],
+    'y-axis-selector': [
+      'name',
+      'color',
+      'fontSize',
+      'axisLine',
+      'splitLine',
+      'axisForm',
+      'axisLabel',
+      'position',
+      'showLengthLimit'
+    ]
   }
   axis: AxisType[] = [...BAR_AXIS_TYPE]
   protected baseOptions: BarOptions = {
@@ -43,49 +76,10 @@ export class HorizontalBar extends G2PlotChartView<BarOptions, Bar> {
     xField: 'value',
     yField: 'field',
     seriesField: 'category',
-    isGroup: true,
-    interactions: [
-      {
-        type: 'legend-active',
-        cfg: {
-          start: [{ trigger: 'legend-item:mouseenter', action: ['element-active:reset'] }],
-          end: [{ trigger: 'legend-item:mouseleave', action: ['element-active:reset'] }]
-        }
-      },
-      {
-        type: 'legend-filter',
-        cfg: {
-          start: [
-            {
-              trigger: 'legend-item:click',
-              action: [
-                'list-unchecked:toggle',
-                'data-filter:filter',
-                'element-active:reset',
-                'element-highlight:reset'
-              ]
-            }
-          ]
-        }
-      },
-      {
-        type: 'tooltip',
-        cfg: {
-          start: [{ trigger: 'interval:mousemove', action: 'tooltip:show' }],
-          end: [{ trigger: 'interval:mouseleave', action: 'tooltip:hide' }]
-        }
-      },
-      {
-        type: 'active-region',
-        cfg: {
-          start: [{ trigger: 'interval:mousemove', action: 'active-region:show' }],
-          end: [{ trigger: 'interval:mouseleave', action: 'active-region:hide' }]
-        }
-      }
-    ]
+    isGroup: true
   }
 
-  drawChart(drawOptions: G2PlotDrawOptions<Bar>): Bar {
+  async drawChart(drawOptions: G2PlotDrawOptions<Bar>): Promise<Bar> {
     const { chart, container, action } = drawOptions
     if (!chart.data?.data?.length) {
       return
@@ -102,11 +96,13 @@ export class HorizontalBar extends G2PlotChartView<BarOptions, Bar> {
 
     const options = this.setupOptions(chart, initOptions)
 
+    const { Bar } = await import('@antv/g2plot/esm/plots/bar')
     // 开始渲染
     const newChart = new Bar(container, options)
 
     newChart.on('interval:click', action)
-
+    configPlotTooltipEvent(chart, newChart)
+    configAxisLabelLengthLimit(chart, newChart)
     return newChart
   }
 
@@ -161,6 +157,34 @@ export class HorizontalBar extends G2PlotChartView<BarOptions, Bar> {
         color
       }
     }
+    if (basicStyle.radiusColumnBar === 'roundAngle') {
+      const barStyle = {
+        radius: [
+          basicStyle.columnBarRightAngleRadius,
+          basicStyle.columnBarRightAngleRadius,
+          basicStyle.columnBarRightAngleRadius,
+          basicStyle.columnBarRightAngleRadius
+        ]
+      }
+      options = {
+        ...options,
+        barStyle
+      }
+    }
+
+    let barWidthRatio
+    const _v = basicStyle.columnWidthRatio ?? DEFAULT_BASIC_STYLE.columnWidthRatio
+    if (_v >= 1 && _v <= 100) {
+      barWidthRatio = _v / 100.0
+    } else if (_v < 1) {
+      barWidthRatio = 1 / 100.0
+    } else if (_v > 100) {
+      barWidthRatio = 1
+    }
+    if (barWidthRatio) {
+      options.barWidthRatio = barWidthRatio
+    }
+
     return options
   }
 
@@ -204,7 +228,7 @@ export class HorizontalBar extends G2PlotChartView<BarOptions, Bar> {
           return
         }
         const value = valueFormatter(data.value, labelCfg.formatterCfg)
-        const group = new G2PlotChartView.engine.Group({})
+        const group = new Group({})
         group.addShape({
           type: 'text',
           attrs: {
@@ -214,6 +238,7 @@ export class HorizontalBar extends G2PlotChartView<BarOptions, Bar> {
             textAlign: 'start',
             textBaseline: 'top',
             fontSize: labelCfg.fontSize,
+            fontFamily: chart.fontFamily,
             fill: labelCfg.color
           }
         })
@@ -242,7 +267,10 @@ export class HorizontalBar extends G2PlotChartView<BarOptions, Bar> {
 
   protected setupOptions(chart: Chart, options: BarOptions): BarOptions {
     return flow(
+      this.addConditionsStyleColorToData,
       this.configTheme,
+      this.configEmptyDataStrategy,
+      this.configColor,
       this.configBasicStyle,
       this.configLabel,
       this.configTooltip,
@@ -251,8 +279,8 @@ export class HorizontalBar extends G2PlotChartView<BarOptions, Bar> {
       this.configYAxis,
       this.configSlider,
       this.configAnalyseHorizontal,
-      this.configEmptyDataStrategy
-    )(chart, options)
+      this.configBarConditions
+    )(chart, options, {}, this)
   }
 
   constructor(name = 'bar-horizontal') {
@@ -264,10 +292,20 @@ export class HorizontalBar extends G2PlotChartView<BarOptions, Bar> {
  * 堆叠条形图
  */
 export class HorizontalStackBar extends HorizontalBar {
+  properties = BAR_EDITOR_PROPERTY.filter(ele => ele !== 'threshold')
+  axisConfig = {
+    ...this['axisConfig'],
+    extStack: {
+      name: `${t('chart.stack_item')} / ${t('chart.dimension')}`,
+      type: 'd',
+      limit: 1,
+      allowEmpty: true
+    }
+  }
   propertyInner = {
     ...this['propertyInner'],
     'label-selector': ['color', 'fontSize', 'hPosition', 'labelFormatter'],
-    'tooltip-selector': ['fontSize', 'color', 'backgroundColor', 'tooltipFormatter']
+    'tooltip-selector': ['fontSize', 'color', 'backgroundColor', 'tooltipFormatter', 'show']
   }
   protected configLabel(chart: Chart, options: BarOptions): BarOptions {
     const baseOptions = super.configLabel(chart, options)
@@ -302,12 +340,65 @@ export class HorizontalStackBar extends HorizontalBar {
         const res = valueFormatter(param.value, tooltipAttr.tooltipFormatter)
         obj.value = res ?? ''
         return obj
-      }
+      },
+      container: getTooltipContainer(`tooltip-${chart.id}`),
+      itemTpl: TOOLTIP_TPL,
+      enterable: true
     }
     return {
       ...options,
       tooltip
     }
+  }
+  protected configColor(chart: Chart, options: BarOptions): BarOptions {
+    return this.configStackColor(chart, options)
+  }
+  public setupSeriesColor(chart: ChartObj, data?: any[]): ChartBasicStyle['seriesColor'] {
+    return setUpStackSeriesColor(chart, data)
+  }
+
+  protected configData(chart: Chart, options: BarOptions): BarOptions {
+    const { xAxis, extStack, yAxis } = chart
+    const mainSort = xAxis.some(axis => axis.sort !== 'none')
+    const subSort = extStack.some(axis => axis.sort !== 'none')
+    if (mainSort || subSort) {
+      return options
+    }
+    const quotaSort = yAxis?.[0]?.sort !== 'none'
+    if (!quotaSort || !extStack.length || !yAxis.length) {
+      return options
+    }
+    const { data } = options
+    const mainAxisValueMap = data.reduce((p, n) => {
+      p[n.field] = p[n.field] ? p[n.field] + n.value : n.value || 0
+      return p
+    }, {})
+    const sort = yAxis[0].sort
+    data.sort((p, n) => {
+      if (sort === 'asc') {
+        return mainAxisValueMap[p.field] - mainAxisValueMap[n.field]
+      } else {
+        return mainAxisValueMap[n.field] - mainAxisValueMap[p.field]
+      }
+    })
+    return options
+  }
+
+  protected setupOptions(chart: Chart, options: BarOptions): BarOptions {
+    return flow(
+      this.configTheme,
+      this.configEmptyDataStrategy,
+      this.configData,
+      this.configColor,
+      this.configBasicStyle,
+      this.configLabel,
+      this.configTooltip,
+      this.configLegend,
+      this.configXAxis,
+      this.configYAxis,
+      this.configSlider,
+      this.configAnalyseHorizontal
+    )(chart, options, {}, this)
   }
 
   constructor(name = 'bar-stack-horizontal') {
@@ -315,7 +406,12 @@ export class HorizontalStackBar extends HorizontalBar {
     this.baseOptions = {
       ...this.baseOptions,
       isGroup: false,
-      isStack: true
+      isStack: true,
+      meta: {
+        category: {
+          type: 'cat'
+        }
+      }
     }
     this.axis = [...this.axis, 'extStack']
   }
@@ -328,7 +424,7 @@ export class HorizontalPercentageStackBar extends HorizontalStackBar {
   propertyInner = {
     ...this['propertyInner'],
     'label-selector': ['color', 'fontSize', 'hPosition', 'reserveDecimalCount'],
-    'tooltip-selector': ['color', 'fontSize']
+    'tooltip-selector': ['color', 'fontSize', 'backgroundColor', 'show']
   }
   protected configLabel(chart: Chart, options: BarOptions): BarOptions {
     const baseOptions = super.configLabel(chart, options)
@@ -369,7 +465,10 @@ export class HorizontalPercentageStackBar extends HorizontalStackBar {
         const obj = { name: param.category, value: param.value }
         obj.value = (Math.round(param.value * 10000) / 100).toFixed(l.reserveDecimalCount) + '%'
         return obj
-      }
+      },
+      container: getTooltipContainer(`tooltip-${chart.id}`),
+      itemTpl: TOOLTIP_TPL,
+      enterable: true
     }
     return {
       ...options,
@@ -379,6 +478,8 @@ export class HorizontalPercentageStackBar extends HorizontalStackBar {
   protected setupOptions(chart: Chart, options: BarOptions): BarOptions {
     return flow(
       this.configTheme,
+      this.configEmptyDataStrategy,
+      this.configColor,
       this.configBasicStyle,
       this.configLabel,
       this.configTooltip,
@@ -386,8 +487,8 @@ export class HorizontalPercentageStackBar extends HorizontalStackBar {
       this.configXAxis,
       this.configYAxis,
       this.configSlider,
-      this.configEmptyDataStrategy
-    )(chart, options)
+      this.configAnalyseHorizontal
+    )(chart, options, {}, this)
   }
 
   constructor() {
@@ -396,6 +497,5 @@ export class HorizontalPercentageStackBar extends HorizontalStackBar {
       ...this.baseOptions,
       isPercent: true
     }
-    this.properties = this.properties.filter(item => item !== 'assist-line')
   }
 }

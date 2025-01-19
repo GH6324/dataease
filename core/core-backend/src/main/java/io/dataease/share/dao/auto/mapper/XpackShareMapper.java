@@ -6,11 +6,11 @@ import org.apache.ibatis.annotations.Mapper;
 
 /**
  * <p>
- *  Mapper 接口
+ * 公共链接 Mapper 接口
  * </p>
  *
  * @author fit2cloud
- * @since 2023-09-22
+ * @since 2024-06-21
  */
 @Mapper
 public interface XpackShareMapper extends BaseMapper<XpackShare> {

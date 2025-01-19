@@ -1,8 +1,10 @@
 <script lang="tsx" setup>
-import { reactive, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { reverseColor } from '../util/util'
 import { ArrowRight } from '@element-plus/icons-vue'
+import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
+const dvMainStore = dvMainStoreWithOut()
 
 const { t } = useI18n()
 
@@ -15,6 +17,11 @@ const props = defineProps({
     type: Object,
     required: false,
     default: null
+  },
+  disabled: {
+    type: Boolean,
+    required: false,
+    default: false
   }
 })
 
@@ -24,13 +31,17 @@ const state = reactive({
   textColor: '#bbbfc4'
 })
 
-watch(
-  [() => props.themeStyle?.backgroundColorSelect, () => props.themeStyle?.color],
-  () => {
-    loadThemeStyle()
-  },
-  { deep: true }
+const textColor = computed(
+  () => dvMainStore.canvasStyleData.component.seniorStyleSetting.drillLayerColor
 )
+
+// watch(
+//   [() => props.themeStyle?.backgroundColorSelect, () => props.themeStyle?.color],
+//   () => {
+//     loadThemeStyle()
+//   },
+//   { deep: true }
+// )
 
 const drillJump = index => {
   if (index < props.drillFilters.length) {
@@ -61,13 +72,19 @@ const loadThemeStyle = () => {
     }
   }
 }
+const drillPathVar = computed(() => [{ '--drill-color': textColor.value }])
 </script>
 
 <template>
-  <div v-if="props.drillFilters && props.drillFilters.length > 0" class="drill">
+  <div
+    v-if="props.drillFilters && props.drillFilters.length > 0"
+    class="drill"
+    :style="drillPathVar"
+    :class="{ noClick: disabled }"
+  >
     <el-breadcrumb :separator-icon="ArrowRight" class="drill-style">
       <el-breadcrumb-item class="drill-item" @click="drillJump(0)">
-        <span :style="{ color: state.textColor }">{{ t('commons.all') }}</span>
+        <span :style="{ color: textColor }">{{ t('commons.all') }}</span>
       </el-breadcrumb-item>
       <el-breadcrumb-item
         v-for="(filter, index) in props.drillFilters"
@@ -75,7 +92,9 @@ const loadThemeStyle = () => {
         class="drill-item"
         @click="drillJump(index + 1)"
       >
-        <span :style="{ color: state.textColor }">{{ filter.value[0] }}</span>
+        <span class="item-name" :style="{ color: textColor }" :title="filter.value[0]">{{
+          filter.value[0]
+        }}</span>
       </el-breadcrumb-item>
     </el-breadcrumb>
   </div>
@@ -90,10 +109,23 @@ const loadThemeStyle = () => {
 }
 .drill-item {
   cursor: pointer;
+  .item-name {
+    max-width: 200px;
+    display: inline-block;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+  }
 }
 .drill {
   z-index: 1;
   height: 20px;
   padding: 0 16px;
+  ::v-deep(.ed-icon) {
+    color: var(--drill-color) !important;
+  }
+}
+.noClick {
+  pointer-events: none; /* 禁止鼠标点击 */
 }
 </style>

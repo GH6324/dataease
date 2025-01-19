@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import userImg from '@/assets/svg/user-img.svg'
+import icon_expandDown_filled from '@/assets/svg/icon_expand-down_filled.svg'
 import { computed, ref, unref } from 'vue'
 import { Icon } from '@/components/icon-custom'
 import { useUserStoreWithOut } from '@/store/modules/user'
@@ -25,6 +27,11 @@ interface LinkItem {
   method?: string
 }
 const linkList = ref([{ id: 5, label: t('common.about'), method: 'toAbout' }] as LinkItem[])
+if (!appearanceStore.getShowAbout) {
+  linkList.value.splice(0, 1)
+}
+
+const inPlatformClient = computed(() => !!wsCache.get('de-platform-client'))
 
 const logout = async () => {
   await logoutApi()
@@ -43,6 +50,14 @@ const xpackLinkLoaded = items => {
     }
   }
   items.forEach(item => linkList.value.push(item))
+  if (inPlatformClient.value) {
+    len = linkList.value.length
+    while (len--) {
+      if (linkList.value[len]?.id === 2) {
+        linkList.value.splice(len, 1)
+      }
+    }
+  }
   linkList.value.sort(compare('id'))
 }
 
@@ -98,11 +113,11 @@ if (uid.value === '1') {
     v-click-outside="openPopover"
   >
     <el-icon class="main-color">
-      <Icon name="user-img" />
+      <Icon name="user-img"><userImg class="svg-icon" /></Icon>
     </el-icon>
     <span class="uname-span">{{ name }}</span>
     <el-icon class="el-icon-animate">
-      <Icon name="icon_expand-down_filled" />
+      <Icon name="icon_expand-down_filled"><icon_expandDown_filled class="svg-icon" /></Icon>
     </el-icon>
   </div>
   <el-popover
@@ -131,9 +146,9 @@ if (uid.value === '1') {
           <span>{{ link.label }}</span>
         </div>
 
-        <div class="uinfo-main-item de-container de-language">
+        <div class="uinfo-main-item de-container">
           <div class="about-parent" ref="divLanguageRef" v-click-outside="openLanguage">
-            <span>语言</span>
+            <span>{{ $t('commons.language') }}</span>
             <el-icon class="el-icon-animate">
               <ArrowRight />
             </el-icon>
@@ -153,7 +168,7 @@ if (uid.value === '1') {
         </div>
       </div>
       <el-divider />
-      <div class="uinfo-footer">
+      <div class="uinfo-footer" v-if="!inPlatformClient">
         <div class="uinfo-main-item de-container" @click="logout">
           <span>{{ t('common.exit_system') }}</span>
         </div>
@@ -173,6 +188,7 @@ if (uid.value === '1') {
 }
 .is-light-top-info {
   .uname-span {
+    font-family: var(--de-custom_font, 'PingFang');
     color: var(--ed-color-black) !important;
   }
   &:hover {
@@ -196,6 +212,7 @@ if (uid.value === '1') {
     border-radius: 50%;
   }
   .uname-span {
+    font-family: var(--de-custom_font, 'PingFang');
     font-size: 14px;
     color: rgba(255, 255, 255, 0.8);
   }
@@ -262,13 +279,10 @@ if (uid.value === '1') {
   padding-bottom: 0 !important;
 }
 .language-popover {
-  max-height: 112px;
+  // max-height: 112px;
   .ed-popper__arrow {
     display: none;
   }
   padding: var(--ed-popover-padding) 0 !important;
-}
-.de-language {
-  display: none !important;
 }
 </style>

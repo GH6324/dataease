@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { toRefs, computed, watch, nextTick } from 'vue'
+import { toRefs, computed, watch, nextTick, onMounted } from 'vue'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { storeToRefs } from 'pinia'
 import CanvasGroup from '@/custom-component/common/CanvasGroup.vue'
 import { deepCopy } from '@/utils/utils'
-import { DEFAULT_CANVAS_STYLE_DATA_DARK } from '@/views/chart/components/editor/util/dataVisualiztion'
+import { DEFAULT_CANVAS_STYLE_DATA_DARK } from '@/views/chart/components/editor/util/dataVisualization'
+import { groupSizeStyleAdaptor } from '@/utils/style'
 const dvMainStore = dvMainStoreWithOut()
-const { canvasViewInfo, canvasStyleData, curComponent } = storeToRefs(dvMainStore)
+const { canvasStyleData, curComponent } = storeToRefs(dvMainStore)
 const sourceCanvasStyle = deepCopy(DEFAULT_CANVAS_STYLE_DATA_DARK)
-
 const props = defineProps({
   propValue: {
     type: Array,
@@ -16,6 +16,7 @@ const props = defineProps({
   },
   element: {
     type: Object,
+    required: true,
     default() {
       return {
         propValue: null
@@ -50,10 +51,20 @@ const props = defineProps({
   active: {
     type: Boolean,
     default: false
+  },
+  canvasViewInfo: {
+    type: Object,
+    required: true
+  },
+  // 字体
+  fontFamily: {
+    type: String,
+    required: false,
+    default: 'inherit'
   }
 })
 
-const { propValue, dvInfo, element, scale } = toRefs(props)
+const { propValue, dvInfo, element, scale, canvasViewInfo, searchCount } = toRefs(props)
 const customCanvasStyle = computed(() => {
   const result = sourceCanvasStyle
   result.scale = canvasStyleData.value.scale
@@ -82,6 +93,12 @@ watch(
   },
   { deep: true }
 )
+
+onMounted(() => {
+  nextTick(() => {
+    groupSizeStyleAdaptor(element.value)
+  })
+})
 </script>
 
 <template>
@@ -100,6 +117,8 @@ watch(
       :is-edit="isEdit"
       :element="element"
       :scale="scale"
+      :search-count="searchCount"
+      :font-family="fontFamily"
     >
     </canvas-group>
   </div>

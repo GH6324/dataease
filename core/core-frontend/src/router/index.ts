@@ -21,11 +21,41 @@ export const routes: AppRouteRecordRaw[] = [
     ]
   },
   {
+    path: '/copilot',
+    name: 'copilot',
+    component: () => import('@/layout/index.vue'),
+    hidden: true,
+    meta: {},
+    children: [
+      {
+        path: 'index',
+        name: 'cpt',
+        hidden: true,
+        component: () => import('@/views/copilot/index.vue'),
+        meta: { hidden: true }
+      }
+    ]
+  },
+  {
     path: '/login',
     name: 'login',
     hidden: true,
     meta: {},
     component: () => import('@/views/login/index.vue')
+  },
+  {
+    path: '/admin-login',
+    name: 'admin-login',
+    hidden: true,
+    meta: {},
+    component: () => import('@/views/login/index.vue')
+  },
+  {
+    path: '/401',
+    name: '401',
+    hidden: true,
+    meta: {},
+    component: () => import('@/views/401/index.vue')
   },
   {
     path: '/dvCanvas',

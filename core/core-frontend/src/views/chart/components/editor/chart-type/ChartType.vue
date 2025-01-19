@@ -3,6 +3,8 @@ import { reactive, ref, toRefs } from 'vue'
 import { CHART_TYPE_CONFIGS } from '@/views/chart/components/editor/util/chart'
 import Icon from '@/components/icon-custom/src/Icon.vue'
 import { ElScrollbar } from 'element-plus-secondary'
+import { iconChartDarkMap } from '@/components/icon-group/chart-dark-list'
+import { iconChartMap } from '@/components/icon-group/chart-list'
 
 const props = defineProps({
   propValue: {
@@ -93,8 +95,23 @@ const groupActiveChange = category => {
               class="item-top"
               :class="props.type === chartInfo.value ? 'item-active' : ''"
               :data-id="'UserView&' + chartInfo.value"
+              :title="chartInfo.title"
             >
-              <Icon class-name="item-top-icon" :name="chartInfo.icon" />
+              <Icon
+                class-name="item-top-icon"
+                v-if="chartInfo['isPlugin']"
+                :static-content="chartInfo.icon"
+              />
+              <Icon v-else class-name="item-top-icon"
+                ><component
+                  class="svg-icon item-top-icon"
+                  :is="
+                    props.themes === 'dark'
+                      ? iconChartDarkMap[`${chartInfo.icon}-dark`]
+                      : iconChartMap[chartInfo.icon]
+                  "
+                ></component
+              ></Icon>
             </div>
             <div class="item-bottom">
               <span>{{ chartInfo.title }}</span>
@@ -216,6 +233,10 @@ const groupActiveChange = category => {
     color: #a6a6a6;
     font-size: 12px;
     text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 88px;
   }
 }
 

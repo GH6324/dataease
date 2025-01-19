@@ -1,7 +1,16 @@
 <script lang="ts" setup>
+import icon_info_outlined from '@/assets/svg/icon_info_outlined.svg'
+import icon_linkRecord_outlined from '@/assets/svg/icon_link-record_outlined.svg'
+import icon_viewinchat_outlined from '@/assets/svg/icon_viewinchat_outlined.svg'
+import icon_drilling_outlined from '@/assets/svg/icon_drilling_outlined.svg'
 import { useI18n } from '@/hooks/web/useI18n'
 import ChartComponentG2Plot from './components/ChartComponentG2Plot.vue'
 import DeIndicator from '@/custom-component/indicator/DeIndicator.vue'
+import { useAppearanceStoreWithOut } from '@/store/modules/appearance'
+import { useAppStoreWithOut } from '@/store/modules/app'
+import { useEmbedded } from '@/store/modules/embedded'
+import { XpackComponent } from '@/components/plugin'
+import { PluginComponent } from '@/components/plugin'
 import {
   computed,
   CSSProperties,
@@ -17,9 +26,9 @@ import {
   watch
 } from 'vue'
 import { useEmitt } from '@/hooks/web/useEmitt'
-import { hexColorToRGBA } from '@/views/chart/components/js/util.js'
+import { hexColorToRGBA, parseJson } from '@/views/chart/components/js/util.js'
 import {
-  CHART_CONT_FAMILY_MAP,
+  CHART_FONT_FAMILY_MAP,
   DEFAULT_TITLE_STYLE
 } from '@/views/chart/components/editor/util/chart'
 import DrillPath from '@/views/chart/components/views/components/DrillPath.vue'
@@ -36,18 +45,40 @@ import { storeToRefs } from 'pinia'
 import { checkAddHttp, setIdValueTrans } from '@/utils/canvasUtils'
 import { Base64 } from 'js-base64'
 import DeRichTextView from '@/custom-component/rich-text/DeRichTextView.vue'
+import DePictureGroup from '@/custom-component/picture-group/Component.vue'
 import ChartEmptyInfo from '@/views/chart/components/views/components/ChartEmptyInfo.vue'
 import { snapshotStoreWithOut } from '@/store/modules/data-visualization/snapshot'
+import { viewFieldTimeTrans } from '@/utils/viewUtils'
+import { CHART_TYPE_CONFIGS } from '@/views/chart/components/editor/util/chart'
+import request from '@/config/axios'
+import { store } from '@/store'
+import { clearExtremum } from '@/views/chart/components/js/extremumUitl'
+import DePreviewPopDialog from '@/components/visualization/DePreviewPopDialog.vue'
 
 const { wsCache } = useCache()
 const chartComponent = ref<any>()
 const { t } = useI18n()
 const dvMainStore = dvMainStoreWithOut()
-
+const { emitter } = useEmitt()
+const dePreviewPopDialogRef = ref(null)
 let innerRefreshTimer = null
+const appStore = useAppStoreWithOut()
+const appearanceStore = useAppearanceStoreWithOut()
+const isDataEaseBi = computed(() => appStore.getIsDataEaseBi)
+const isIframe = computed(() => appStore.getIsIframe)
 
-const { nowPanelJumpInfo, publicLinkStatus, dvInfo, curComponent, canvasStyleData, mobileInPc } =
-  storeToRefs(dvMainStore)
+const emit = defineEmits(['onPointClick'])
+
+const {
+  nowPanelJumpInfo,
+  publicLinkStatus,
+  dvInfo,
+  curComponent,
+  canvasStyleData,
+  mobileInPc,
+  inMobile,
+  editMode
+} = storeToRefs(dvMainStore)
 
 const props = defineProps({
   active: {
@@ -95,17 +126,31 @@ const props = defineProps({
     type: Number,
     required: false,
     default: 1
+  },
+  suffixId: {
+    type: String,
+    required: false,
+    default: 'common'
+  },
+  fontFamily: {
+    type: String,
+    required: false,
+    default: 'inherit'
+  },
+  optType: {
+    type: String,
+    required: false
   }
 })
 const dynamicAreaId = ref('')
-const { view, showPosition, element, active, searchCount, scale } = toRefs(props)
-
-const titleShow = computed(
-  () =>
-    element.value.innerType !== 'rich-text' &&
+const { view, showPosition, element, active, searchCount, scale, suffixId } = toRefs(props)
+const titleShow = computed(() => {
+  return (
+    !['rich-text', 'picture-group'].includes(element.value.innerType) &&
     state.title_show &&
     showPosition.value !== 'viewDialog'
-)
+  )
+})
 const snapshotStore = snapshotStoreWithOut()
 
 const state = reactive({
@@ -128,11 +173,15 @@ const state = reactive({
     fontSynthesis: 'style weight',
     width: 'fit-content',
     maxWidth: '100%',
-    wordBreak: 'break-word'
+    wordBreak: 'break-word',
+    whiteSpace: 'pre-wrap'
   } as CSSProperties,
   drillFilters: [],
+  viewInfoData: null,
   drillClickDimensionList: []
 })
+
+const drillClickLength = computed(() => state.drillClickDimensionList.length)
 
 const titleAlign = computed<string>(() => {
   if (!titleShow.value) {
@@ -153,13 +202,13 @@ const trackMenu = computed<Array<string>>(() => {
 })
 
 const hasLinkIcon = computed(() => {
-  return trackMenu.value.indexOf('linkage') > -1
+  return trackMenu.value.indexOf('linkage') > -1 || trackMenu.value.indexOf('linkageAndDrill') > -1
 })
 const hasJumpIcon = computed(() => {
   return trackMenu.value.indexOf('jump') > -1 && !mobileInPc.value
 })
 const hasDrillIcon = computed(() => {
-  return trackMenu.value.indexOf('drill') > -1
+  return trackMenu.value.indexOf('drill') > -1 || trackMenu.value.indexOf('linkageAndDrill') > -1
 })
 
 const loading = ref(false)
@@ -172,6 +221,7 @@ const resultCount = computed(() => {
   return canvasStyleData.value.dashboard?.resultCount || null
 })
 
+const embeddedStore = useEmbedded()
 // 编辑状态下 不启动刷新
 const buildInnerRefreshTimer = (
   refreshViewEnable = false,
@@ -191,6 +241,7 @@ const buildInnerRefreshTimer = (
 // 清除相同sourceViewId 的 联动条件
 const clearViewLinkage = () => {
   dvMainStore.clearViewLinkage(element.value.id)
+  useEmitt().emitter.emit('clearPanelLinkage', { viewId: element.value.id })
 }
 
 watch(
@@ -222,7 +273,7 @@ watch([() => resultMode.value], () => {
 
 watch([() => scale.value], () => {
   nextTick(() => {
-    chartComponent?.value?.renderChart(view.value)
+    chartComponent?.value?.renderChart?.(view.value)
   })
 })
 
@@ -245,13 +296,22 @@ const initTitle = () => {
       state.title_show = customStyle.text.show
       state.title_class.fontSize = customStyle.text.fontSize * scale.value + 'px'
       state.title_class.color = customStyle.text.color
-      state.title_class.textAlign = customStyle.text.hPosition
+      state.title_class.textAlign = customStyle.text.hPosition as CSSProperties['textAlign']
       state.title_class.fontStyle = customStyle.text.isItalic ? 'italic' : 'normal'
       state.title_class.fontWeight = customStyle.text.isBolder ? 'bold' : 'normal'
-
+      if (!!appearanceStore.fontList.length) {
+        appearanceStore.fontList.forEach(ele => {
+          CHART_FONT_FAMILY_MAP[ele.name] = ele.name
+        })
+      }
       state.title_class.fontFamily = customStyle.text.fontFamily
-        ? CHART_CONT_FAMILY_MAP[customStyle.text.fontFamily]
+        ? CHART_FONT_FAMILY_MAP[customStyle.text.fontFamily]
         : DEFAULT_TITLE_STYLE.fontFamily
+      if (!CHART_FONT_FAMILY_MAP[customStyle.text.fontFamily]) {
+        state.title_class.fontFamily = appearanceStore.fontList.find(ele => ele.isDefault)?.name
+        customStyle.text.fontFamily = state.title_class.fontFamily
+      }
+      appearanceStore.setCurrentFont(state.title_class.fontFamily)
       state.title_class.letterSpacing =
         (customStyle.text.letterSpace
           ? customStyle.text.letterSpace
@@ -265,7 +325,7 @@ const initTitle = () => {
       )
     }
 
-    state.title_remark.show = customStyle.text.remarkShow
+    state.title_remark.show = customStyle.text.show && customStyle.text.remarkShow
     state.title_remark.remark = customStyle.text.remark
   }
 }
@@ -276,11 +336,31 @@ const drillJump = (index: number) => {
   calcData(view.value)
 }
 
+const onPointClick = param => {
+  try {
+    const msg = {
+      sourceDvId: dvInfo.value.id,
+      sourceViewId: view.value.id,
+      message: Base64.encode(JSON.stringify(param))
+    }
+    emit('onPointClick', msg)
+  } catch (e) {
+    console.warn('de_inner_params send error')
+  }
+}
+
 const chartClick = param => {
   // 下钻字段第一个没有在维度中不允许下钻
   const xIds = view.value.xAxis.map(ele => ele.id)
   if (xIds.indexOf(props.view.drillFields[0].id) == -1) {
     ElMessage.error(t('chart.drill_field_error'))
+    return
+  }
+  if (
+    view.value.type === 'circle-packing' &&
+    (param.data?.childNodeCount === 0 || param.data.name === t('commons.all'))
+  ) {
+    ElMessage.error(t('chart.last_layer'))
     return
   }
   if (state.drillClickDimensionList.length < props.view.drillFields.length - 1) {
@@ -303,6 +383,7 @@ const filter = (firstLoad?: boolean) => {
     filter,
     linkageFilters: element.value.linkageFilters,
     outerParamsFilters: element.value.outerParamsFilters,
+    webParamsFilters: element.value.webParamsFilters,
     drill: state.drillClickDimensionList,
     resultCount: resultCount.value,
     resultMode: resultMode.value
@@ -312,12 +393,57 @@ const filter = (firstLoad?: boolean) => {
 const onDrillFilters = param => {
   state.drillFilters = param ? param : []
 }
+const openHandler = ref(null)
+const initOpenHandler = newWindow => {
+  if (openHandler?.value) {
+    const pm = {
+      methodName: 'initOpenHandler',
+      args: newWindow
+    }
+    openHandler.value.invokeMethod(pm)
+  }
+}
 
-const windowsJump = (url, jumpType) => {
+const divEmbedded = type => {
+  useEmitt().emitter.emit('changeCurrentComponent', type)
+}
+
+const windowsJump = (url, jumpType, size = 'middle') => {
   try {
-    window.open(url, jumpType)
+    let newWindow
+    if ('newPop' === jumpType) {
+      dePreviewPopDialogRef.value.previewInit({ url, size })
+      // let sizeX, sizeY
+      // if (size === 'large') {
+      //   sizeX = 0.95
+      //   sizeY = 0.9
+      // } else if (size === 'middle') {
+      //   sizeX = 0.8
+      //   sizeY = 0.75
+      // } else {
+      //   sizeX = 0.6
+      //   sizeY = 0.5
+      // }
+      // const height = screen.height * sizeY
+      // const width = screen.width * sizeX
+      // const left = screen.width * ((1 - sizeX) / 2)
+      // const top = screen.height * ((1 - sizeY) / 2)
+      // newWindow = window.open(
+      //   url,
+      //   '_blank',
+      //   `width=${width},height=${height},left=${left},top=${top},toolbar=no,scrollbars=yes,resizable=yes,location=no`
+      // )
+    } else if ('_self' === jumpType) {
+      newWindow = window.open(url, jumpType)
+      if (inMobile.value) {
+        window.location.reload()
+      }
+    } else {
+      newWindow = window.open(url, jumpType)
+    }
+    initOpenHandler(newWindow)
   } catch (e) {
-    ElMessage.error(t('visualization.url_check_error') + ':' + url)
+    console.warn(t('visualization.url_check_error') + ':' + url)
   }
 }
 
@@ -343,29 +469,82 @@ const jumpClick = param => {
     }
   }
   if (jumpInfo) {
+    // 维度日期类型转换
+    viewFieldTimeTrans(dvMainStore.getViewDataDetails(param.viewId), param)
     param.sourceDvId = dvInfo.value.id
     param.sourceViewId = param.viewId
     param.sourceFieldId = dimension.id
+    let embeddedBaseUrl = ''
+    const divSelf = isDataEaseBi.value && jumpInfo.jumpType === '_self'
+    const iframeSelf = isIframe.value && jumpInfo.jumpType === '_self'
+    if (isDataEaseBi.value) {
+      embeddedBaseUrl = embeddedStore.baseUrl
+    }
     // 内部仪表板跳转
     if (jumpInfo.linkType === 'inner') {
       if (jumpInfo.targetDvId) {
+        const filterOuterParams = {}
+        const curFilter = dvMainStore.getLastViewRequestInfo(param.viewId)
+        const targetViewInfoList = jumpInfo.targetViewInfoList
+        if (
+          curFilter &&
+          curFilter.filter &&
+          curFilter.filter.length > 0 &&
+          targetViewInfoList &&
+          targetViewInfoList.length > 0
+        ) {
+          // do filter
+          curFilter.filter.forEach(filterItem => {
+            targetViewInfoList.forEach(targetViewInfo => {
+              if (targetViewInfo.sourceFieldActiveId === filterItem.filterId) {
+                filterOuterParams[targetViewInfo.outerParamsName] = {
+                  operator: filterItem.operator,
+                  value: filterItem.value
+                }
+              }
+            })
+          })
+        }
+        let attachParamsInfo
+        if (Object.keys(filterOuterParams).length > 0) {
+          filterOuterParams['outerParamsVersion'] = 'v2'
+          attachParamsInfo =
+            '&attachParams=' + encodeURIComponent(Base64.encode(JSON.stringify(filterOuterParams)))
+        }
+        // 携带外部参数
         if (publicLinkStatus.value) {
           // 判断是否有公共链接ID
           if (jumpInfo.publicJumpId) {
-            const url = `#/de-link/${jumpInfo.publicJumpId}?jumpInfoParam=${encodeURIComponent(
+            let url = `${embeddedBaseUrl}#/de-link/${
+              jumpInfo.publicJumpId
+            }?fromLink=true&jumpInfoParam=${encodeURIComponent(
               Base64.encode(JSON.stringify(param))
             )}`
+            if (attachParamsInfo) {
+              url = url + attachParamsInfo
+            }
             const currentUrl = window.location.href
             localStorage.setItem('beforeJumpUrl', currentUrl)
-            windowsJump(url, jumpInfo.jumpType)
+            windowsJump(url, jumpInfo.jumpType, jumpInfo.windowSize)
           } else {
             ElMessage.warning(t('visualization.public_link_tips'))
           }
         } else {
-          const url = `#/preview?dvId=${jumpInfo.targetDvId}&jumpInfoParam=${encodeURIComponent(
-            Base64.encode(JSON.stringify(param))
-          )}`
-          windowsJump(url, jumpInfo.jumpType)
+          let url = `${embeddedBaseUrl}#/preview?dvId=${
+            jumpInfo.targetDvId
+          }&fromLink=true&jumpInfoParam=${encodeURIComponent(Base64.encode(JSON.stringify(param)))}`
+          if (attachParamsInfo) {
+            url = url + attachParamsInfo
+          }
+          const currentUrl = window.location.href
+          localStorage.setItem('beforeJumpUrl', currentUrl)
+          if (divSelf || iframeSelf) {
+            embeddedStore.setDvId(jumpInfo.targetDvId)
+            embeddedStore.setJumpInfoParam(encodeURIComponent(Base64.encode(JSON.stringify(param))))
+            divEmbedded('Preview')
+            return
+          }
+          windowsJump(url, jumpInfo.jumpType, jumpInfo.windowSize)
         }
       } else {
         ElMessage.warning('未指定跳转仪表板')
@@ -374,7 +553,17 @@ const jumpClick = param => {
       const colList = [...param.dimensionList, ...param.quotaList]
       let url = setIdValueTrans('id', 'value', jumpInfo.content, colList)
       url = checkAddHttp(url)
-      windowsJump(url, jumpInfo.jumpType)
+
+      if (isIframe.value || isDataEaseBi.value) {
+        embeddedStore.clearState()
+      }
+      if (divSelf) {
+        embeddedStore.setOuterUrl(url)
+        divEmbedded('Iframe')
+        return
+      }
+
+      windowsJump(url, jumpInfo.jumpType, jumpInfo.windowSize)
     }
   } else {
   }
@@ -396,16 +585,28 @@ const calcData = params => {
   dvMainStore.setLastViewRequestInfo(params.id, params.chartExtRequest)
   if (chartComponent?.value) {
     loading.value = true
-    chartComponent?.value?.calcData?.(params, () => {
-      loading.value = false
-    })
+    if (view.value.isPlugin) {
+      chartComponent?.value?.invokeMethod({
+        methodName: 'calcData',
+        args: [
+          params,
+          res => {
+            loading.value = false
+          }
+        ]
+      })
+    } else {
+      chartComponent?.value?.calcData?.(params, res => {
+        loading.value = false
+      })
+    }
   }
 }
 
 const showChartView = (...libs: ChartLibraryType[]) => {
   if (view.value?.render && view.value?.type) {
     const chartView = chartViewManager.getChartView(view.value.render, view.value.type)
-    return libs?.includes(chartView.library)
+    return chartView && libs?.includes(chartView.library)
   } else {
     return false
   }
@@ -425,11 +626,120 @@ onBeforeMount(() => {
 const listenerEnable = computed(() => {
   return !showPosition.value.includes('viewDialog')
 })
+// 存储所有数据集字段，用于判断图表拖入的字段是否存在
+const viewAllDatasetFields = new Map()
+const showEmpty = ref(false)
+const checkFieldIsAllowEmpty = (allField?) => {
+  showEmpty.value = false
+  if (view.value?.render && view.value?.type) {
+    const chartView = chartViewManager.getChartView(view.value.render, view.value.type)
+    // 插件
+    if (!chartView) {
+      return
+    }
+    const map = parseJson(view.value.customAttr).map
+    if (['bubble-map', 'map'].includes(view.value?.type) && !map?.id) {
+      showEmpty.value = true
+      return
+    }
+    const axisConfigMap = new Map(Object.entries(chartView.axisConfig))
+    // 验证拖入的字段是否包含在当前数据集字段中，如果有一个不在数据集字段中，则显示空图表
+    let includeDatasetField = false
+    if (allField && allField.length > 0) {
+      viewAllDatasetFields.set(view.value.id, allField)
+      outerLoop: for (const [key, value] of axisConfigMap) {
+        // 只判断必须的
+        if (value['allowEmpty']) continue
+        if (!view.value?.[key]?.length) continue
+        for (const item of view.value[key]) {
+          if (!allField.find(field => field.id === item.id)) {
+            includeDatasetField = true
+            break outerLoop
+          }
+        }
+      }
+    }
+    if (includeDatasetField) {
+      showEmpty.value = true
+      return
+    }
+    for (const [key, value] of axisConfigMap) {
+      // 跳过允许为空的配置项
+      if (value['allowEmpty']) continue
+
+      // 如果有数据集字段并且字段值存在且不为空
+      if (viewAllDatasetFields.get(view.value?.id)) {
+        if (view.value?.[key]?.length) {
+          // 检查图表字段是否有不在数据集中
+          for (const item of view.value[key]) {
+            if (!viewAllDatasetFields.get(view.value?.id).find(field => field.id === item.id)) {
+              includeDatasetField = true
+              break
+            }
+          }
+        }
+        // 如果有不在数据集中
+        if (includeDatasetField) {
+          showEmpty.value = true
+          break
+        }
+      }
+
+      // 如果没有限制长度，且值为空，标记为空并跳出
+      if (!value['limit'] && view.value?.[key]?.length === 0) {
+        showEmpty.value = true
+        break
+      }
+
+      // 如果有限制长度，且字段长度不足，标记为空并跳出
+      if (
+        value['limit'] &&
+        (!view.value?.[key] || view.value?.[key]?.length < parseInt(value['limit']))
+      ) {
+        showEmpty.value = true
+        break
+      }
+
+      // 如果是table-info类型且字段为空，标记为空并跳出
+      if (view.value?.type === 'table-info' && view.value?.[key]?.length === 0) {
+        showEmpty.value = true
+        break
+      }
+    }
+  }
+}
+const changeChartType = () => {
+  checkFieldIsAllowEmpty()
+}
+const changeDataset = () => {
+  checkFieldIsAllowEmpty()
+}
 onMounted(() => {
-  queryData(true && !showPosition.value.includes('viewDialog'))
+  if (!view.value.isPlugin) {
+    state.drillClickDimensionList = view.value?.chartExtRequest?.drill ?? []
+    queryData(!showPosition.value.includes('viewDialog'))
+  }
   if (!listenerEnable.value) {
     return
   }
+  useEmitt({
+    name: 'checkShowEmpty',
+    callback: param => {
+      if (param.view?.id === view.value.id) {
+        checkFieldIsAllowEmpty(param.allFields)
+      }
+    }
+  })
+  useEmitt({ name: 'chart-type-change', callback: changeChartType })
+  useEmitt({ name: 'dataset-change', callback: changeDataset })
+  useEmitt({
+    name: 'clearPanelLinkage',
+    callback: function (param) {
+      if (param.viewId === 'all' || param.viewId === element.value.id) {
+        chartComponent?.value?.clearLinkage?.()
+      }
+    }
+  })
   useEmitt({
     name: 'snapshotChangeToView',
     callback: function (cacheViewInfo) {
@@ -445,11 +755,12 @@ onMounted(() => {
           cacheViewInfo.snapshotCacheViewRender.includes(view.value.id) ||
           cacheViewInfo.snapshotCacheViewRender.includes('all')
         ) {
-          chartComponent?.value?.renderChart(view.value)
+          chartComponent?.value?.renderChart?.(view.value)
         }
       })
     }
   })
+
   useEmitt({
     name: 'calcData-' + view.value.id,
     callback: function (val) {
@@ -459,7 +770,22 @@ onMounted(() => {
       initTitle()
       nextTick(() => {
         view.value.chartExtRequest = filter(false)
-        calcData(val)
+        const targetVal = val || view.value
+        calcData(targetVal)
+      })
+    }
+  })
+
+  useEmitt({
+    name: 'calcData-all',
+    callback: function () {
+      if (!state.initReady) {
+        return
+      }
+      initTitle()
+      nextTick(() => {
+        view.value.chartExtRequest = filter(false)
+        calcData(view.value)
       })
     }
   })
@@ -472,7 +798,14 @@ onMounted(() => {
       initTitle()
       const viewInfo = val ? val : view.value
       nextTick(() => {
-        chartComponent?.value?.renderChart(viewInfo)
+        if (view.value?.plugin?.isPlugin) {
+          chartComponent?.value?.invokeMethod({
+            methodName: 'renderChart',
+            args: [viewInfo]
+          })
+          return
+        }
+        chartComponent?.value?.renderChart?.(viewInfo)
       })
     }
   })
@@ -491,7 +824,7 @@ onMounted(() => {
         return
       }
       setTimeout(function () {
-        chartComponent?.value?.renderChart(view.value)
+        chartComponent?.value?.renderChart?.(view.value)
       }, 200)
     }
   })
@@ -499,6 +832,15 @@ onMounted(() => {
     name: 'updateTitle-' + view.value.id,
     callback: () => {
       initTitle()
+    }
+  })
+  useEmitt({
+    name: 'chart-type-change-' + view.value.id,
+    callback: () => {
+      const chart = cloneDeep(view.value)
+      chart.container =
+        'container-' + showPosition.value + '-' + view.value.id + '-' + suffixId.value
+      clearExtremum(chart)
     }
   })
 
@@ -519,14 +861,17 @@ const chartAreaShow = computed(() => {
       return true
     }
   }
-  if (view.value.type === 'rich-text') {
+  if (['rich-text', 'picture-group'].includes(view.value.type)) {
+    return true
+  }
+  if (view.value?.isPlugin) {
     return true
   }
   if (view.value['dataFrom'] === 'template') {
     return true
   }
-  if (view.value.customAttr.map.id) {
-    const MAP_CHARTS = ['map', 'bubble-map']
+  if (view.value.customAttr?.map?.id) {
+    const MAP_CHARTS = ['map', 'bubble-map', 'flow-map']
     if (MAP_CHARTS.includes(view.value.type)) {
       return true
     }
@@ -575,7 +920,7 @@ const vClickOutside = {
 }
 
 function onTitleChange() {
-  snapshotStore.recordSnapshotCache()
+  snapshotStore.recordSnapshotCache('onTitleChange')
 }
 
 const toolTip = computed(() => {
@@ -583,8 +928,11 @@ const toolTip = computed(() => {
 })
 
 const marginBottom = computed<string | 0>(() => {
+  if (!titleShow.value) {
+    return 0
+  }
   if (titleShow.value || trackMenu.value.length > 0 || state.title_remark.show) {
-    return 8 * scale.value + 'px'
+    return 12 * scale.value + 'px'
   }
   return 0
 })
@@ -592,10 +940,131 @@ const marginBottom = computed<string | 0>(() => {
 const iconSize = computed<string>(() => {
   return 16 * scale.value + 'px'
 })
+/**
+ * 修改透明度
+ * 边框透明度为0时会是存色，顾配置低透明度
+ * @param {boolean} isBorder 是否为边框
+ */
+const modifyAlpha = isBorder => {
+  const { backgroundColor, backgroundType, backgroundImageEnable, backgroundColorSelect } =
+    element.value.commonBackground
+  // 透明
+  const transparent = 'rgba(0,0,0,0.01)'
+  // 背景图时，设置透明度为0.01
+  if (backgroundType === 'outerImage' && backgroundImageEnable) return transparent
+  // hex转rgba
+  if (backgroundColor.includes('#'))
+    return isBorder || !backgroundColorSelect ? transparent : backgroundColor
+  const match = backgroundColor.match(/rgba\((\d+), (\d+), (\d+), (\d+|0.\d+)\)/)
+  if (!match) return backgroundColor
+  const [r, g, b, a] = match.slice(1).map(Number)
+  // 边框或者不设置背景色时，设置透明度为0.01，否则原透明度
+  return `rgba(${r}, ${g}, ${b}, ${!backgroundColorSelect || isBorder ? 0.01 : a})`
+}
+
+const titleIconStyle = computed(() => {
+  const bgColor = modifyAlpha(false)
+  const borderColor = modifyAlpha(true)
+  // 不显示标题时，图标的样式
+  const style = {
+    position: 'absolute',
+    border: `1px solid ${borderColor}`,
+    'background-color': bgColor,
+    'border-radius': '2px',
+    padding: '0 2px 0 2px',
+    'z-index': 1,
+    top: '2px',
+    left: '2px',
+    ...(trackMenu.value.length ? {} : { display: 'none' })
+  }
+  return {
+    color: canvasStyleData.value.component.seniorStyleSetting.linkageIconColor,
+    ...(titleShow.value ? {} : style)
+  }
+})
+const chartHover = ref(false)
+const showActionIcons = computed(() => {
+  if (!chartHover.value) {
+    return false
+  }
+  return trackMenu.value.length > 0 || state.title_remark.show
+})
+const chartConfigs = ref(CHART_TYPE_CONFIGS)
+const pluginLoaded = computed(() => {
+  let result = false
+  chartConfigs.value.forEach(cat => {
+    result = cat.details.find(chart => view.value?.type === chart.value) !== undefined
+  })
+  return result
+})
+// TODO 统一加载
+const loadPluginCategory = data => {
+  data.forEach(item => {
+    const { category, title, render, chartValue, chartTitle, icon, staticMap } = item
+    const node = {
+      render,
+      category,
+      icon,
+      value: chartValue,
+      title: chartTitle,
+      isPlugin: true,
+      staticMap
+    }
+    if (view.value?.type === node.value) {
+      view.value.plugin = {
+        isPlugin: true,
+        staticMap
+      }
+    }
+    const stack = [...chartConfigs.value]
+    let findParent = false
+    while (stack?.length) {
+      const parent = stack.pop()
+      if (parent.category === category) {
+        const chart = parent.details.find(chart => chart.value === node.value)
+        if (!chart) {
+          parent.details.push(node)
+        }
+        findParent = true
+      }
+    }
+    if (!findParent) {
+      stack.push({
+        category,
+        title,
+        display: 'show',
+        details: [node]
+      })
+    }
+  })
+}
+
+const allEmptyCheck = computed(() => {
+  return ['rich-text', 'picture-group'].includes(element.value.innerType)
+})
+/**
+ * 标题提示的最大宽度
+ */
+const titleTooltipWidth = computed(() => {
+  if (inMobile.value) {
+    return `${screen.width - 10}px`
+  }
+  if (mobileInPc.value) {
+    return '270px'
+  }
+  return '500px'
+})
 </script>
 
 <template>
-  <div class="chart-area" v-loading="loadingFlag">
+  <div
+    class="chart-area report-load"
+    :class="{ 'report-load-finish': !loadingFlag }"
+    v-loading="loadingFlag"
+    element-loading-background="rgba(0,0,0,0)"
+    @mouseover="chartHover = true"
+    @mouseleave="chartHover = false"
+  >
     <div
       class="title-container"
       :style="{ 'justify-content': titleAlign, 'margin-bottom': marginBottom }"
@@ -617,46 +1086,104 @@ const iconSize = computed<string>(() => {
           @change="onTitleChange"
         />
       </template>
-      <div
-        class="icons-container"
-        :class="{ 'is-editing': titleEditStatus, 'icons-container__dark': themes === 'dark' }"
-        v-if="trackMenu.length > 0 || state.title_remark.show"
-      >
-        <el-tooltip :effect="toolTip" placement="top" v-if="state.title_remark.show">
-          <template #content>
-            <div style="white-space: pre-wrap" v-html="state.title_remark.remark"></div>
-          </template>
-          <el-icon :size="iconSize" class="inner-icon">
-            <Icon name="icon_info_outlined" />
-          </el-icon>
-        </el-tooltip>
-        <el-tooltip :effect="toolTip" placement="top" content="已设置联动" v-if="hasLinkIcon">
-          <el-icon :size="iconSize" class="inner-icon">
-            <Icon name="icon_link-record_outlined" />
-          </el-icon>
-        </el-tooltip>
-        <el-tooltip :effect="toolTip" placement="top" content="已设置跳转" v-if="hasJumpIcon">
-          <el-icon :size="iconSize" class="inner-icon">
-            <Icon name="icon_viewinchat_outlined" />
-          </el-icon>
-        </el-tooltip>
-        <el-tooltip :effect="toolTip" placement="top" content="已设置下钻" v-if="hasDrillIcon">
-          <el-icon :size="iconSize" class="inner-icon">
-            <Icon name="icon_drilling_outlined" />
-          </el-icon>
-        </el-tooltip>
-      </div>
+      <transition name="fade">
+        <div
+          class="icons-container"
+          :class="{ 'is-editing': titleEditStatus }"
+          :style="titleIconStyle"
+          v-show="showActionIcons"
+        >
+          <el-tooltip :effect="toolTip" placement="top" v-if="state.title_remark.show">
+            <template #content>
+              <div
+                :style="{
+                  maxWidth: titleTooltipWidth,
+                  wordBreak: 'break-all',
+                  wordWrap: 'break-word',
+                  whiteSpace: 'pre-wrap'
+                }"
+                v-html="state.title_remark.remark"
+              ></div>
+            </template>
+            <el-icon :size="iconSize" class="inner-icon">
+              <Icon name="icon_info_outlined"><icon_info_outlined class="svg-icon" /></Icon>
+            </el-icon>
+          </el-tooltip>
+          <el-tooltip :effect="toolTip" placement="top" content="已设置联动" v-if="hasLinkIcon">
+            <el-icon :size="iconSize" class="inner-icon">
+              <Icon name="icon_link-record_outlined"
+                ><icon_linkRecord_outlined class="svg-icon"
+              /></Icon>
+            </el-icon>
+          </el-tooltip>
+          <el-tooltip
+            :effect="toolTip"
+            placement="top"
+            :content="t('visualization.jump_set_tips')"
+            v-if="hasJumpIcon"
+          >
+            <el-icon :size="iconSize" class="inner-icon">
+              <Icon name="icon_viewinchat_outlined"
+                ><icon_viewinchat_outlined class="svg-icon"
+              /></Icon>
+            </el-icon>
+          </el-tooltip>
+          <el-tooltip
+            :effect="toolTip"
+            placement="top"
+            :content="t('visualization.drill_set_tips')"
+            v-if="hasDrillIcon"
+          >
+            <el-icon :size="iconSize" class="inner-icon">
+              <Icon name="icon_drilling_outlined"><icon_drilling_outlined class="svg-icon" /></Icon>
+            </el-icon>
+          </el-tooltip>
+        </div>
+      </transition>
     </div>
     <!--这里去渲染不同图库的图表-->
-    <div v-if="chartAreaShow" style="flex: 1; overflow: hidden">
+    <div v-if="allEmptyCheck || (chartAreaShow && !showEmpty)" style="flex: 1; overflow: hidden">
+      <plugin-component
+        v-if="view.plugin?.isPlugin"
+        :jsname="view.plugin.staticMap['index']"
+        :scale="scale"
+        :dynamic-area-id="dynamicAreaId"
+        :view="view"
+        :show-position="showPosition"
+        :element="element"
+        :request="request"
+        :emitter="emitter"
+        :store="store"
+        :suffixId="suffixId"
+        ref="chartComponent"
+        @onChartClick="chartClick"
+        @onPointClick="onPointClick"
+        @onDrillFilters="onDrillFilters"
+        @onJumpClick="jumpClick"
+        @resetLoading="() => (loading = false)"
+      />
+      <de-picture-group
+        v-else-if="showChartView(ChartLibraryType.PICTURE_GROUP)"
+        :themes="canvasStyleData.dashboard.themeColor"
+        ref="chartComponent"
+        :element="element"
+        :active="active"
+        :view="view"
+        :show-position="showPosition"
+        :suffixId="suffixId"
+      >
+      </de-picture-group>
       <de-rich-text-view
-        v-if="showChartView(ChartLibraryType.RICH_TEXT)"
+        v-else-if="showChartView(ChartLibraryType.RICH_TEXT)"
+        :scale="scale"
         :themes="canvasStyleData.dashboard.themeColor"
         ref="chartComponent"
         :element="element"
         :disabled="!['canvas', 'canvasDataV'].includes(showPosition) || disabled"
         :active="active"
         :show-position="showPosition"
+        :edit-mode="editMode"
+        :suffixId="suffixId"
       />
       <de-indicator
         :scale="scale"
@@ -665,35 +1192,63 @@ const iconSize = computed<string>(() => {
         ref="chartComponent"
         :view="view"
         :show-position="showPosition"
+        :suffixId="suffixId"
+        :font-family="fontFamily"
       />
       <chart-component-g2-plot
         :scale="scale"
         :dynamic-area-id="dynamicAreaId"
         :view="view"
         :show-position="showPosition"
-        v-else-if="showChartView(ChartLibraryType.G2_PLOT, ChartLibraryType.L7_PLOT)"
+        :element="element"
+        :suffixId="suffixId"
+        :font-family="fontFamily"
+        v-else-if="
+          showChartView(ChartLibraryType.G2_PLOT, ChartLibraryType.L7_PLOT, ChartLibraryType.L7)
+        "
         ref="chartComponent"
         @onChartClick="chartClick"
+        @onPointClick="onPointClick"
         @onDrillFilters="onDrillFilters"
         @onJumpClick="jumpClick"
+        @resetLoading="() => (loading = false)"
       />
       <chart-component-s2
         :view="view"
         :scale="scale"
         :show-position="showPosition"
+        :element="element"
+        :drill-length="drillClickLength"
+        :font-family="fontFamily"
         v-else-if="showChartView(ChartLibraryType.S2)"
         ref="chartComponent"
+        @onPointClick="onPointClick"
         @onChartClick="chartClick"
         @onDrillFilters="onDrillFilters"
         @onJumpClick="jumpClick"
+        :suffixId="suffixId"
       />
     </div>
     <chart-empty-info
-      v-if="!chartAreaShow"
+      v-if="(!chartAreaShow || showEmpty) && !allEmptyCheck"
       :themes="canvasStyleData.dashboard.themeColor"
       :view-icon="view.type"
     ></chart-empty-info>
-    <drill-path :drill-filters="state.drillFilters" @onDrillJump="drillJump" />
+    <drill-path
+      :disabled="optType === 'enlarge'"
+      :drill-filters="state.drillFilters"
+      @onDrillJump="drillJump"
+    />
+    <XpackComponent
+      ref="openHandler"
+      jsname="L2NvbXBvbmVudC9lbWJlZGRlZC1pZnJhbWUvT3BlbkhhbmRsZXI="
+    />
+    <XpackComponent
+      v-if="!pluginLoaded && view.isPlugin"
+      jsname="L2NvbXBvbmVudC9wbHVnaW5zLWhhbmRsZXIvVmlld0NhdGVnb3J5SGFuZGxlcg=="
+      @load-plugin-category="loadPluginCategory"
+    />
+    <DePreviewPopDialog ref="dePreviewPopDialogRef"></DePreviewPopDialog>
   </div>
 </template>
 
@@ -736,5 +1291,14 @@ const iconSize = computed<string>(() => {
       cursor: pointer;
     }
   }
+}
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.5s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>
